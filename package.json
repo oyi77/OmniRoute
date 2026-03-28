@@ -157,6 +157,7 @@
     ]
   },
   "overrides": {
-    "dompurify": "^3.3.2"
+    "dompurify": "^3.3.2",
+    "path-to-regexp": "^8.4.0"
   }
 }
