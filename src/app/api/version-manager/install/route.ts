@@ -2,13 +2,24 @@
 
 import { NextResponse } from "next/server";
 import { installTool } from "@/lib/versionManager";
+import { versionManagerInstallSchema } from "@/shared/validation/schemas";
+import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 
 export async function POST(request: Request) {
+  let rawBody;
   try {
-    const body = await request.json();
-    const tool = body.tool || "cliproxyapi";
-    const version = body.version;
+    rawBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
+  const validation = validateBody(versionManagerInstallSchema, rawBody);
+  if (isValidationFailure(validation)) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
+  }
+
+  try {
+    const { tool, version } = validation.data;
     const result = await installTool(tool, version || undefined);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

@@ -29,6 +29,50 @@ function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
+const BLOCKED_HOSTNAMES = ["metadata.google.internal", "169.254.169.254", "metadata.aws.internal"];
+
+function isPrivateHost(hostname: string): boolean {
+  if (BLOCKED_HOSTNAMES.includes(hostname)) return true;
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return false;
+  if (
+    /^10\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+    /^192\.168\./.test(hostname)
+  )
+    return true;
+  if (
+    /^0\./.test(hostname) ||
+    /^127\./.test(hostname) ||
+    /^224\./.test(hostname) ||
+    /^169\.254\./.test(hostname)
+  )
+    return true;
+  return false;
+}
+
+export function validateProxyUrl(
+  url: string
+): { valid: true; url: string } | { valid: false; error: string } {
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return {
+        valid: false,
+        error: `Unsupported protocol "${parsed.protocol}" — use http or https`,
+      };
+    }
+    if (isPrivateHost(parsed.hostname)) {
+      return {
+        valid: false,
+        error: `Proxy URL cannot point to private/internal address "${parsed.hostname}"`,
+      };
+    }
+    return { valid: true, url };
+  } catch {
+    return { valid: false, error: `Invalid URL: "${url}"` };
+  }
+}
+
 function rowToConfig(record: Record<string, unknown>): UpstreamProxyConfig {
   return {
     id: record.id as number,
@@ -82,9 +126,16 @@ export async function upsertUpstreamProxyConfig(data: {
   const enabled = data.enabled !== false ? 1 : 0;
 
   db.prepare(
-    `INSERT OR REPLACE INTO upstream_proxy_config 
+    `INSERT INTO upstream_proxy_config
      (provider_id, mode, cliproxyapi_model_mapping, native_priority, cliproxyapi_priority, enabled, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(provider_id) DO UPDATE SET
+       mode = excluded.mode,
+       cliproxyapi_model_mapping = excluded.cliproxyapi_model_mapping,
+       native_priority = excluded.native_priority,
+       cliproxyapi_priority = excluded.cliproxyapi_priority,
+       enabled = excluded.enabled,
+       updated_at = datetime('now')`
   ).run(
     data.providerId,
     mode,

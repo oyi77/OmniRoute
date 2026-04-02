@@ -94,6 +94,7 @@ export function stopProcess(pid: number): Promise<void> {
       try {
         process.kill(pid, "SIGKILL");
       } catch {}
+      clearInterval(check);
       resolve();
     }, GRACEFUL_TIMEOUT_MS);
 
