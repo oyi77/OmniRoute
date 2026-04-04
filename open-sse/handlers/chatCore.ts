@@ -23,7 +23,11 @@ import {
   formatProviderError,
 } from "../utils/error.ts";
 import { HTTP_STATUS, PROVIDER_MAX_TOKENS } from "../config/constants.ts";
-import { classifyProviderError, PROVIDER_ERROR_TYPES } from "../services/errorClassifier.ts";
+import {
+  classifyProviderError,
+  PROVIDER_ERROR_TYPES,
+  isEmptyContentResponse,
+} from "../services/errorClassifier.ts";
 import { updateProviderConnection } from "@/lib/db/providers";
 import { isDetailedLoggingEnabled } from "@/lib/db/detailedLogs";
 import { logAuditEvent } from "@/lib/compliance";
@@ -82,7 +86,12 @@ import {
 } from "@/lib/semanticCache";
 import { getIdempotencyKey, checkIdempotency, saveIdempotency } from "@/lib/idempotencyLayer";
 import { createProgressTransform, wantsProgress } from "../utils/progressTracker.ts";
-import { isModelUnavailableError, getNextFamilyFallback } from "../services/modelFamilyFallback.ts";
+import {
+  isModelUnavailableError,
+  getNextFamilyFallback,
+  isContextOverflowError,
+  findLargerContextModel,
+} from "../services/modelFamilyFallback.ts";
 import { computeRequestHash, deduplicate, shouldDeduplicate } from "../services/requestDedup.ts";
 import {
   getBackgroundTaskReason,
@@ -1527,6 +1536,16 @@ export async function handleChatCore({
             lastError: message,
             errorCode: statusCode,
           });
+        } else if (errorType === PROVIDER_ERROR_TYPES.OAUTH_INVALID_TOKEN) {
+          // OAuth 401 with invalid credentials - token refresh can recover
+          await updateProviderConnection(connectionId, {
+            lastErrorType: errorType,
+            lastError: message,
+            errorCode: statusCode,
+          });
+          console.warn(
+            `[provider] Node ${connectionId} OAuth token invalid (${statusCode}) — token refresh available`
+          );
         } else if (errorType === PROVIDER_ERROR_TYPES.PROJECT_ROUTE_ERROR) {
           // Cloud Code 403 with stale project: not a ban, keep account active.
           await updateProviderConnection(connectionId, {
@@ -1624,6 +1643,58 @@ export async function handleChatCore({
           clientResponse: buildErrorBody(statusCode, errMsg),
         });
         persistFailureUsage(statusCode, "model_unavailable");
+        return createErrorResult(statusCode, errMsg, retryAfterMs);
+      }
+    } else if (isContextOverflowError(statusCode, message)) {
+      const nextModel = getNextFamilyFallback(currentModel, triedModels);
+      if (nextModel) {
+        triedModels.add(nextModel);
+        currentModel = nextModel;
+        translatedBody.model = nextModel;
+        log?.info?.("CONTEXT_OVERFLOW_FALLBACK", `${model} context overflow → trying ${nextModel}`);
+        try {
+          const fallbackResult = await executeProviderRequest(nextModel, false);
+          if (fallbackResult.response.ok) {
+            providerResponse = fallbackResult.response;
+            providerUrl = fallbackResult.url;
+            providerHeaders = fallbackResult.headers;
+            finalBody = fallbackResult.transformedBody;
+            reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+            log?.info?.(
+              "CONTEXT_OVERFLOW_FALLBACK",
+              `Serving ${nextModel} as fallback for ${model}`
+            );
+          } else {
+            persistAttemptLogs({
+              status: statusCode,
+              error: errMsg,
+              providerRequest: finalBody || translatedBody,
+              providerResponse: upstreamErrorBody,
+              clientResponse: buildErrorBody(statusCode, errMsg),
+            });
+            persistFailureUsage(statusCode, "context_overflow");
+            return createErrorResult(statusCode, errMsg, retryAfterMs);
+          }
+        } catch {
+          persistAttemptLogs({
+            status: statusCode,
+            error: errMsg,
+            providerRequest: finalBody || translatedBody,
+            providerResponse: upstreamErrorBody,
+            clientResponse: buildErrorBody(statusCode, errMsg),
+          });
+          persistFailureUsage(statusCode, "context_overflow");
+          return createErrorResult(statusCode, errMsg, retryAfterMs);
+        }
+      } else {
+        persistAttemptLogs({
+          status: statusCode,
+          error: errMsg,
+          providerRequest: finalBody || translatedBody,
+          providerResponse: upstreamErrorBody,
+          clientResponse: buildErrorBody(statusCode, errMsg),
+        });
+        persistFailureUsage(statusCode, "context_overflow");
         return createErrorResult(statusCode, errMsg, retryAfterMs);
       }
     } else {
@@ -1762,6 +1833,69 @@ export async function handleChatCore({
         persistFailureUsage(HTTP_STATUS.BAD_GATEWAY, "invalid_json_payload");
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, invalidJsonMessage);
       }
+    }
+
+    // Check for empty content response (fake success) - trigger fallback
+    if (isEmptyContentResponse(responseBody)) {
+      appendRequestLog({
+        model,
+        provider,
+        connectionId,
+        status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}`,
+      }).catch(() => {});
+      const emptyContentMessage = "Provider returned empty content";
+      persistAttemptLogs({
+        status: HTTP_STATUS.BAD_GATEWAY,
+        error: emptyContentMessage,
+        providerRequest: finalBody || translatedBody,
+        providerResponse: normalizedProviderPayload,
+        clientResponse: buildErrorBody(HTTP_STATUS.BAD_GATEWAY, emptyContentMessage),
+      });
+      persistFailureUsage(HTTP_STATUS.BAD_GATEWAY, "empty_content");
+
+      // Trigger fallback for empty content
+      const nextModel = getNextFamilyFallback(currentModel, triedModels);
+      if (nextModel) {
+        triedModels.add(nextModel);
+        currentModel = nextModel;
+        translatedBody.model = nextModel;
+        log?.info?.(
+          "EMPTY_CONTENT_FALLBACK",
+          `${model} returned empty content → trying ${nextModel}`
+        );
+        try {
+          const fallbackResult = await executeProviderRequest(nextModel, false);
+          if (fallbackResult.response.ok) {
+            providerResponse = fallbackResult.response;
+            providerUrl = fallbackResult.url;
+            providerHeaders = fallbackResult.headers;
+            finalBody = fallbackResult.transformedBody;
+            reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+            log?.info("EMPTY_CONTENT_FALLBACK", `Serving ${nextModel} as fallback for ${model}`);
+            // Continue with the fallback response by re-processing
+            return handleChatCore({
+              body,
+              modelInfo: { provider, model: nextModel, extendedContext },
+              credentials,
+              log,
+              onCredentialsRefreshed,
+              onRequestSuccess,
+              onDisconnect,
+              clientRawRequest,
+              connectionId,
+              apiKeyInfo,
+              userAgent,
+              comboName,
+              comboStrategy,
+              isCombo,
+            });
+          }
+        } catch {
+          // Fallback failed, continue to return error
+        }
+      }
+
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, emptyContentMessage);
     }
 
     if (sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.CLAUDE) {
