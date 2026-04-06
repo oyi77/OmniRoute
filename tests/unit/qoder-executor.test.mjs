@@ -1,8 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
 import { QoderExecutor } from "../../open-sse/executors/qoder.ts";
 import {
@@ -13,21 +10,6 @@ import {
   parseQoderCliFailure,
   validateQoderCliPat,
 } from "../../open-sse/services/qoderCli.ts";
-
-function createTempDir() {
-  const testRoot = path.join(os.tmpdir(), "omniroute-test-tmp");
-  fs.mkdirSync(testRoot, { recursive: true });
-  return fs.mkdtempSync(path.join(testRoot, "qoder-"));
-}
-
-function writeExecutable(dir, name, body) {
-  const filePath = path.join(dir, name);
-  fs.writeFileSync(filePath, body, "utf8");
-  if (process.platform !== "win32") {
-    fs.chmodSync(filePath, 0o755);
-  }
-  return filePath;
-}
 
 function createQoderCliScript(dir, name, mode) {
   if (process.platform === "win32") {
