@@ -32,10 +32,10 @@ export async function GET(req: Request) {
       .prepare(
         `SELECT
           COUNT(*) as total,
-          SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END) as today,
-          SUM(CASE WHEN status >= 400 OR error IS NOT NULL THEN 1 ELSE 0 END) as errors,
+          COALESCE(SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END), 0) as today,
+          COALESCE(SUM(CASE WHEN status >= 400 OR error IS NOT NULL THEN 1 ELSE 0 END), 0) as errors,
           AVG(CASE WHEN duration > 0 THEN duration END) as avg_duration,
-          SUM(CASE WHEN duration > 0 AND duration < 5 THEN 1 ELSE 0 END) as cached
+          COALESCE(SUM(CASE WHEN duration > 0 AND duration < 5 THEN 1 ELSE 0 END), 0) as cached
          FROM call_logs
          WHERE request_type = 'search'`
       )

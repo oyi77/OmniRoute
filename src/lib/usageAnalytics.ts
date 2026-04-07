@@ -5,7 +5,10 @@
  * summary cards, daily trends, activity heatmap, model breakdown, etc.
  */
 
-import { calculateCost } from "@/lib/usageDb";
+import {
+  normalizeModelName as normModel,
+  computeCostFromPricing,
+} from "@/lib/usage/costCalculator";
 
 /**
  * Compute date range boundaries
@@ -128,9 +131,26 @@ export async function computeAnalytics(
     }
   }
 
-  // Pre-fetch all costs in parallel — avoids N sequential async round-trips
-  const entryCosts = await Promise.all(
-    entries.map((e) => calculateCost(e.provider, e.model, e.tokens).catch(() => 0))
+  // Pre-fetch pricing for all unique (provider, model) pairs — one DB round-trip
+  // per unique pair instead of one per entry, then compute costs synchronously.
+  const { getPricingForModel } = await import("@/lib/localDb");
+  const pricingCache = new Map<string, Record<string, unknown> | null>();
+  const uniquePairs = new Set(entries.map((e) => `${e.provider}|||${e.model}`));
+  await Promise.all(
+    [...uniquePairs].map(async (key) => {
+      const [provider, model] = key.split("|||");
+      let pricing = (await getPricingForModel(provider, model)) as Record<string, unknown> | null;
+      if (!pricing) {
+        const normalized = normModel(model);
+        if (normalized !== model) {
+          pricing = (await getPricingForModel(provider, normalized)) as Record<
+            string,
+            unknown
+          > | null;
+        }
+      }
+      pricingCache.set(key, pricing ?? null);
+    })
   );
 
   // ---- Single pass over filtered entries for everything else ----
@@ -144,7 +164,8 @@ export async function computeAnalytics(
     const dayOfWeek = entryDate.getDay();
     const modelShort = shortModelName(entry.model);
 
-    const cost = entryCosts[i];
+    const pricingKey = `${entry.provider}|||${entry.model}`;
+    const cost = computeCostFromPricing(pricingCache.get(pricingKey), entry.tokens);
 
     // Summary
     summary.promptTokens += pt;
