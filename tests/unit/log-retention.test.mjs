@@ -45,7 +45,7 @@ test("cleanupExpiredLogs uses separate APP and CALL retention windows", () => {
   ).run("openai", "fresh-usage", 1, 1, 1, 1, 1, freshCallTs);
 
   db.prepare(
-    "INSERT INTO call_logs (id, timestamp, method, path, status, model, provider, account, duration, tokens_in, tokens_out, has_pipeline_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO call_logs (id, timestamp, method, path, status, model, provider, account, duration, tokens_in, tokens_out, has_pipeline_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).run(
     "old-call",
     oldCallTs,
@@ -61,7 +61,7 @@ test("cleanupExpiredLogs uses separate APP and CALL retention windows", () => {
     0
   );
   db.prepare(
-    "INSERT INTO call_logs (id, timestamp, method, path, status, model, provider, account, duration, tokens_in, tokens_out, has_pipeline_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO call_logs (id, timestamp, method, path, status, model, provider, account, duration, tokens_in, tokens_out, has_pipeline_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).run(
     "fresh-call",
     freshCallTs,
