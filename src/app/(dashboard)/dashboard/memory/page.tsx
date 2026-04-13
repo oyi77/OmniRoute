@@ -37,6 +37,8 @@ export default function MemoryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [health, setHealth] = useState<{ working: boolean; latencyMs: number } | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -88,6 +90,20 @@ export default function MemoryPage() {
     link.click();
   };
 
+  const checkHealth = async () => {
+    setCheckingHealth(true);
+    try {
+      const res = await fetch("/api/memory/health");
+      if (res.ok) {
+        setHealth(await res.json());
+      }
+    } catch {
+      setHealth(null);
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
+
   const getTypeColor = (type: string) => {
     switch (type) {
       case "factual":
@@ -114,7 +130,26 @@ export default function MemoryPage() {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <div className="flex items-center gap-2">
+            {health !== null && (
+              <span
+                className={`inline-block w-3 h-3 rounded-full ${health.working ? "bg-green-500" : "bg-red-500"}`}
+                title={health.working ? `Pipeline OK (${health.latencyMs}ms)` : "Pipeline error"}
+              />
+            )}
+            {health === null && !checkingHealth && (
+              <span
+                className="inline-block w-3 h-3 rounded-full bg-gray-400"
+                title="Health unknown"
+              />
+            )}
+            <Button variant="outline" size="sm" onClick={checkHealth} disabled={checkingHealth}>
+              {checkingHealth ? "Checking..." : "Check Health"}
+            </Button>
+          </div>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleExport}>
             {t("export")}
