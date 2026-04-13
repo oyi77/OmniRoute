@@ -3,6 +3,9 @@ import { SkillExecution, SkillStatus, SkillHandler } from "./types";
 import { getDbInstance } from "../db/core";
 import { getSettings } from "../db/settings";
 import { randomUUID } from "crypto";
+import { logger } from "../../../open-sse/utils/logger.js";
+
+const log = logger("SKILLS_EXECUTOR");
 
 class SkillExecutor {
   private static instance: SkillExecutor;
@@ -54,6 +57,8 @@ class SkillExecutor {
     const executionId = randomUUID();
     const startTime = Date.now();
 
+    log.info("skills.executor.start", { skillId: skill.id, skillName, apiKeyId: context.apiKeyId });
+
     try {
       db.prepare(
         `INSERT INTO skill_executions (id, skill_id, api_key_id, session_id, input, status, created_at)
@@ -92,6 +97,12 @@ class SkillExecutor {
       db.prepare(
         `UPDATE skill_executions SET output = ?, status = ?, error_message = ?, duration_ms = ? WHERE id = ?`
       ).run(output ? JSON.stringify(output) : null, status, errorMessage, durationMs, executionId);
+
+      log.info("skills.executor.complete", {
+        skillId: skill.id,
+        success: status === SkillStatus.SUCCESS,
+        durationMs,
+      });
 
       return {
         id: executionId,
