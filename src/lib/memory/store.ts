@@ -4,6 +4,9 @@
 
 import { getDbInstance } from "../db/core";
 import { Memory, MemoryType } from "./types";
+import { logger } from "../../../open-sse/utils/logger.js";
+
+const log = logger("MEMORY_STORE");
 
 interface CacheEntry<T> {
   value: T;
@@ -119,6 +122,8 @@ export async function createMemory(
   evictIfNeeded(_memoryCache);
   _memoryCache.set(id, { value: createdMemory, timestamp: Date.now() });
 
+  log.info("memory.stored", { apiKeyId: memory.apiKeyId, type: memory.type, id });
+
   return createdMemory;
 }
 
@@ -227,6 +232,8 @@ export async function deleteMemory(id: string): Promise<boolean> {
 
   // Invalidate cache for this memory
   invalidateMemoryCache(id);
+
+  log.info("memory.deleted", { id });
 
   return true;
 }

@@ -1,6 +1,9 @@
 import { getDbInstance } from "../db/core";
 import { Memory, MemoryConfig, MemoryType } from "./types";
 import { MemoryConfigSchema } from "./schemas";
+import { logger } from "../../../open-sse/utils/logger.js";
+
+const log = logger("MEMORY_RETRIEVAL");
 
 interface MemoryRow {
   id: string;
@@ -110,6 +113,8 @@ export async function retrieveMemories(
   apiKeyId: string,
   config: RetrievalOptions = {}
 ): Promise<Memory[]> {
+  log.info("memory.retrieval.start", { apiKeyId, strategy: config.retrievalStrategy });
+
   // Validate and normalize config
   const normalizedConfig = MemoryConfigSchema.parse({
     enabled: true,
@@ -300,5 +305,8 @@ export async function retrieveMemories(
     totalTokens += memoryTokens;
   }
 
-  return memories.map((entry) => entry.memory);
+  const result = memories.map((entry) => entry.memory);
+  log.info("memory.retrieval.complete", { apiKeyId, count: result.length });
+  log.debug("memory.retrieval.selected", { ids: result.map((m) => m.id) });
+  return result;
 }
