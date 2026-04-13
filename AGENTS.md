@@ -68,7 +68,7 @@ npm run test:ecosystem
 npm run test:coverage
 ```
 
-**For authoritative coverage requirements, test execution, and PR gates, see [`CONTRIBUTING.md`](CONTRIBUTING.md#running-tests) (lines 136–162).**
+**For authoritative coverage requirements, test execution, and PR gates, see [`CONTRIBUTING.md`](CONTRIBUTING.md#running-tests).**
 
 ---
 
@@ -139,7 +139,7 @@ Schema migrations live in `db/migrations/` and run via `migrationRunner.ts`.
 #### DB Internals
 
 - **`core.ts`**: `getDbInstance()` returns a singleton `better-sqlite3` instance with WAL
-  journaling. `SCHEMA_SQL` defines 14 base tables. Helpers: `rowToCamel`, `encryptConnectionFields`.
+  journaling. `SCHEMA_SQL` defines 15 base tables. Helpers: `rowToCamel`, `encryptConnectionFields`.
 - **`migrationRunner.ts`**: Applies versioned SQL files from `db/migrations/` inside transactions.
   Tracks applied migrations in `_omniroute_migrations` table.
 - **Migrations**: 21 files (`001_initial_schema.sql` → `021_combo_call_log_targets.sql`).

@@ -9,7 +9,7 @@
 ### Combo Routing Engine
 
 - **`combo.ts`** (800 LOC) — Entry point for multi-model routing. **`handleComboChat()`** iterates through targets in order until success or all fail. **`resolveComboTargets()`** expands combo config into ordered `ResolvedComboTarget[]` (provider + model + account + credentials). Enforces per-target circuit breaker and fallback logic.
-- **Strategies** (13 total): `priority` (ordered list), `weighted` (probabilistic), `fill-first` (fill quota quota first), `round-robin`, `P2C` (power of two choices), `random`, `least-used`, `cost-optimized`, `strict-random`, `auto`, `lkgp` (last known good provider), `context-optimized`, `context-relay`.
+- **Strategies** (13 total): `priority` (ordered list), `weighted` (probabilistic), `fill-first` (fill quota first), `round-robin`, `P2C` (power of two choices), `random`, `least-used`, `cost-optimized`, `strict-random`, `auto`, `lkgp` (last known good provider), `context-optimized`, `context-relay`.
 - **Circuit Breaker**: Per target, tracks consecutive failures; breaks after threshold, reopens on success or timeout.
 
 ### Quota & Rate Limiting
@@ -74,7 +74,7 @@
 
 ## Testing Strategy
 
-Each service requires unit and integration tests. For authoritative coverage requirements and test execution guidelines, see [`CONTRIBUTING.md#running-tests`](../../CONTRIBUTING.md#running-tests) (lines 136–162).
+Each service requires unit and integration tests. For authoritative coverage requirements and test execution guidelines, see [`CONTRIBUTING.md#running-tests`](../../CONTRIBUTING.md#running-tests).
 
 - **Unit tests** — Each service in isolation with mocked dependencies (combos, models, executors)
 - **Integration tests** — Combo routing with real combo configs, verify target resolution and fallback behavior
