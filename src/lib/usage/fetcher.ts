@@ -151,13 +151,14 @@ async function getGeminiUsage(accessToken) {
  * Credit balance (GOOGLE_ONE_AI) is read from the executor's in-memory cache,
  * which is populated automatically after each successful credit-injected SSE call.
  */
-async function getAntigravityUsage(accessToken: string, providerSpecificData: Record<string, unknown> = {}) {
+async function getAntigravityUsage(
+  accessToken: string,
+  providerSpecificData: Record<string, unknown> = {}
+) {
   try {
     // Derive accountId (same key used in AntigravityExecutor.execute)
     const accountId: string =
-      (providerSpecificData?.email as string) ||
-      (providerSpecificData?.sub as string) ||
-      "unknown";
+      (providerSpecificData?.email as string) || (providerSpecificData?.sub as string) || "unknown";
 
     // Read cached credit balance from executor module (populated from SSE remainingCredits)
     const creditBalance = getAntigravityRemainingCredits(accountId);
@@ -198,7 +199,10 @@ async function getAntigravityUsage(accessToken: string, providerSpecificData: Re
     // Walk quota-based models (those with remainingFraction in quotaInfo)
     let quotaModelsTotal = 0;
     let quotaModelsAvailable = 0;
-    const modelQuotas: Record<string, { remaining: number; resetAt: string | null; limited: boolean }> = {};
+    const modelQuotas: Record<
+      string,
+      { remaining: number; resetAt: string | null; limited: boolean }
+    > = {};
 
     for (const [modelId, rawInfo] of Object.entries(models)) {
       const info = rawInfo as Record<string, unknown>;
@@ -206,7 +210,8 @@ async function getAntigravityUsage(accessToken: string, providerSpecificData: Re
       const quotaInfo = (info.quotaInfo as Record<string, unknown>) ?? {};
 
       if ("remainingFraction" in quotaInfo) {
-        const fraction = typeof quotaInfo.remainingFraction === "number" ? quotaInfo.remainingFraction : 1;
+        const fraction =
+          typeof quotaInfo.remainingFraction === "number" ? quotaInfo.remainingFraction : 1;
         const resetTime = typeof quotaInfo.resetTime === "string" ? quotaInfo.resetTime : null;
         modelQuotas[modelId] = {
           remaining: Math.round(fraction * 100),
