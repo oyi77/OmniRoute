@@ -60,10 +60,7 @@ export function injectModelTag(messages: Message[], providerModel: string): Mess
   // #474: If no assistant message exists yet (first turn), append a synthetic one
   // so the tag is present when the client sends the next request with the response.
   if (lastAssistantIdx === -1) {
-    return [
-      ...cleaned,
-      { role: "assistant", content: `\n<omniModel>${providerModel}</omniModel>` },
-    ];
+    return [...cleaned, { role: "assistant", content: `<omniModel>${providerModel}</omniModel>` }];
   }
 
   const msg = cleaned[lastAssistantIdx];
@@ -73,16 +70,13 @@ export function injectModelTag(messages: Message[], providerModel: string): Mess
   if (typeof msg.content !== "string") {
     // If the message has tool_calls but no string content, append a new assistant
     // message with the tag rather than silently failing.
-    return [
-      ...cleaned,
-      { role: "assistant", content: `\n<omniModel>${providerModel}</omniModel>` },
-    ];
+    return [...cleaned, { role: "assistant", content: `<omniModel>${providerModel}</omniModel>` }];
   }
 
   const tagged = [...cleaned];
   tagged[lastAssistantIdx] = {
     ...msg,
-    content: `${msg.content}\n<omniModel>${providerModel}</omniModel>`,
+    content: `${msg.content}<omniModel>${providerModel}</omniModel>`,
   };
   return tagged;
 }
