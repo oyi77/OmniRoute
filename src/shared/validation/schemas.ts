@@ -299,6 +299,8 @@ export const updateSettingsSchema = z.object({
   fallbackStrategy: settingsFallbackStrategySchema.optional(),
   wildcardAliases: z.array(z.object({ pattern: z.string(), target: z.string() })).optional(),
   stickyRoundRobinLimit: z.number().int().min(0).max(1000).optional(),
+  requestRetry: z.number().int().min(0).max(10).optional(),
+  maxRetryIntervalSec: z.number().int().min(0).max(300).optional(),
   // Auto intent classifier settings (multilingual routing)
   intentDetectionEnabled: z.boolean().optional(),
   intentSimpleMaxWords: z.number().int().min(1).max(500).optional(),

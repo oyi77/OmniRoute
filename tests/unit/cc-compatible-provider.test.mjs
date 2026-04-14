@@ -26,6 +26,7 @@ const providerModelsRoute = await import("../../src/app/api/providers/[id]/model
 
 const originalFetch = globalThis.fetch;
 const originalFlag = process.env.ENABLE_CC_COMPATIBLE_PROVIDER;
+const originalAllowPrivateProviderUrls = process.env.OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS;
 
 async function resetStorage() {
   core.resetDbInstance();
@@ -40,6 +41,11 @@ test.afterEach(async () => {
   } else {
     process.env.ENABLE_CC_COMPATIBLE_PROVIDER = originalFlag;
   }
+  if (originalAllowPrivateProviderUrls === undefined) {
+    delete process.env.OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS;
+  } else {
+    process.env.OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS = originalAllowPrivateProviderUrls;
+  }
   await resetStorage();
 });
 
@@ -49,6 +55,11 @@ test.after(() => {
     delete process.env.ENABLE_CC_COMPATIBLE_PROVIDER;
   } else {
     process.env.ENABLE_CC_COMPATIBLE_PROVIDER = originalFlag;
+  }
+  if (originalAllowPrivateProviderUrls === undefined) {
+    delete process.env.OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS;
+  } else {
+    process.env.OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS = originalAllowPrivateProviderUrls;
   }
   core.resetDbInstance();
   fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
@@ -756,6 +767,33 @@ test("provider-nodes validate route rejects invalid JSON and schema errors", asy
   assert.equal(invalidBodyPayload.error.details.length >= 1, true);
 });
 
+test("provider-nodes validate route blocks private provider hosts before fetch", async () => {
+  delete process.env.OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS;
+
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    return Response.json({ data: [] });
+  };
+
+  const response = await providerNodesValidateRoute.POST(
+    new Request("http://localhost/api/provider-nodes/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: "http://127.0.0.1:11434/v1",
+        apiKey: "sk-private-test",
+      }),
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "Blocked private or local provider URL",
+  });
+  assert.equal(called, false);
+});
+
 test("provider-nodes validate route validates anthropic compatible providers against the models endpoint", async () => {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
@@ -895,9 +933,9 @@ test("provider-nodes validate route covers default CC paths, null method, anthro
   );
   assert.equal(
     ccCalls[1].url,
-    `https://proxy.example.com${CLAUDE_CODE_COMPATIBLE_DEFAULT_CHAT_PATH}`
+    `https://proxy.example.com${CLAUDE_CODE_COMPATIBLE_DEFAULT_MODELS_PATH}`
   );
-  assert.equal(ccCalls[1].init.method, "POST");
+  assert.equal(ccCalls.length, 2);
 
   const anthropicCalls = [];
   globalThis.fetch = async (url, init = {}) => {

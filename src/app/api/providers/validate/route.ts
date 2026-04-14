@@ -86,6 +86,13 @@ export async function POST(request) {
       return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
     }
 
+    if (!result.valid && typeof result.statusCode === "number") {
+      return NextResponse.json(
+        { error: result.error || "Validation failed" },
+        { status: result.statusCode }
+      );
+    }
+
     return NextResponse.json({
       valid: !!result.valid,
       error: result.valid ? null : result.error || "Invalid API key",

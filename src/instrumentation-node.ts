@@ -74,6 +74,8 @@ export async function registerNodejs(): Promise<void> {
   console.log("[STARTUP] Global fetch proxy patch initialized");
 
   await ensureSecrets();
+  const { enforceWebRuntimeEnv } = await import("@/lib/env/runtimeEnv");
+  enforceWebRuntimeEnv();
 
   // Trigger request-log layout migration during startup, before any request hits usageDb.
   await import("@/lib/usage/migrations");

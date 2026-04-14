@@ -85,6 +85,7 @@ test("checkPipelineGates blocks models in cooldown", async () => {
   const json = await response.json();
 
   assert.equal(response.status, 503);
+  assert.equal(Number(response.headers.get("Retry-After")), 30);
   assert.match(json.error.message, /temporarily unavailable/i);
 });
 
@@ -141,6 +142,35 @@ test("handleNoCredentials returns Retry-After when every account is rate limited
   assert.equal(response.status, 429);
   assert.ok(Number(response.headers.get("Retry-After")) >= 1);
   assert.match(json.error.message, /\[openai\/gpt-4o-mini\] Quota exceeded/);
+});
+
+test("handleNoCredentials returns structured model_cooldown when every credential for the model is cooling down", async () => {
+  const retryAfter = new Date(Date.now() + 12_000).toISOString();
+  const response = handleNoCredentials(
+    {
+      allRateLimited: true,
+      retryAfter,
+      retryAfterHuman: "reset after 12s",
+      cooldownScope: "model",
+      cooldownModel: "gemini-2.5-pro",
+      lastErrorCode: 429,
+      lastError: "too many requests",
+    },
+    "conn_123",
+    "gemini",
+    "gemini-2.5-pro",
+    null,
+    null
+  );
+  const json = await response.json();
+
+  assert.equal(response.status, 429);
+  assert.equal(Number(response.headers.get("Retry-After")) >= 1, true);
+  assert.equal(json.error.code, "model_cooldown");
+  assert.equal(json.error.type, "rate_limit_error");
+  assert.equal(json.error.model, "gemini-2.5-pro");
+  assert.ok(json.error.reset_seconds >= 1);
+  assert.match(json.error.message, /cooling down/i);
 });
 
 test("safeResolveProxy returns the direct route when no proxy config is present", async () => {

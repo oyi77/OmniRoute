@@ -10,7 +10,10 @@ import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 if (!process.env.JWT_SECRET) {
   console.error("[SECURITY] FATAL: JWT_SECRET is not set. Login authentication is disabled.");
 }
-const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "");
+
+function getJwtSecret(): Uint8Array {
+  return new TextEncoder().encode(process.env.JWT_SECRET || "");
+}
 
 export async function POST(request) {
   try {
@@ -62,7 +65,7 @@ export async function POST(request) {
       const token = await new SignJWT({ authenticated: true })
         .setProtectedHeader({ alg: "HS256" })
         .setExpirationTime("30d")
-        .sign(SECRET);
+        .sign(getJwtSecret());
 
       const cookieStore = await cookies();
       cookieStore.set("auth_token", token, {

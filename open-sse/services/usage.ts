@@ -3,8 +3,14 @@
  */
 
 import { PROVIDERS } from "../config/constants.ts";
+import { getAntigravityFetchAvailableModelsUrls } from "../config/antigravityUpstream.ts";
 import { safePercentage } from "@/shared/utils/formatting";
 import { fetchBailianQuota, type BailianTripleWindowQuota } from "./bailianQuotaFetcher.ts";
+import {
+  antigravityUserAgent,
+  getAntigravityHeaders,
+  getAntigravityLoadCodeAssistMetadata,
+} from "./antigravityHeaders.ts";
 
 // GitHub API config
 const GITHUB_CONFIG = {
@@ -14,7 +20,7 @@ const GITHUB_CONFIG = {
 
 // Antigravity API config (credentials from PROVIDERS via credential loader)
 const ANTIGRAVITY_CONFIG = {
-  quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+  quotaApiUrls: getAntigravityFetchAvailableModelsUrls(),
   loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
   tokenUrl: "https://oauth2.googleapis.com/token",
   get clientId() {
@@ -23,7 +29,9 @@ const ANTIGRAVITY_CONFIG = {
   get clientSecret() {
     return PROVIDERS.antigravity.clientSecret;
   },
-  userAgent: "antigravity/1.11.3 Darwin/arm64",
+  get userAgent() {
+    return antigravityUserAgent();
+  },
 };
 
 // Codex (OpenAI) API config
@@ -893,16 +901,29 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     const projectId = subscriptionInfo?.cloudaicompanionProject || null;
 
     // Fetch model list with quota info from fetchAvailableModels
-    const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(projectId ? { project: projectId } : {}),
-      signal: AbortSignal.timeout(10000),
-    });
+    let response: Response | null = null;
+    let lastError: Error | null = null;
+
+    for (const quotaApiUrl of ANTIGRAVITY_CONFIG.quotaApiUrls) {
+      try {
+        response = await fetch(quotaApiUrl, {
+          method: "POST",
+          headers: getAntigravityHeaders("fetchAvailableModels", accessToken),
+          body: JSON.stringify(projectId ? { project: projectId } : {}),
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (response.ok || response.status === 401 || response.status === 403) {
+          break;
+        }
+      } catch (error) {
+        lastError = error as Error;
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error("Antigravity API unavailable");
+    }
 
     if (response.status === 403) {
       return { message: "Antigravity access forbidden. Check subscription." };
@@ -1007,24 +1028,8 @@ async function getAntigravitySubscriptionInfo(accessToken) {
   try {
     const response = await fetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": "google-api-nodejs-client/9.15.1",
-        "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-        "Client-Metadata": JSON.stringify({
-          ideType: "IDE_UNSPECIFIED",
-          platform: "PLATFORM_UNSPECIFIED",
-          pluginType: "GEMINI",
-        }),
-      },
-      body: JSON.stringify({
-        metadata: {
-          ideType: "IDE_UNSPECIFIED",
-          platform: "PLATFORM_UNSPECIFIED",
-          pluginType: "GEMINI",
-        },
-      }),
+      headers: getAntigravityHeaders("loadCodeAssist", accessToken),
+      body: JSON.stringify({ metadata: getAntigravityLoadCodeAssistMetadata() }),
     });
 
     if (!response.ok) return null;

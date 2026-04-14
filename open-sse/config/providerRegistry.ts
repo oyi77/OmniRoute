@@ -7,6 +7,9 @@
  */
 
 import { platform, arch } from "os";
+import { ANTIGRAVITY_BASE_URLS } from "./antigravityUpstream.ts";
+import { getCodexDefaultHeaders } from "./codexClient.ts";
+import { antigravityUserAgent } from "../services/antigravityHeaders.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -335,11 +338,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
     authType: "oauth",
     authHeader: "bearer",
     defaultContextLength: 400000,
-    headers: {
-      Version: "0.92.0",
-      "Openai-Beta": "responses=experimental",
-      "User-Agent": "codex-cli/0.92.0 (Windows 10.0.26100; x64)",
-    },
+    headers: getCodexDefaultHeaders(),
     oauth: {
       clientIdEnv: "CODEX_OAUTH_CLIENT_ID",
       clientIdDefault: "",
@@ -445,11 +444,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
     alias: undefined,
     format: "antigravity",
     executor: "antigravity",
-    baseUrls: [
-      "https://daily-cloudcode-pa.googleapis.com",
-      "https://daily-cloudcode-pa.sandbox.googleapis.com",
-      "https://cloudcode-pa.googleapis.com",
-    ],
+    baseUrls: [...ANTIGRAVITY_BASE_URLS],
     urlBuilder: (base, model, stream) => {
       const path = stream
         ? "/v1internal:streamGenerateContent?alt=sse"
@@ -459,7 +454,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
     authType: "oauth",
     authHeader: "bearer",
     headers: {
-      "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`,
+      "User-Agent": antigravityUserAgent(),
     },
     oauth: {
       clientIdEnv: "ANTIGRAVITY_OAUTH_CLIENT_ID",
@@ -1387,17 +1382,17 @@ export const REGISTRY: Record<string, RegistryEntry> = {
     alias: "pol",
     format: "openai",
     executor: "pollinations",
-    // No API key required for basic use. Proxy to GPT-5, Claude, Gemini, DeepSeek, Llama 4.
+    // API key required. Free Spore tier currently grants 0.01 pollen/hour.
     baseUrl: "https://text.pollinations.ai/openai/chat/completions",
-    authType: "apikey", // Optional — works without one too
+    authType: "apikey",
     authHeader: "bearer",
     models: [
-      { id: "openai", name: "GPT-5 via Pollinations (🆓)" },
-      { id: "claude", name: "Claude via Pollinations (🆓)" },
-      { id: "gemini", name: "Gemini via Pollinations (🆓)" },
-      { id: "deepseek", name: "DeepSeek V3 via Pollinations (🆓)" },
-      { id: "llama", name: "Llama 4 via Pollinations (🆓)" },
-      { id: "mistral", name: "Mistral via Pollinations (🆓)" },
+      { id: "openai", name: "GPT-5 via Pollinations (Spore)" },
+      { id: "claude", name: "Claude via Pollinations (Spore)" },
+      { id: "gemini", name: "Gemini via Pollinations (Spore)" },
+      { id: "deepseek", name: "DeepSeek V3 via Pollinations (Spore)" },
+      { id: "llama", name: "Llama 4 via Pollinations (Spore)" },
+      { id: "mistral", name: "Mistral via Pollinations (Spore)" },
     ],
   },
 

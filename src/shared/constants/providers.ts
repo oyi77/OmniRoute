@@ -549,8 +549,7 @@ export const APIKEY_PROVIDERS = {
     textIcon: "PO",
     website: "https://pollinations.ai",
     hasFree: true,
-    freeNote:
-      "No API key needed — access GPT-5, Claude, Gemini, DeepSeek V3, Llama 4 free (1 req/15s)",
+    freeNote: "Spore free tier: 0.01 pollen/hour (about $0.01/hour). API key now required.",
   },
   puter: {
     id: "puter",

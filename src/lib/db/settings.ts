@@ -45,6 +45,8 @@ export async function getSettings() {
   const settings: Record<string, unknown> = {
     cloudEnabled: false,
     stickyRoundRobinLimit: 3,
+    requestRetry: 3,
+    maxRetryIntervalSec: 30,
     requireLogin: true,
     hiddenSidebarItems: [],
     alwaysPreserveClientCache: "auto",

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { validateClaudeCodeCompatibleProvider } from "@/lib/providers/validation";
+import {
+  SAFE_OUTBOUND_FETCH_PRESETS,
+  getSafeOutboundFetchErrorStatus,
+  safeOutboundFetch,
+} from "@/shared/network/safeOutboundFetch";
+import { getProviderOutboundGuard } from "@/shared/network/outboundUrlGuard";
 import { isCcCompatibleProviderEnabled } from "@/shared/utils/featureFlags";
 import { providerNodeValidateSchema } from "@/shared/validation/schemas";
 import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
@@ -74,7 +80,9 @@ export async function POST(request) {
       // Use /models endpoint for validation as many compatible providers support it (like OpenAI)
       const modelsUrl = `${normalizedBase}${modelsPath || "/models"}`;
 
-      const res = await fetch(modelsUrl, {
+      const res = await safeOutboundFetch(modelsUrl, {
+        ...SAFE_OUTBOUND_FETCH_PRESETS.validationRead,
+        guard: getProviderOutboundGuard(),
         method: "GET",
         headers: {
           "x-api-key": apiKey,
@@ -88,12 +96,19 @@ export async function POST(request) {
 
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}${modelsPath || "/models"}`;
-    const res = await fetch(modelsUrl, {
+    const res = await safeOutboundFetch(modelsUrl, {
+      ...SAFE_OUTBOUND_FETCH_PRESETS.validationRead,
+      guard: getProviderOutboundGuard(),
       headers: { Authorization: `Bearer ${apiKey}` },
     });
 
     return NextResponse.json({ valid: res.ok, error: res.ok ? null : "Invalid API key" });
   } catch (error) {
+    const status = getSafeOutboundFetchErrorStatus(error);
+    if (status) {
+      const message = error instanceof Error ? error.message : "Validation failed";
+      return NextResponse.json({ error: message }, { status });
+    }
     console.log("Error validating provider node:", error);
     return NextResponse.json({ error: "Validation failed" }, { status: 500 });
   }

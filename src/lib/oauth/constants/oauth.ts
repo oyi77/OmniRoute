@@ -1,3 +1,9 @@
+import {
+  ANTIGRAVITY_LOAD_CODE_ASSIST_API_CLIENT,
+  ANTIGRAVITY_LOAD_CODE_ASSIST_USER_AGENT,
+  getAntigravityLoadCodeAssistClientMetadata,
+} from "@omniroute/open-sse/services/antigravityHeaders.ts";
+
 /**
  * OAuth Configuration Constants
  *
@@ -133,9 +139,9 @@ export const ANTIGRAVITY_CONFIG = {
   onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   fetchAvailableModelsEndpoint:
     "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-  loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
-  loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  loadCodeAssistClientMetadata: `{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}`,
+  loadCodeAssistUserAgent: ANTIGRAVITY_LOAD_CODE_ASSIST_USER_AGENT,
+  loadCodeAssistApiClient: ANTIGRAVITY_LOAD_CODE_ASSIST_API_CLIENT,
+  loadCodeAssistClientMetadata: getAntigravityLoadCodeAssistClientMetadata(),
 };
 
 // OpenAI OAuth Configuration (Authorization Code Flow with PKCE)

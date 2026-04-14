@@ -2,7 +2,9 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
-import { GITHUB_CONFIG, GEMINI_CONFIG, ANTIGRAVITY_CONFIG } from "@/lib/oauth/constants/oauth";
+import { GITHUB_CONFIG, GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
+import { getAntigravityHeaders } from "@omniroute/open-sse/services/antigravityHeaders.ts";
+import { getAntigravityFetchAvailableModelsUrls } from "@omniroute/open-sse/config/antigravityUpstream.ts";
 import { getAntigravityRemainingCredits } from "@omniroute/open-sse/executors/antigravity.ts";
 
 /**
@@ -164,16 +166,29 @@ async function getAntigravityUsage(
     const creditBalance = getAntigravityRemainingCredits(accountId);
 
     // fetchAvailableModels — resolves project from token, no projectId needed
-    const res = await fetch(ANTIGRAVITY_CONFIG.fetchAvailableModelsEndpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": "antigravity/1.11.3 Darwin/arm64",
-      },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(15_000),
-    });
+    let res: Response | null = null;
+    let lastError: Error | null = null;
+
+    for (const endpoint of getAntigravityFetchAvailableModelsUrls()) {
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: getAntigravityHeaders("fetchAvailableModels", accessToken),
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(15_000),
+        });
+
+        if (res.ok || res.status === 401 || res.status === 403) {
+          break;
+        }
+      } catch (error) {
+        lastError = error as Error;
+      }
+    }
+
+    if (!res) {
+      throw lastError || new Error("Antigravity API unavailable");
+    }
 
     if (!res.ok) {
       return {

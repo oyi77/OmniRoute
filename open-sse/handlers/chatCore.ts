@@ -79,6 +79,7 @@ import { sanitizeOpenAIResponse } from "./responseSanitizer.ts";
 import {
   withRateLimit,
   updateFromHeaders,
+  updateFromResponseBody,
   initializeRateLimits,
 } from "../services/rateLimitManager.ts";
 import {
@@ -1691,23 +1692,24 @@ export async function handleChatCore({
           // For providers with per-model quotas (passthrough providers, Gemini),
           // each model has independent quota. A 429 on one model must NOT lock out
           // the entire connection — other models may still have quota available.
+          const effectiveRetryAfterMs = retryAfterMs || COOLDOWN_MS.rateLimit;
           if (
             lockModelIfPerModelQuota(
               provider,
               connectionId,
               model,
               "rate_limited",
-              retryAfterMs || COOLDOWN_MS.rateLimit
+              effectiveRetryAfterMs
             )
           ) {
             console.warn(
-              `[provider] Node ${connectionId} model-only rate limited (${statusCode}) for ${model} - ${Math.ceil((retryAfterMs || COOLDOWN_MS.rateLimit) / 1000)}s (connection stays active)`
+              `[provider] Node ${connectionId} model-only rate limited (${statusCode}) for ${model} - ${Math.ceil(effectiveRetryAfterMs / 1000)}s (connection stays active)`
             );
           } else {
-            const rateLimitedUntil = new Date(Date.now() + retryAfterMs).toISOString();
+            const rateLimitedUntil = new Date(Date.now() + effectiveRetryAfterMs).toISOString();
             await updateProviderConnection(connectionId, {
               rateLimitedUntil: rateLimitedUntil,
-              testStatus: "credits_exhausted",
+              testStatus: "unavailable",
               lastErrorType: errorType,
               lastError: message,
               errorCode: statusCode,
@@ -1809,6 +1811,7 @@ export async function handleChatCore({
 
     // Update rate limiter from error response headers
     updateFromHeaders(provider, connectionId, providerResponse.headers, statusCode, model);
+    updateFromResponseBody(provider, connectionId, upstreamErrorBody, statusCode, model);
 
     // ── T5: Intra-family model fallback ──────────────────────────────────────
     // Before returning a model-unavailable error upstream, try sibling models

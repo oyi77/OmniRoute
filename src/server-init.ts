@@ -1,5 +1,6 @@
 // Server startup script
 import initializeCloudSync from "./shared/services/initializeCloudSync";
+import { enforceWebRuntimeEnv } from "./lib/env/runtimeEnv";
 import { enforceSecrets } from "./shared/utils/secretsValidator";
 import { initAuditLog, cleanupExpiredLogs, logAuditEvent } from "./lib/compliance/index";
 import { initConsoleInterceptor } from "./lib/consoleInterceptor";
@@ -13,6 +14,7 @@ async function startServer() {
 
   // FASE-01: Validate required secrets before anything else (fail-fast)
   enforceSecrets();
+  enforceWebRuntimeEnv();
 
   // Compliance: Initialize audit_log table
   try {

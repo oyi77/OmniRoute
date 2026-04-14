@@ -15,3 +15,18 @@ for (const strategy of ROUTING_STRATEGIES) {
     assert.equal(parsed.fallbackStrategy, strategy.value);
   });
 }
+
+test("settings schemas accept cooldown-aware retry knobs", () => {
+  const payload = {
+    requestRetry: 3,
+    maxRetryIntervalSec: 30,
+  };
+
+  const routeParsed = settingsRouteSchema.parse(payload);
+  const sharedParsed = sharedSettingsSchema.parse(payload);
+
+  assert.equal(routeParsed.requestRetry, 3);
+  assert.equal(routeParsed.maxRetryIntervalSec, 30);
+  assert.equal(sharedParsed.requestRetry, 3);
+  assert.equal(sharedParsed.maxRetryIntervalSec, 30);
+});
