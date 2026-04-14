@@ -8,6 +8,7 @@ import {
   joinClaudeCodeCompatibleUrl,
 } from "../services/claudeCodeCompatible.ts";
 import { getGigachatAccessToken } from "../services/gigachatAuth.ts";
+import { applyProviderRequestDefaults } from "../services/providerRequestDefaults.ts";
 import { getOpenAICompatibleType, isClaudeCodeCompatible } from "../services/provider.ts";
 import { sanitizeQwenThinkingToolChoice } from "../services/qwenThinking.ts";
 
@@ -111,6 +112,7 @@ export class DefaultExecutor extends BaseExecutor {
       }
       case "claude":
       case "glm":
+      case "glmt":
       case "kimi-coding":
       case "minimax":
       case "minimax-cn":
@@ -157,11 +159,13 @@ export class DefaultExecutor extends BaseExecutor {
         headers["Authorization"] = `Bearer ${credentials.accessToken || effectiveKey}`;
         break;
       case "claude":
+      case "anthropic":
         effectiveKey
           ? (headers["x-api-key"] = effectiveKey)
           : (headers["Authorization"] = `Bearer ${credentials.accessToken}`);
         break;
       case "glm":
+      case "glmt":
       case "kimi-coding":
       case "bailian-coding-plan":
       case "kimi-coding-apikey":
@@ -216,10 +220,11 @@ export class DefaultExecutor extends BaseExecutor {
     void model;
     void stream;
     void credentials;
+    const withDefaults = applyProviderRequestDefaults(body, this.config.requestDefaults);
     if (this.provider === "qwen" && typeof body === "object" && body !== null) {
-      return sanitizeQwenThinkingToolChoice(body, "QwenExecutor");
+      return sanitizeQwenThinkingToolChoice(withDefaults, "QwenExecutor");
     }
-    return body;
+    return withDefaults;
   }
 
   /**

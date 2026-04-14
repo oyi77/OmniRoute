@@ -61,6 +61,15 @@ describe("Pipeline Wiring — server-init.ts", () => {
   });
 });
 
+describe("Pipeline Wiring — instrumentation-node.ts", () => {
+  const src = readProjectFile("src/instrumentation-node.ts");
+
+  it("should seed default model aliases during startup restore", () => {
+    assert.ok(src, "src/instrumentation-node.ts should exist");
+    assert.match(src, /seedDefaultModelAliases/);
+  });
+});
+
 describe("Pipeline Wiring — sse chat handler", () => {
   const src = readProjectFile("src/sse/handlers/chat.ts");
   const coreSrc = readProjectFile("open-sse/handlers/chatCore.ts");

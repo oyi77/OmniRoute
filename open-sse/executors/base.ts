@@ -2,6 +2,7 @@ import { HTTP_STATUS, FETCH_TIMEOUT_MS } from "../config/constants.ts";
 import { applyFingerprint, isCliCompatEnabled } from "../config/cliFingerprints.ts";
 import { getRotatingApiKey } from "../services/apiKeyRotator.ts";
 import { getOpenAICompatibleType, isClaudeCodeCompatible } from "../services/provider.ts";
+import type { ProviderRequestDefaults } from "../services/providerRequestDefaults.ts";
 import { signRequestBody } from "../services/claudeCodeCCH.ts";
 
 /**
@@ -33,6 +34,8 @@ export type ProviderConfig = {
   refreshUrl?: string;
   authUrl?: string;
   headers?: Record<string, string>;
+  requestDefaults?: ProviderRequestDefaults;
+  timeoutMs?: number;
 };
 
 export type ProviderCredentials = {
@@ -64,6 +67,14 @@ export type ExecuteInput = {
   upstreamExtraHeaders?: Record<string, string> | null;
   /** Original client request headers (read-only). Executors may forward select headers upstream. */
   clientHeaders?: Record<string, string> | null;
+};
+
+export type CountTokensInput = {
+  body: Record<string, unknown>;
+  credentials: ProviderCredentials;
+  log?: ExecutorLog | null;
+  model: string;
+  signal?: AbortSignal | null;
 };
 
 /** Apply model-level extra upstream headers (e.g. Authentication, X-Custom-Auth). */
@@ -151,6 +162,14 @@ export class BaseExecutor {
 
   getFallbackCount() {
     return this.getBaseUrls().length || 1;
+  }
+
+  getTimeoutMs() {
+    const configured = this.config?.timeoutMs;
+    if (typeof configured !== "number" || !Number.isFinite(configured)) {
+      return FETCH_TIMEOUT_MS;
+    }
+    return Math.max(1, Math.floor(configured));
   }
 
   buildUrl(
@@ -251,6 +270,76 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
+  buildCountTokensUrl(model: string, credentials: ProviderCredentials | null = null) {
+    void model;
+    void credentials;
+    const baseUrl = this.buildUrl(model, false, 0, credentials);
+    if (typeof baseUrl !== "string" || baseUrl.length === 0) return null;
+    if (this.config?.format !== "claude" || !baseUrl.includes("/messages")) return null;
+
+    const [path, query = ""] = baseUrl.split("?");
+    const normalizedPath = path.endsWith("/messages")
+      ? `${path}/count_tokens`
+      : `${path}/count_tokens`;
+    return query ? `${normalizedPath}?${query}` : normalizedPath;
+  }
+
+  async countTokens({ model, body, credentials, signal, log }: CountTokensInput) {
+    const url = this.buildCountTokensUrl(model, credentials);
+    if (!url) return null;
+
+    const headers = this.buildHeaders(credentials, false);
+    const requestBody =
+      body && typeof body === "object"
+        ? {
+            ...body,
+            model,
+          }
+        : { model };
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let activeSignal = signal || null;
+    let controller: AbortController | null = null;
+    const timeoutMs = this.getTimeoutMs();
+
+    if (!activeSignal) {
+      controller = new AbortController();
+      timeoutId = setTimeout(() => controller?.abort(), timeoutMs);
+      activeSignal = controller.signal;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: activeSignal || undefined,
+      });
+
+      const text = await response.text();
+      if (!response.ok) {
+        const parsedError = this.parseError(response, text);
+        throw new Error(parsedError.message);
+      }
+
+      const parsed = text ? JSON.parse(text) : {};
+      const inputTokens = Number(parsed?.input_tokens);
+      if (!Number.isFinite(inputTokens)) {
+        throw new Error("Provider count_tokens response missing input_tokens");
+      }
+
+      return { input_tokens: inputTokens, provider: this.provider, source: "provider" };
+    } catch (error) {
+      log?.debug?.(
+        "COUNT_TOKENS",
+        `${this.provider}/${model} real count unavailable: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return null;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
   async execute({
     model,
     body,
@@ -319,7 +408,8 @@ export class BaseExecutor {
         // stalled connections. Streaming requests also need it for the initial fetch() call
         // to prevent hanging on unresponsive providers (e.g. 300s TCP default timeout — #769).
         // Stream idle detection (STREAM_IDLE_TIMEOUT_MS) handles stalls after data starts flowing.
-        const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+        const timeoutMs = this.getTimeoutMs();
+        const timeoutSignal = AbortSignal.timeout(timeoutMs);
         const combinedSignal = signal ? mergeAbortSignals(signal, timeoutSignal) : timeoutSignal;
 
         // Apply CLI fingerprint ordering if enabled for this provider
@@ -377,7 +467,7 @@ export class BaseExecutor {
         // Distinguish timeout errors from other abort errors
         const err = error instanceof Error ? error : new Error(String(error));
         if (err.name === "TimeoutError") {
-          log?.warn?.("TIMEOUT", `Fetch timeout after ${FETCH_TIMEOUT_MS}ms on ${url}`);
+          log?.warn?.("TIMEOUT", `Fetch timeout after ${this.getTimeoutMs()}ms on ${url}`);
         }
         lastError = err;
         if (urlIndex + 1 < fallbackCount) {

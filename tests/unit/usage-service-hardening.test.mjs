@@ -760,7 +760,7 @@ test("usage service covers Codex auth failures, Kiro hard failures, Kimi no-quot
   assert.equal(qwenCatch.message, "Unable to fetch Qwen usage.");
 });
 
-test("usage service covers Qwen, Qoder and GLM branches", async () => {
+test("usage service covers Qwen, Qoder, GLM and GLMT branches", async () => {
   const qwenMissingUrl = await usageService.getUsageForProvider({
     provider: "qwen",
     accessToken: "qwen-token",
@@ -816,6 +816,15 @@ test("usage service covers Qwen, Qoder and GLM branches", async () => {
   assert.equal(glm.plan, "Pro");
   assert.equal(glm.quotas.session.used, 64);
   assert.equal(glm.quotas.session.remaining, 36);
+
+  const glmt = await usageService.getUsageForProvider({
+    provider: "glmt",
+    apiKey: "glm-key",
+    providerSpecificData: { apiRegion: "international" },
+  });
+  assert.equal(glmt.plan, "Pro");
+  assert.equal(glmt.quotas.session.used, 64);
+  assert.equal(glmt.quotas.session.remaining, 36);
 
   globalThis.fetch = async () => new Response("nope", { status: 401 });
   await assert.rejects(

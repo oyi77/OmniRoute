@@ -83,6 +83,16 @@ export const APIKEY_PROVIDERS = {
     textIcon: "GL",
     website: "https://open.bigmodel.cn",
   },
+  glmt: {
+    id: "glmt",
+    alias: "glmt",
+    name: "GLM Thinking",
+    icon: "psychology",
+    color: "#1D4ED8",
+    textIcon: "GT",
+    website: "https://open.bigmodel.cn",
+    apiHint: "Preset GLM profile with higher token budget, thinking enabled, and longer timeout.",
+  },
   "bailian-coding-plan": {
     id: "bailian-coding-plan",
     alias: "bcp",
@@ -1024,6 +1034,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "claude",
   "kimi-coding",
   "glm",
+  "glmt",
 ];
 
 // ── Zod validation at module load (Phase 7.2) ──

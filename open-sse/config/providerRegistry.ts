@@ -9,7 +9,14 @@
 import { platform, arch } from "os";
 import { ANTIGRAVITY_BASE_URLS } from "./antigravityUpstream.ts";
 import { getCodexDefaultHeaders } from "./codexClient.ts";
+import {
+  GLMT_REQUEST_DEFAULTS,
+  GLMT_TIMEOUT_MS,
+  GLM_SHARED_HEADERS,
+  GLM_SHARED_MODELS,
+} from "./glmProvider.ts";
 import { antigravityUserAgent } from "../services/antigravityHeaders.ts";
+import type { ProviderRequestDefaults } from "../services/providerRequestDefaults.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -66,11 +73,13 @@ export interface RegistryEntry {
   authPrefix?: string;
   headers?: Record<string, string>;
   extraHeaders?: Record<string, string>;
+  requestDefaults?: ProviderRequestDefaults;
   oauth?: RegistryOAuth;
   models: RegistryModel[];
   modelsUrl?: string;
   chatPath?: string;
   clientVersion?: string;
+  timeoutMs?: number;
   passthroughModels?: boolean;
   /** Default context window for all models in this provider (can be overridden per-model) */
   defaultContextLength?: number;
@@ -82,6 +91,7 @@ interface LegacyProvider {
   baseUrls?: string[];
   responsesBaseUrl?: string;
   headers?: Record<string, string>;
+  requestDefaults?: ProviderRequestDefaults;
   clientId?: string;
   clientSecret?: string;
   tokenUrl?: string;
@@ -89,6 +99,7 @@ interface LegacyProvider {
   authUrl?: string;
   chatPath?: string;
   clientVersion?: string;
+  timeoutMs?: number;
 }
 
 const KIMI_CODING_SHARED = {
@@ -701,22 +712,24 @@ export const REGISTRY: Record<string, RegistryEntry> = {
     urlSuffix: "?beta=true",
     authType: "apikey",
     authHeader: "x-api-key",
-    headers: {
-      "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    },
-    models: [
-      { id: "glm-5.1", name: "GLM 5.1", contextLength: 204800 },
-      { id: "glm-5", name: "GLM 5" },
-      { id: "glm-5-turbo", name: "GLM 5 Turbo" },
-      { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
-      { id: "glm-4.7", name: "GLM 4.7" },
-      { id: "glm-4.6v", name: "GLM 4.6V (Vision)", contextLength: 128000 },
-      { id: "glm-4.6", name: "GLM 4.6" },
-      { id: "glm-4.5v", name: "GLM 4.5V (Vision)", contextLength: 16000 },
-      { id: "glm-4.5", name: "GLM 4.5", contextLength: 128000 },
-      { id: "glm-4.5-air", name: "GLM 4.5 Air", contextLength: 128000 },
-    ],
+    headers: GLM_SHARED_HEADERS,
+    models: [...GLM_SHARED_MODELS],
+  },
+
+  glmt: {
+    id: "glmt",
+    alias: "glmt",
+    format: "claude",
+    executor: "default",
+    baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
+    defaultContextLength: 200000,
+    urlSuffix: "?beta=true",
+    authType: "apikey",
+    authHeader: "x-api-key",
+    headers: GLM_SHARED_HEADERS,
+    requestDefaults: GLMT_REQUEST_DEFAULTS,
+    timeoutMs: GLMT_TIMEOUT_MS,
+    models: [...GLM_SHARED_MODELS],
   },
 
   "bailian-coding-plan": {
@@ -1886,6 +1899,12 @@ export function generateLegacyProviders(): Record<string, LegacyProvider> {
     }
     if (entry.responsesBaseUrl) {
       p.responsesBaseUrl = entry.responsesBaseUrl;
+    }
+    if (entry.requestDefaults) {
+      p.requestDefaults = entry.requestDefaults;
+    }
+    if (typeof entry.timeoutMs === "number") {
+      p.timeoutMs = entry.timeoutMs;
     }
 
     // Headers

@@ -65,6 +65,20 @@ test("resolveModelOrError rejects ambiguous aliases without a provider prefix", 
   assert.match(json.error.message, /Ambiguous model/i);
 });
 
+test("resolveModelOrError rejects ambiguous slashful canonical ids instead of misrouting them", async () => {
+  const result = await resolveModelOrError(
+    "openai/gpt-oss-120b",
+    { messages: [{ role: "user", content: "hello" }] },
+    "/v1/chat/completions"
+  );
+
+  assert.ok(result.error);
+  assert.equal(result.error.status, 400);
+  const json = await result.error.json();
+  assert.match(json.error.message, /Ambiguous model/i);
+  assert.match(json.error.message, /openai\/gpt-oss-120b/i);
+});
+
 test("resolveModelOrError rejects malformed model strings", async () => {
   const result = await resolveModelOrError(
     "../etc/passwd",

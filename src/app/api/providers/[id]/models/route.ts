@@ -16,6 +16,7 @@ import { getProviderOutboundGuard } from "@/shared/network/outboundUrlGuard";
 import { getStaticQoderModels } from "@omniroute/open-sse/services/qoderCli.ts";
 import { getAntigravityHeaders } from "@omniroute/open-sse/services/antigravityHeaders.ts";
 import { getAntigravityModelsDiscoveryUrls } from "@omniroute/open-sse/config/antigravityUpstream.ts";
+import { getGlmModelsUrl } from "@omniroute/open-sse/config/glmProvider.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -27,16 +28,6 @@ function getProviderBaseUrl(providerSpecificData: unknown): string | null {
   const data = asRecord(providerSpecificData);
   const baseUrl = data.baseUrl;
   return typeof baseUrl === "string" && baseUrl.trim().length > 0 ? baseUrl : null;
-}
-
-const GLM_MODELS_URLS = {
-  international: "https://api.z.ai/api/coding/paas/v4/models",
-  china: "https://open.bigmodel.cn/api/coding/paas/v4/models",
-} as const;
-
-function getGlmApiRegion(providerSpecificData: unknown): keyof typeof GLM_MODELS_URLS {
-  const data = asRecord(providerSpecificData);
-  return data.apiRegion === "china" ? "china" : "international";
 }
 
 function normalizeAntigravityModelsResponse(data: unknown): Array<{ id: string; name: string }> {
@@ -565,9 +556,8 @@ export async function GET(
       });
     }
 
-    if (provider === "glm") {
-      const region = getGlmApiRegion(connection.providerSpecificData);
-      const url = GLM_MODELS_URLS[region];
+    if (provider === "glm" || provider === "glmt") {
+      const url = getGlmModelsUrl(connection.providerSpecificData);
       const token = apiKey || accessToken;
 
       const response = await safeOutboundFetch(url, {

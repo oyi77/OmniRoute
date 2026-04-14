@@ -4,6 +4,7 @@
 
 import { PROVIDERS } from "../config/constants.ts";
 import { getAntigravityFetchAvailableModelsUrls } from "../config/antigravityUpstream.ts";
+import { getGlmQuotaUrl } from "../config/glmProvider.ts";
 import { safePercentage } from "@/shared/utils/formatting";
 import { fetchBailianQuota, type BailianTripleWindowQuota } from "./bailianQuotaFetcher.ts";
 import {
@@ -117,18 +118,8 @@ function shouldDisplayGitHubQuota(quota: UsageQuota | null): quota is UsageQuota
   return quota.total > 0 || quota.remainingPercentage !== undefined;
 }
 
-// GLM (Z.AI) quota API config
-const GLM_QUOTA_URLS: Record<string, string> = {
-  international: "https://api.z.ai/api/monitor/usage/quota/limit",
-  china: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
-};
-
 async function getGlmUsage(apiKey: string, providerSpecificData?: Record<string, unknown>) {
-  const region =
-    typeof providerSpecificData?.apiRegion === "string"
-      ? providerSpecificData.apiRegion
-      : "international";
-  const quotaUrl = GLM_QUOTA_URLS[region] || GLM_QUOTA_URLS.international;
+  const quotaUrl = getGlmQuotaUrl(providerSpecificData);
 
   const res = await fetch(quotaUrl, {
     headers: {
@@ -239,6 +230,7 @@ export async function getUsageForProvider(connection) {
     case "qoder":
       return await getIflowUsage(accessToken);
     case "glm":
+    case "glmt":
       return await getGlmUsage(apiKey, providerSpecificData);
     case "cursor":
       return await getCursorUsage(accessToken);

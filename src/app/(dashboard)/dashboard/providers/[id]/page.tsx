@@ -5122,7 +5122,7 @@ function AddApiKeyModal({
   const defaultBaseUrl = getProviderBaseUrlDefault(provider);
   const isVertex = provider === "vertex";
   const defaultRegion = "us-central1";
-  const isGlm = provider === "glm";
+  const isGlm = provider === "glm" || provider === "glmt";
   const isQoder = provider === "qoder";
   const isCloudflare = provider === "cloudflare-ai";
 
@@ -5493,7 +5493,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
   const usesBaseUrl = CONFIGURABLE_BASE_URL_PROVIDERS.has(connection?.provider || "");
   const defaultBaseUrl = getProviderBaseUrlDefault(connection?.provider);
   const isVertex = connection?.provider === "vertex";
-  const isGlm = connection?.provider === "glm";
+  const isGlm = connection?.provider === "glm" || connection?.provider === "glmt";
   const isCloudflare = connection?.provider === "cloudflare-ai";
   const isCodex = connection?.provider === "codex";
   const defaultRegion = "us-central1";
