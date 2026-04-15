@@ -442,13 +442,6 @@ export default function ClaudeToolCard({
                     <span className="material-symbols-outlined text-text-muted text-[14px]">
                       arrow_forward
                     </span>
-                    <input
-                      type="text"
-                      value={modelMappings[model.alias] || ""}
-                      onChange={(e) => onModelMappingChange(model.alias, e.target.value)}
-                      placeholder={t("providerModelPlaceholder")}
-                      className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
-                    />
                     <button
                       onClick={() => openModelSelector(model.alias)}
                       disabled={!hasActiveProviders}
@@ -456,6 +449,13 @@ export default function ClaudeToolCard({
                     >
                       {t("selectModel")}
                     </button>
+                    <input
+                      type="text"
+                      value={modelMappings[model.alias] || ""}
+                      onChange={(e) => onModelMappingChange(model.alias, e.target.value)}
+                      placeholder={t("providerModelPlaceholder")}
+                      className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                    />
                     {modelMappings[model.alias] && (
                       <button
                         onClick={() => onModelMappingChange(model.alias, "")}

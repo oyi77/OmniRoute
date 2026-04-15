@@ -570,13 +570,6 @@ openai_base_url = "${getEffectiveBaseUrl()}"
                   <span className="material-symbols-outlined text-text-muted text-[14px]">
                     arrow_forward
                   </span>
-                  <input
-                    type="text"
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    placeholder="gpt-5.4"
-                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
-                  />
                   <button
                     onClick={() => {
                       setModalTarget(null);
@@ -587,6 +580,13 @@ openai_base_url = "${getEffectiveBaseUrl()}"
                   >
                     {t("selectModel")}
                   </button>
+                  <input
+                    type="text"
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    placeholder="gpt-5.4"
+                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  />
                   {selectedModel && (
                     <button
                       onClick={() => setSelectedModel("")}
@@ -649,15 +649,6 @@ openai_base_url = "${getEffectiveBaseUrl()}"
                     <span className="material-symbols-outlined text-border group-hover:text-primary transition-colors text-[14px]">
                       arrow_forward
                     </span>
-                    <input
-                      type="text"
-                      value={modelMappings[defaultModel] || ""}
-                      onChange={(e) =>
-                        setModelMappings({ ...modelMappings, [defaultModel]: e.target.value })
-                      }
-                      placeholder={`Route ${defaultModel} to...`}
-                      className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
-                    />
                     <button
                       onClick={() => {
                         setModalTarget(defaultModel);
@@ -668,6 +659,15 @@ openai_base_url = "${getEffectiveBaseUrl()}"
                     >
                       {t("selectModel")}
                     </button>
+                    <input
+                      type="text"
+                      value={modelMappings[defaultModel] || ""}
+                      onChange={(e) =>
+                        setModelMappings({ ...modelMappings, [defaultModel]: e.target.value })
+                      }
+                      placeholder={`Route ${defaultModel} to...`}
+                      className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                    />
                     {modelMappings[defaultModel] && (
                       <button
                         onClick={() => {

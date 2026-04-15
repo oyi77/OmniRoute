@@ -559,7 +559,7 @@ const locateCommand = async (command: string, env: Record<string, string | undef
       }
       const winExt = /\.(cmd|exe|bat|com)$/i;
       const preferred = lines.find((l) => winExt.test(l)) || lines[0];
-      return { installed: true, commandPath: preferred, reason: null };
+      return { installed: true, commandPath: normalizeMsys2Path(preferred), reason: null };
     }
     return { installed: false, commandPath: null, reason: "not_found" };
   }

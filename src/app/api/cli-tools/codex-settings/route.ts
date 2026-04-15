@@ -227,22 +227,15 @@ export async function POST(request: Request) {
     // Fix: Codex CLI sends /chat/completions; ensure the base resolves strictly to /api/v1
     const normalizedBaseUrl = baseUrl.replace(/\/v1\/?$/, "").replace(/\/api\/?$/, "") + "/api/v1";
 
-    if (wireApi === "responses") {
-      // Create a custom provider if wire_api is specified and is not the default
-      parsed._root.model_provider = "omniroute";
-      parsed._sections["model_providers.omniroute"] = {
-        name: "OmniRoute",
-        base_url: normalizedBaseUrl,
-        wire_api: "responses",
-        env_key: "OMNIROUTE_API_KEY",
-      };
-      delete parsed._root.openai_base_url;
-    } else {
-      // Use native openai_base_url for default standard chat/completions integrations
-      parsed._root.openai_base_url = normalizedBaseUrl;
-      delete parsed._root.model_provider;
-      delete parsed._sections["model_providers.omniroute"];
-    }
+    // Always create a custom provider to reliably pass wire_api and use OMNIROUTE_API_KEY
+    parsed._root.model_provider = "omniroute";
+    parsed._sections["model_providers.omniroute"] = {
+      name: "OmniRoute",
+      base_url: normalizedBaseUrl,
+      wire_api: wireApi || "chat",
+      env_key: "OMNIROUTE_API_KEY",
+    };
+    delete parsed._root.openai_base_url;
 
     // Process model aliases into notice.model_migrations
     if (modelMappings && Object.keys(modelMappings).length > 0) {
