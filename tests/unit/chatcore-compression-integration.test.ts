@@ -15,6 +15,8 @@ test("chatCore integration: compressContext called proactively when context exce
     model,
     messages: [
       { role: "system", content: "You are helpful." },
+      { role: "user", content: "Garbage 1".repeat(1000) },
+      { role: "assistant", content: "Garbage 2".repeat(1000) },
       { role: "user", content: largeMessage },
     ],
   };
@@ -79,9 +81,9 @@ test("chatCore integration: compression preserves message structure", async () =
     model,
     messages: [
       { role: "system", content: "You are helpful." },
-      { role: "user", content: "x".repeat(50000) },
+      { role: "user", content: "x".repeat(500000) },
       { role: "assistant", content: "Response 1" },
-      { role: "user", content: "x".repeat(50000) },
+      { role: "user", content: "x".repeat(500000) },
       { role: "assistant", content: "Response 2" },
       { role: "user", content: "Final question" },
     ],
@@ -108,7 +110,7 @@ test("chatCore integration: compression handles tool messages", async () => {
   const model = "gpt-4";
   const contextLimit = getTokenLimit(provider, model);
 
-  const longToolOutput = "x".repeat(10000);
+  const longToolOutput = "x".repeat(50000);
   const body = {
     model,
     messages: [
