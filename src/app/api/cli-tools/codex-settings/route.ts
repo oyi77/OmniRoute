@@ -72,7 +72,8 @@ const toToml = (parsed: Record<string, any>) => {
     lines.push("");
     lines.push(`[${section}]`);
     Object.entries(values).forEach(([key, value]) => {
-      lines.push(`${key} = "${value}"`);
+      const formattedKey = key.includes(".") ? `"${key}"` : key;
+      lines.push(`${formattedKey} = "${value}"`);
     });
   });
 
@@ -233,7 +234,7 @@ export async function POST(request: Request) {
         name: "OmniRoute",
         base_url: normalizedBaseUrl,
         wire_api: "responses",
-        env_key: "OPENAI_API_KEY",
+        env_key: "OMNIROUTE_API_KEY",
       };
       delete parsed._root.openai_base_url;
     } else {
