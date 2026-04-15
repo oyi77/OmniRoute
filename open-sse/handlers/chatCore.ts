@@ -97,6 +97,7 @@ import {
   getModelFamily,
 } from "../services/modelFamilyFallback.ts";
 import { computeRequestHash, deduplicate, shouldDeduplicate } from "../services/requestDedup.ts";
+import { compressContext, estimateTokens, getTokenLimit } from "../services/contextManager.ts";
 import {
   getBackgroundTaskReason,
   getDegradedModel,
@@ -1285,6 +1286,53 @@ export async function handleChatCore({
           `Capping ${field} from ${translatedBody[field]} to ${providerCap} for ${provider}`
         );
         translatedBody[field] = providerCap;
+      }
+    }
+  }
+
+  if (translatedBody && translatedBody.messages && Array.isArray(translatedBody.messages)) {
+    const estimatedTokens = estimateTokens(JSON.stringify(translatedBody.messages));
+    const contextLimit = getTokenLimit(provider, effectiveModel);
+    const COMPRESSION_THRESHOLD = 0.85;
+    const threshold = Math.floor(contextLimit * COMPRESSION_THRESHOLD);
+
+    if (estimatedTokens > threshold) {
+      log?.info?.(
+        "CONTEXT",
+        `Proactive compression triggered: ${estimatedTokens} tokens > ${threshold} threshold (${contextLimit} limit)`
+      );
+
+      const compressionResult = compressContext(translatedBody, {
+        provider,
+        model: effectiveModel,
+        maxTokens: contextLimit,
+      });
+
+      if (compressionResult.compressed) {
+        translatedBody = compressionResult.body;
+        const stats = compressionResult.stats;
+        const layersInfo =
+          stats && "layers" in stats && Array.isArray(stats.layers)
+            ? ` (layers: ${stats.layers.map((l: { name: string }) => l.name).join(", ")})`
+            : "";
+
+        log?.info?.(
+          "CONTEXT",
+          `Context compressed: ${stats.original} → ${stats.final} tokens${layersInfo}`
+        );
+
+        logAuditEvent({
+          action: "context.proactive_compression",
+          actor: apiKeyInfo?.name || "system",
+          target: connectionId || provider || "chat",
+          details: {
+            provider,
+            model: effectiveModel,
+            original_tokens: stats.original,
+            final_tokens: stats.final,
+            layers: "layers" in stats ? stats.layers : undefined,
+          },
+        });
       }
     }
   }
