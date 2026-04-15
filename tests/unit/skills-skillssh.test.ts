@@ -128,7 +128,9 @@ test("searchSkillsSh throws on non-ok response", async () => {
 test("fetchSkillMd returns SKILL.md content on success", async () => {
   const mdContent = "# My Skill\nDoes things.";
   globalThis.fetch = async (url) => {
-    assert.ok(url.includes("raw.githubusercontent.com/owner/repo/main/skills/my-skill/SKILL.md"));
+    const u = new URL(url.toString());
+    assert.equal(u.hostname, "raw.githubusercontent.com");
+    assert.ok(u.pathname.includes("/owner/repo/main/skills/my-skill/SKILL.md"));
     return new Response(mdContent, { status: 200 });
   };
 
@@ -200,7 +202,7 @@ test("skillssh install route registers a skill from skills.sh", async () => {
   const mdContent = "# Docker Best Practices\nContent here.";
 
   globalThis.fetch = async (url) => {
-    if (url.includes("raw.githubusercontent.com")) {
+    if (new URL(url.toString()).hostname === "raw.githubusercontent.com") {
       return new Response(mdContent, { status: 200 });
     }
     return new Response("Not Found", { status: 404 });
@@ -273,7 +275,7 @@ test("skillssh install route returns 500 when SKILL.md fetch fails", async () =>
 
 test("skillssh install route defaults version to 1.0.0 when omitted", async () => {
   globalThis.fetch = async (url) => {
-    if (url.includes("raw.githubusercontent.com")) {
+    if (new URL(url.toString()).hostname === "raw.githubusercontent.com") {
       return new Response("# Skill Content", { status: 200 });
     }
     return new Response("Not Found", { status: 404 });
