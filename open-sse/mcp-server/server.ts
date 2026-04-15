@@ -72,6 +72,7 @@ import { resolveOmniRouteBaseUrl } from "../../src/shared/utils/resolveOmniRoute
 
 const OMNIROUTE_BASE_URL = resolveOmniRouteBaseUrl();
 const OMNIROUTE_API_KEY = process.env.OMNIROUTE_API_KEY || "";
+const MCP_SEARCH_TIMEOUT_MS = Number(process.env.MCP_SEARCH_TIMEOUT_MS) || 20000;
 const MCP_ENFORCE_SCOPES = process.env.OMNIROUTE_MCP_ENFORCE_SCOPES === "true";
 const MCP_ALLOWED_SCOPES = new Set(
   (process.env.OMNIROUTE_MCP_SCOPES || "")
@@ -138,7 +139,11 @@ async function omniRouteFetch(path: string, options: RequestInit = {}): Promise<
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  const response = await fetch(url, { ...options, headers, signal: AbortSignal.timeout(10000) });
+  const timeoutMs =
+    path.startsWith("/v1/search") || path.startsWith("/api/v1/search")
+      ? MCP_SEARCH_TIMEOUT_MS
+      : 10000;
+  const response = await fetch(url, { ...options, headers, signal: AbortSignal.timeout(timeoutMs) });
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "Unknown error");

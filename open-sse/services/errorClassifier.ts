@@ -26,6 +26,20 @@ export function isEmptyContentResponse(responseBody: unknown): boolean {
     const hasReasoning =
       reasoningContent !== null && reasoningContent !== undefined && reasoningContent !== "";
 
+    if (hasContent || hasReasoning || hasToolCalls) return false;
+
+    // Detect quota-exhausted zero-token responses (e.g. GLM coding plan at limit):
+    // finish_reason="stop" with content=null and all usage fields 0.
+    // These are not real completions — the upstream silently returned empty.
+    const usage = body.usage as Record<string, unknown> | undefined;
+    if (
+      usage &&
+      (usage.prompt_tokens === 0 || usage.prompt_tokens === "0") &&
+      (usage.completion_tokens === 0 || usage.completion_tokens === "0")
+    ) {
+      return true;
+    }
+
     return !hasContent && !hasReasoning && !hasToolCalls;
   }
 

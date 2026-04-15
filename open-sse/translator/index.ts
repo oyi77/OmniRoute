@@ -207,7 +207,8 @@ export function translateRequest(
   // Inject reasoning_content = "" for DeepSeek/Reasoning models assistant messages with tool_calls
   // if omitted by the client, to avoid upstream 400 errors (e.g. "Messages with role 'assistant' that contain tool_calls must also include reasoning_content")
   const isReasoner =
-    provider === "deepseek" || (typeof model === "string" && /r1|reason/i.test(model));
+    provider === "deepseek" ||
+    (typeof model === "string" && /r1|reason|kimi/i.test(model));
   if (isReasoner && result.messages && Array.isArray(result.messages)) {
     for (const msg of result.messages) {
       if (
