@@ -162,6 +162,28 @@ test("public login bootstrap route POST hashes and stores passwords", async () =
   assert.equal(await bcrypt.compare(password, settings.password), true);
 });
 
+test("login bootstrap route POST rejects unauthenticated writes after setup is complete", async () => {
+  await settingsDb.updateSettings({
+    requireLogin: true,
+    password: "hashed-password",
+    setupComplete: true,
+  });
+
+  const request = new Request("http://localhost/api/settings/require-login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ requireLogin: false }),
+  });
+
+  const response = await route.POST(request);
+  const body = await response.json();
+  const settings = await settingsDb.getSettings();
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(body, { error: "Unauthorized" });
+  assert.equal(settings.requireLogin, true);
+});
+
 test("public login bootstrap route POST returns 500 when hashing fails", async () => {
   bcrypt.hash = async () => {
     throw new Error("hash failed");

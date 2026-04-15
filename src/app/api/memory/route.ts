@@ -21,6 +21,12 @@ export async function GET(request: Request) {
     const { searchParams } = url;
 
     const paginationParams = parsePaginationParams(searchParams);
+    const rawOffset = searchParams.get("offset");
+    const offset =
+      typeof rawOffset === "string" && rawOffset.trim().length > 0
+        ? Math.max(0, Number.parseInt(rawOffset, 10) || 0)
+        : undefined;
+    const query = searchParams.get("q") || undefined;
 
     const apiKeyId = searchParams.get("apiKeyId") || undefined;
     const type = (searchParams.get("type") as any) || undefined;
@@ -30,8 +36,10 @@ export async function GET(request: Request) {
       apiKeyId,
       type,
       sessionId,
-      page: paginationParams.page,
+      query,
       limit: paginationParams.limit,
+      offset,
+      page: offset === undefined ? paginationParams.page : undefined,
     });
 
     const stats = {
@@ -39,7 +47,15 @@ export async function GET(request: Request) {
       byType: result.byType ?? {},
     };
 
-    const paginatedResponse = buildPaginatedResponse(result.data, result.total, paginationParams);
+    const responsePagination =
+      offset === undefined
+        ? paginationParams
+        : {
+            ...paginationParams,
+            page: Math.floor(offset / paginationParams.limit) + 1,
+          };
+
+    const paginatedResponse = buildPaginatedResponse(result.data, result.total, responsePagination);
 
     return NextResponse.json({
       ...paginatedResponse,

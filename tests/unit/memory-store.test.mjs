@@ -209,6 +209,45 @@ test("listMemories supports limit and offset pagination even when only offset is
   assert.equal(offsetOnly.total, 3);
 });
 
+test("listMemories applies query filtering before pagination and type stats", async () => {
+  insertMemoryRow({
+    id: "search-1",
+    key: "typescript:guide",
+    content: "TypeScript project setup",
+    createdAt: "2026-04-01T00:00:00.000Z",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+  insertMemoryRow({
+    id: "search-2",
+    type: "episodic",
+    key: "deployment:note",
+    content: "Production deployment checklist",
+    createdAt: "2026-04-02T00:00:00.000Z",
+    updatedAt: "2026-04-02T00:00:00.000Z",
+  });
+  insertMemoryRow({
+    id: "search-3",
+    type: "semantic",
+    key: "tooling:typescript",
+    content: "Editor plugins and linting",
+    createdAt: "2026-04-03T00:00:00.000Z",
+    updatedAt: "2026-04-03T00:00:00.000Z",
+  });
+
+  const filtered = await store.listMemories({
+    apiKeyId: "key-a",
+    query: "typescript",
+    limit: 10,
+  });
+
+  assert.deepEqual(
+    filtered.data.map((memory) => memory.id),
+    ["search-3", "search-1"]
+  );
+  assert.equal(filtered.total, 2);
+  assert.deepEqual(filtered.byType, { factual: 1, semantic: 1 });
+});
+
 // ---------------------------------------------------------------------------
 // Pagination via page parameter (page-based, complementing the offset tests above)
 // SKIPPED: These tests require insertMemoryRow() which triggers a pre-existing

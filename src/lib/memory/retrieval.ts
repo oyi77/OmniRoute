@@ -243,14 +243,9 @@ export async function retrieveMemories(
           ftsParams.push(cutoff);
         }
         try {
-          rows = db.prepare(ftsQuery).all(...ftsParams) as MemoryRow[];
-          if (rows.length === 0) {
-            query += ` ORDER BY ${columns.createdAt} DESC LIMIT 100`;
-            rows = db.prepare(query).all(...params) as MemoryRow[];
-          }
+          ftsRows = db.prepare(ftsQuery).all(...ftsParams) as MemoryRow[];
         } catch {
-          query += ` ORDER BY ${columns.createdAt} DESC LIMIT 100`;
-          rows = db.prepare(query).all(...params) as MemoryRow[];
+          ftsRows = [];
         }
       }
       // Get chronological results for keyword scoring

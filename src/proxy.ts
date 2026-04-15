@@ -9,7 +9,6 @@ const PUBLIC_API_ROUTES = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/status",
-  "/api/settings/require-login",
   "/api/init",
   "/api/monitoring/health",
   "/api/v1/",
@@ -17,14 +16,23 @@ const PUBLIC_API_ROUTES = [
   "/api/sync/bundle",
   "/api/oauth/",
 ];
+const PUBLIC_READONLY_API_ROUTES = ["/api/settings/require-login"];
 
 let apiAuthModulePromise: Promise<typeof import("./shared/utils/apiAuth")> | null = null;
 let settingsModulePromise: Promise<typeof import("./lib/db/settings")> | null = null;
 let modelSyncModulePromise: Promise<typeof import("./shared/services/modelSyncScheduler")> | null =
   null;
 
-function isPublicApiRoute(pathname: string): boolean {
-  return PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route));
+function isPublicApiRoute(pathname: string, method = "GET"): boolean {
+  if (PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route))) {
+    return true;
+  }
+
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    return false;
+  }
+
+  return PUBLIC_READONLY_API_ROUTES.some((route) => pathname.startsWith(route));
 }
 
 function getJwtSecret(): Uint8Array {
@@ -92,7 +100,7 @@ export async function proxy(request: any) {
   // ──────────────── Protect Management API Routes ────────────────
   if (pathname.startsWith("/api/") && !pathname.startsWith("/api/v1/")) {
     // Allow public routes (login, logout, health, etc.)
-    if (isPublicApiRoute(pathname)) {
+    if (isPublicApiRoute(pathname, request.method)) {
       return response;
     }
 

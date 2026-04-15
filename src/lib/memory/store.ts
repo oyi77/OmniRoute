@@ -245,6 +245,7 @@ export async function listMemories(filters: {
   apiKeyId?: string;
   type?: MemoryType;
   sessionId?: string;
+  query?: string;
   limit?: number;
   offset?: number;
   page?: number;
@@ -268,6 +269,12 @@ export async function listMemories(filters: {
   if (filters.sessionId) {
     whereClauses.push("session_id = ?");
     whereParams.push(filters.sessionId);
+  }
+
+  if (typeof filters.query === "string" && filters.query.trim().length > 0) {
+    const likeQuery = `%${filters.query.trim().toLowerCase()}%`;
+    whereClauses.push("(LOWER(content) LIKE ? OR LOWER(key) LIKE ?)");
+    whereParams.push(likeQuery, likeQuery);
   }
 
   // Run COUNT query + byType aggregation in a single query

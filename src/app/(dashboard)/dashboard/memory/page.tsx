@@ -55,7 +55,11 @@ export default function MemoryPage() {
         setMemories(data.data || []);
         setTotalPages(data.totalPages || 1);
         setTotal(data.total || 0);
-        setStats(data.stats || { totalEntries: 0, tokensUsed: 0, hitRate: 0 });
+        setStats({
+          totalEntries: data.stats?.total ?? data.total ?? 0,
+          tokensUsed: data.stats?.tokensUsed ?? 0,
+          hitRate: data.stats?.hitRate ?? 0,
+        });
       }
     } catch (error) {
       console.error("Failed to fetch memories:", error);
