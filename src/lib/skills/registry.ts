@@ -262,11 +262,18 @@ class SkillRegistry {
           this.updateVersionCache(skill);
         }
         this.lastLoaded = Date.now();
+      } catch (err: any) {
+        log.error("loadFromDatabase error:", err);
+        throw err;
       } finally {
         this.pendingLoad = null;
       }
     })();
-    await this.pendingLoad;
+    try {
+      await this.pendingLoad;
+    } finally {
+      this.pendingLoad = null;
+    }
   }
 }
 

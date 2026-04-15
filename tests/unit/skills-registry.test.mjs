@@ -13,6 +13,7 @@ const { skillRegistry } = await import("../../src/lib/skills/registry.ts");
 function resetRegistryState() {
   skillRegistry["registeredSkills"].clear();
   skillRegistry["versionCache"].clear();
+  skillRegistry.invalidateCache();
 }
 
 async function resetStorage() {
@@ -82,7 +83,7 @@ test("skillRegistry can reload persisted skills from SQLite", async () => {
     name: "file-write",
     version: "1.0.0",
     description: "writes files",
-    schema: { input: { path: "string", content: "string" }, output: { ok: true } },
+    schema: { input: { path: "string", content: "string" }, output: { status: "boolean" } },
     handler: "file-write-handler",
     apiKeyId: "key-b",
   });
@@ -98,6 +99,7 @@ test("skillRegistry can reload persisted skills from SQLite", async () => {
 
   resetRegistryState();
   await skillRegistry.loadFromDatabase();
+
   const loadedNames = skillRegistry
     .list()
     .map((skill) => skill.name)
