@@ -215,7 +215,7 @@ export function runMigrations(db: Database.Database): number {
         const row = db
           .prepare("SELECT COUNT(*) as c FROM provider_connections")
           .get() as { c?: number } | undefined;
-        return Boolean(row && row.c > 0);
+        return Boolean(row && (row.c ?? 0) > 0);
       } catch {
         return false;
       }
