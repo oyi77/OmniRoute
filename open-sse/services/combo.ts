@@ -1252,21 +1252,26 @@ export async function handleComboChat({
       const { getLKGP } = await import("../../src/lib/localDb");
       const lkgpProvider = await getLKGP(combo.name, combo.id || combo.name);
 
-      if (lkgpProvider) {
-        const lkgpIndex = orderedTargets.findIndex(
-          (target) =>
-            target.provider === lkgpProvider || target.modelStr.startsWith(`${lkgpProvider}/`)
-        );
-
-        if (lkgpIndex > 0) {
-          const [lkgpTarget] = orderedTargets.splice(lkgpIndex, 1);
-          orderedTargets.unshift(lkgpTarget);
-          log.info(
-            "COMBO",
-            `[LKGP] Prioritizing last known good provider ${lkgpProvider} for combo "${combo.name}"`
+if (lkgpProvider) {
+          const lkgpIndex = orderedTargets.findIndex(
+            (target) =>
+              target.provider === lkgpProvider || target.modelStr.startsWith(`${lkgpProvider}/`)
           );
+
+          if (lkgpIndex > 0) {
+            const [lkgpTarget] = orderedTargets.splice(lkgpIndex, 1);
+            orderedTargets.unshift(lkgpTarget);
+            log.info(
+              "COMBO",
+              `[LKGP] Prioritizing last known good provider ${lkgpProvider} for combo "${combo.name}"`
+            );
+          } else if (lkgpIndex === 0) {
+            log.debug(
+              "COMBO",
+              `[LKGP] Last known good provider ${lkgpProvider} already first for combo "${combo.name}"`
+            );
+          }
         }
-      }
     } catch (err) {
       log.warn("COMBO", "Failed to retrieve Last Known Good Provider. This is non-fatal.", { err });
     }

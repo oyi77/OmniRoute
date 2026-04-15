@@ -88,7 +88,7 @@ export const updateSettingsSchema = z.object({
   skillsmpApiKey: z.string().max(200).optional(),
   // models.dev sync settings
   modelsDevSyncEnabled: z.boolean().optional(),
-  modelsDevSyncInterval: z.number().int().min(1000).max(604800000).optional(),
+  modelsDevSyncInterval: z.number().int().min(3600000).max(604800000).optional(), // 1 hour minimum, 7 days maximum
   // Missing settings
   lkgpEnabled: z.boolean().optional(),
   backgroundDegradation: z.unknown().optional(),
