@@ -61,6 +61,31 @@ export const OAUTH_INVALID_TOKEN_SIGNALS = [
   "invalid credentials",
 ];
 
+// Context overflow patterns — the prompt exceeds the model's maximum context length.
+// Different providers phrase this differently. Used to decide whether a 400 error
+// should trigger combo fallback (a different model may have a larger context window).
+const CONTEXT_OVERFLOW_PATTERNS = [
+  /\binput is too long\b/i,
+  /\binput too long\b/i,
+  /\bcontext.*(too long|exceeded|overflow|limit)/i,
+  /\btoo many tokens\b/i,
+  /\bprompt is too long\b/i,
+  /\bcontext window/i,
+  /\bmaximum context/i,
+  /\bmax.*token/i,
+  /\btoken limit/i,
+  /\brequest too large\b/i,
+];
+
+// Malformed request patterns — the model rejected the message format but a different
+// provider/model in the combo may accept it.
+const MALFORMED_REQUEST_PATTERNS = [
+  /\bimproperly formed request\b/i,
+  /\binvalid.*message.*format/i,
+  /\bmessages must alternate/i,
+  /\bempty (message|content)/i,
+];
+
 /**
  * T06: Returns true if response body indicates the account is permanently deactivated.
  */
@@ -860,37 +885,8 @@ export function checkFallbackError(
     };
   }
 
-  // 400 Bad Request — check for context overflow / malformed request before blanket rejection.
-  // When using combos (multiple models), a 400 caused by context length exceeding one model's
-  // limit should trigger fallback so the next model (potentially with a larger context window)
-  // can be tried instead of failing immediately.
+  // 400 — context overflow / malformed request may succeed on another model in the combo
   if (status === HTTP_STATUS.BAD_REQUEST) {
-    const lowerError = errorStr.toLowerCase();
-
-    // Context overflow: the prompt exceeds the model's maximum context length.
-    // Different providers phrase this differently.
-    const CONTEXT_OVERFLOW_PATTERNS = [
-      /\binput is too long\b/i,
-      /\binput too long\b/i,
-      /\bcontext.*(too long|exceeded|overflow|limit)/i,
-      /\btoo many tokens\b/i,
-      /\bprompt is too long\b/i,
-      /\bcontext window/i,
-      /\bmaximum context/i,
-      /\bmax.*token/i,
-      /\btoken limit/i,
-      /\brequest too large\b/i,
-    ];
-
-    // Malformed request: the model rejected the message format but a different
-    // provider/model in the combo may accept it.
-    const MALFORMED_REQUEST_PATTERNS = [
-      /\bimproperly formed request\b/i,
-      /\binvalid.*message.*format/i,
-      /\bmessages must alternate/i,
-      /\bempty (message|content)/i,
-    ];
-
     const isOverflow = CONTEXT_OVERFLOW_PATTERNS.some((p) => p.test(errorStr));
     const isMalformed = MALFORMED_REQUEST_PATTERNS.some((p) => p.test(errorStr));
 
