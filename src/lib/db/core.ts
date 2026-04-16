@@ -791,15 +791,15 @@ export function getDbInstance(): SqliteDatabase {
           .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='key_value'")
           .get();
         if (hasKv) {
-          preservedKeyValue = kvProbe
-            .prepare("SELECT namespace, key, value FROM key_value")
-            .all() as Array<{ namespace: string; key: string; value: string }>;
-          if (preservedKeyValue.length > KEY_VALUE_PRESERVE_LIMIT) {
+          const rowCount = (kvProbe.prepare("SELECT COUNT(*) AS c FROM key_value").get() as { c: number }).c;
+          if (rowCount > KEY_VALUE_PRESERVE_LIMIT) {
             console.warn(
-              `[DB] key_value has ${preservedKeyValue.length} rows (limit ${KEY_VALUE_PRESERVE_LIMIT}), skipping preservation`
+              `[DB] key_value has ${rowCount} rows (limit ${KEY_VALUE_PRESERVE_LIMIT}), skipping preservation`
             );
-            preservedKeyValue = [];
           } else {
+            preservedKeyValue = kvProbe
+              .prepare("SELECT namespace, key, value FROM key_value")
+              .all() as Array<{ namespace: string; key: string; value: string }>;
             preservedKeyValue = preservedKeyValue.filter(
               (row) => !SKIP_PRESERVE_NAMESPACES.has(row.namespace)
             );
