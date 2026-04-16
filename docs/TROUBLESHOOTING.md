@@ -27,7 +27,7 @@ Common problems and solutions for OmniRoute.
 
 ### Login page crashes or shows "Module self-registration" error
 
-**Cause:** You are running a Node.js version outside OmniRoute's approved secure runtime floor. The most common case is running an older Node 20/22 patch level that falls below the patched security floor OmniRoute requires.
+**Cause:** You are running a Node.js version outside OmniRoute's approved secure runtime floor. The most common case is running an older Node 20, 22, or 24 patch level that falls below the patched security floor OmniRoute requires.
 
 **Symptoms:**
 
@@ -42,7 +42,7 @@ Common problems and solutions for OmniRoute.
    nvm install 24
    nvm use 24
    ```
-2. Verify your version: `node --version` should show `v24.0.0` or newer
+2. Verify your version: `node --version` should show `v24.0.0` or newer on the 24.x LTS line
 3. Reinstall OmniRoute: `npm install -g omniroute`
 4. Restart: `omniroute`
 
