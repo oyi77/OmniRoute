@@ -1,4 +1,5 @@
 declare const EdgeRuntime: string | undefined;
+import crypto from "node:crypto";
 /**
  * CursorExecutor — Handles communication with the Cursor IDE API.
  *
@@ -29,7 +30,6 @@ import {
 } from "../utils/cursorProtobuf.ts";
 import { estimateUsage } from "../utils/usageTracking.ts";
 import { FORMATS } from "../translator/formats.ts";
-import crypto from "crypto";
 import { v5 as uuidv5 } from "uuid";
 import zlib from "zlib";
 
