@@ -287,8 +287,8 @@ async function invokeChatCore({
   connectionId = null,
   onCredentialsRefreshed = null,
   onRequestSuccess = null,
-} = {}) {
-  const calls = [];
+}: any = {}) {
+  const calls: any[] = [];
 
   globalThis.fetch = async (url, init = {}) => {
     const headers = toPlainHeaders(init.headers);
@@ -334,7 +334,7 @@ async function invokeChatCore({
       comboStrategy,
       onCredentialsRefreshed,
       onRequestSuccess,
-    });
+    } as any);
     await waitForAsyncSideEffects();
 
     return { result, calls, call: calls.at(-1) };
