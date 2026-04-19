@@ -82,7 +82,7 @@ export type ExecuteInput = {
   /** Original client request headers (read-only). Executors may forward select headers upstream. */
   clientHeaders?: Record<string, string> | null;
   /** Callback to persist tokens that are proactively refreshed during execution. */
-  onCredentialsRefreshed?: (newCredentials: any) => Promise<void> | void;
+  onCredentialsRefreshed?: (newCredentials: ProviderCredentials) => Promise<void> | void;
 };
 
 export type CountTokensInput = {

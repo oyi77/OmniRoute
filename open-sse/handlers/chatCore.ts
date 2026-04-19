@@ -1247,76 +1247,81 @@ export async function handleChatCore({
     );
   }
 
-  const normalizeClaudeUpstreamMessages = (payload: Record<string, any>) => {
+  type ClaudeContentBlock = Record<string, unknown>;
+  type ClaudeMessage = {
+    role?: unknown;
+    content?: unknown;
+  };
+
+  const normalizeClaudeUpstreamMessages = (payload: Record<string, unknown>) => {
     if (!Array.isArray(payload.messages)) return;
+    const messages = payload.messages as ClaudeMessage[];
 
     // Anthropic rejects empty text blocks in native Messages payloads.
-    for (const msg of payload.messages) {
+    for (const msg of messages) {
       if (Array.isArray(msg.content)) {
         msg.content = msg.content.filter(
-          (block: Record<string, unknown>) =>
+          (block: ClaudeContentBlock) =>
             block.type !== "text" || (typeof block.text === "string" && block.text.length > 0)
         );
       }
     }
 
     // Normalize unsupported content types without reintroducing the Claude -> OpenAI round-trip.
-    for (const msg of payload.messages) {
+    for (const msg of messages) {
       if (msg.role !== "user" || !Array.isArray(msg.content)) continue;
-      msg.content = (msg.content as Record<string, unknown>[]).flatMap(
-        (block: Record<string, unknown>) => {
+      msg.content = (msg.content as ClaudeContentBlock[]).flatMap((block: ClaudeContentBlock) => {
+        if (
+          block.type === "text" ||
+          block.type === "image_url" ||
+          block.type === "image" ||
+          block.type === "file_url" ||
+          block.type === "file" ||
+          block.type === "document"
+        ) {
+          const fileData = (block.file_url ?? block.file ?? block.document) as
+            | Record<string, unknown>
+            | undefined;
           if (
-            block.type === "text" ||
-            block.type === "image_url" ||
-            block.type === "image" ||
-            block.type === "file_url" ||
-            block.type === "file" ||
-            block.type === "document"
+            (block.type === "file" || block.type === "document") &&
+            !fileData?.url &&
+            !fileData?.data
           ) {
-            const fileData = (block.file_url ?? block.file ?? block.document) as
-              | Record<string, unknown>
-              | undefined;
-            if (
-              (block.type === "file" || block.type === "document") &&
-              !fileData?.url &&
-              !fileData?.data
-            ) {
-              const fileContent =
-                (block.file as Record<string, unknown>)?.content ??
-                (block.file as Record<string, unknown>)?.text ??
-                block.content ??
-                block.text;
-              const fileName =
-                (block.file as Record<string, unknown>)?.name ?? block.name ?? "attachment";
-              if (typeof fileContent === "string" && fileContent.length > 0) {
-                return [{ type: "text", text: `[${fileName}]\n${fileContent}` }];
-              }
+            const fileContent =
+              (block.file as ClaudeContentBlock)?.content ??
+              (block.file as ClaudeContentBlock)?.text ??
+              block.content ??
+              block.text;
+            const fileName =
+              (block.file as Record<string, unknown>)?.name ?? block.name ?? "attachment";
+            if (typeof fileContent === "string" && fileContent.length > 0) {
+              return [{ type: "text", text: `[${fileName}]\n${fileContent}` }];
             }
-            return [block];
           }
+          return [block];
+        }
 
-          if (block.type === "tool_result") {
-            const toolId = block.tool_use_id ?? block.id ?? "unknown";
-            const resultContent = block.content ?? block.text ?? block.output ?? "";
-            const resultText =
-              typeof resultContent === "string"
+        if (block.type === "tool_result") {
+          const toolId = block.tool_use_id ?? block.id ?? "unknown";
+          const resultContent = block.content ?? block.text ?? block.output ?? "";
+          const resultText =
+            typeof resultContent === "string"
+              ? resultContent
+              : Array.isArray(resultContent)
                 ? resultContent
-                : Array.isArray(resultContent)
-                  ? resultContent
-                      .filter((c: Record<string, unknown>) => c.type === "text")
-                      .map((c: Record<string, unknown>) => c.text)
-                      .join("\n")
-                  : JSON.stringify(resultContent);
-            if (resultText.length > 0) {
-              return [{ type: "text", text: `[Tool Result: ${toolId}]\n${resultText}` }];
-            }
-            return [];
+                    .filter((c: Record<string, unknown>) => c.type === "text")
+                    .map((c: Record<string, unknown>) => c.text)
+                    .join("\n")
+                : JSON.stringify(resultContent);
+          if (resultText.length > 0) {
+            return [{ type: "text", text: `[Tool Result: ${toolId}]\n${resultText}` }];
           }
-
-          log?.debug?.("CONTENT", `Dropped unsupported content part type="${block.type}"`);
           return [];
         }
-      );
+
+        log?.debug?.("CONTENT", `Dropped unsupported content part type="${block.type}"`);
+        return [];
+      });
     }
   };
 
