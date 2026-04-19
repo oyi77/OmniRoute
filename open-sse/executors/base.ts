@@ -370,6 +370,7 @@ export class BaseExecutor {
     log,
     extendedContext,
     upstreamExtraHeaders,
+    clientHeaders,
   }: ExecuteInput) {
     const fallbackCount = this.getFallbackCount();
     let lastError: unknown = null;
