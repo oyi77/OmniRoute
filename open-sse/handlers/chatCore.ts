@@ -170,6 +170,79 @@ function extractMemoryTextFromResponse(
   return "";
 }
 
+function extractMemoryTextFromRequestBody(
+  body: Record<string, unknown> | null | undefined
+): string {
+  if (!body || typeof body !== "object") return "";
+
+  const messages = Array.isArray(body.messages) ? body.messages : null;
+  if (messages && messages.length > 0) {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i] as Record<string, unknown>;
+      if (msg?.role !== "user") continue;
+
+      if (typeof msg.content === "string" && msg.content.trim().length > 0) {
+        return msg.content.trim();
+      }
+
+      if (Array.isArray(msg.content)) {
+        const text = msg.content
+          .map((part: Record<string, unknown>) => {
+            if (typeof part?.text === "string") return part.text.trim();
+            if (part?.type === "input_text" && typeof part?.text === "string")
+              return part.text.trim();
+            return "";
+          })
+          .filter(Boolean)
+          .join("\n")
+          .trim();
+        if (text) return text;
+      }
+    }
+  }
+
+  const input = Array.isArray(body.input) ? body.input : null;
+  if (input && input.length > 0) {
+    const chunks = input
+      .map((item: Record<string, unknown>) => {
+        if (typeof item?.content === "string") return item.content.trim();
+        if (Array.isArray(item?.content)) {
+          return item.content
+            .map((part: Record<string, unknown>) => {
+              if (typeof part?.text === "string") return part.text.trim();
+              if (part?.type === "input_text" && typeof part?.text === "string")
+                return part.text.trim();
+              return "";
+            })
+            .filter(Boolean)
+            .join("\n")
+            .trim();
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (chunks) return chunks;
+  }
+
+  return "";
+}
+
+function resolveMemoryOwnerId(apiKeyInfo: Record<string, unknown> | null): string | null {
+  const rawId = apiKeyInfo?.id;
+  if (typeof rawId === "string" && rawId.trim().length > 0) {
+    return rawId;
+  }
+
+  const rawName = apiKeyInfo?.name;
+  if (typeof rawName === "string" && rawName.trim().length > 0) {
+    return `name:${rawName.trim().toLowerCase()}`;
+  }
+
+  return "local";
+}
+
 export function shouldUseNativeCodexPassthrough({
   provider,
   sourceFormat,
@@ -808,6 +881,13 @@ export async function handleChatCore({
   const noLogEnabled = apiKeyInfo?.noLog === true;
   const detailedLoggingEnabled = !noLogEnabled && (await isDetailedLoggingEnabled());
   const skillRequestId = generateRequestId();
+  const pipelineSessionId =
+    (clientRawRequest?.headers && typeof clientRawRequest.headers.get === "function"
+      ? clientRawRequest.headers.get("x-omniroute-session-id")
+      : getHeaderValueCaseInsensitive(
+          clientRawRequest?.headers ?? null,
+          "x-omniroute-session-id"
+        )) || skillRequestId;
   const persistAttemptLogs = ({
     status,
     tokens,
@@ -1074,12 +1154,13 @@ export async function handleChatCore({
     });
   }
 
-  const memorySettings = apiKeyInfo?.id
+  const memoryOwnerId = resolveMemoryOwnerId(apiKeyInfo as Record<string, unknown> | null);
+  const memorySettings = memoryOwnerId
     ? await getMemorySettings().catch(() => DEFAULT_MEMORY_SETTINGS)
     : null;
 
   if (
-    apiKeyInfo?.id &&
+    memoryOwnerId &&
     memorySettings &&
     shouldInjectMemory(body as Parameters<typeof shouldInjectMemory>[0], {
       enabled: memorySettings.enabled && memorySettings.maxTokens > 0,
@@ -1087,7 +1168,7 @@ export async function handleChatCore({
   ) {
     try {
       const memories = await retrieveMemories(
-        apiKeyInfo.id,
+        memoryOwnerId,
         toMemoryRetrievalConfig(memorySettings)
       );
       if (memories.length > 0) {
@@ -1097,7 +1178,7 @@ export async function handleChatCore({
           provider
         );
         body = injected as typeof body;
-        log?.debug?.("MEMORY", `Injected ${memories.length} memories for key=${apiKeyInfo.id}`);
+        log?.debug?.("MEMORY", `Injected ${memories.length} memories for key=${memoryOwnerId}`);
       }
     } catch (memErr) {
       log?.debug?.(
@@ -1107,12 +1188,17 @@ export async function handleChatCore({
     }
   }
 
-  if (apiKeyInfo?.id && memorySettings?.skillsEnabled) {
+  if (memoryOwnerId && memorySettings?.skillsEnabled) {
     const existingTools = Array.isArray(body.tools) ? body.tools : [];
     const mergedTools = injectSkills({
       provider: getSkillsProviderForFormat(sourceFormat),
       existingTools,
-      apiKeyId: apiKeyInfo.id,
+      apiKeyId: memoryOwnerId,
+      model: typeof effectiveModel === "string" ? effectiveModel : undefined,
+      sourceFormat,
+      targetFormat,
+      backgroundReason,
+      messages: Array.isArray(body.messages) ? body.messages : undefined,
     });
 
     if (mergedTools.length > existingTools.length) {
@@ -2578,23 +2664,20 @@ export async function handleChatCore({
       }
     }
 
-    const pipelineSessionId =
-      (clientRawRequest?.headers && typeof clientRawRequest.headers.get === "function"
-        ? clientRawRequest.headers.get("x-omniroute-session-id")
-        : getHeaderValueCaseInsensitive(
-            clientRawRequest?.headers ?? null,
-            "x-omniroute-session-id"
-          )) || skillRequestId;
+    if (memoryOwnerId && memorySettings?.enabled && memorySettings.maxTokens > 0) {
+      const requestMemoryText = extractMemoryTextFromRequestBody(body as Record<string, unknown>);
+      if (requestMemoryText) {
+        extractFacts(requestMemoryText, memoryOwnerId, pipelineSessionId);
+      }
 
-    if (apiKeyInfo?.id && memorySettings?.enabled && memorySettings.maxTokens > 0) {
       const memoryText = extractMemoryTextFromResponse(memoryExtractionResponse);
       if (memoryText) {
-        extractFacts(memoryText, apiKeyInfo.id, pipelineSessionId);
+        extractFacts(memoryText, memoryOwnerId, pipelineSessionId);
       }
     }
 
     const customSkillExecutionEnabled =
-      Boolean(apiKeyInfo?.id) && memorySettings?.skillsEnabled === true;
+      Boolean(memoryOwnerId) && memorySettings?.skillsEnabled === true;
     const builtinToolNames = webSearchFallbackPlan.toolName ? [webSearchFallbackPlan.toolName] : [];
     if (customSkillExecutionEnabled || builtinToolNames.length > 0) {
       const skillSessionId = pipelineSessionId;
@@ -2603,7 +2686,7 @@ export async function handleChatCore({
         translatedResponse,
         getSkillsModelIdForFormat(sourceFormat),
         {
-          apiKeyId: apiKeyInfo?.id || "local",
+          apiKeyId: memoryOwnerId || "local",
           sessionId: skillSessionId,
           requestId: skillRequestId,
           builtinToolNames,
@@ -2822,6 +2905,25 @@ export async function handleChatCore({
           if (estimatedCost > 0) recordCost(apiKeyInfo.id, estimatedCost);
         })
         .catch(() => {});
+    }
+
+    if (
+      memoryOwnerId &&
+      memorySettings?.enabled &&
+      memorySettings.maxTokens > 0 &&
+      streamStatus === 200
+    ) {
+      const requestMemoryText = extractMemoryTextFromRequestBody(body as Record<string, unknown>);
+      if (requestMemoryText) {
+        extractFacts(requestMemoryText, memoryOwnerId, pipelineSessionId);
+      }
+
+      const streamedMemoryText = extractMemoryTextFromResponse(
+        (streamResponseBody ?? null) as Record<string, unknown> | null
+      );
+      if (streamedMemoryText) {
+        extractFacts(streamedMemoryText, memoryOwnerId, pipelineSessionId);
+      }
     }
 
     // Semantic cache: store assembled streaming response for future cache hits
