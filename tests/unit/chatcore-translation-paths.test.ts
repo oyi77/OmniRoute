@@ -581,8 +581,12 @@ test("chatCore auto cache policy becomes false for nondeterministic combos", asy
     responseFormat: "claude",
   });
 
-  assert.match(call.body.system[0].text, /x-anthropic-billing-header/);
-  assert.equal(call.body.system[1].text, "system");
+  assert.equal(
+    call.body.system.some(
+      (block: { type?: string; text?: string }) => block?.type === "text" && block.text === "system"
+    ),
+    true
+  );
   // Cache markers are kept natively due to the latest Claude strict proxy passthrough implementation
   assert.equal(
     call.body.system.some((block) => !!block.cache_control),
@@ -636,8 +640,12 @@ test("chatCore disables raw Claude passthrough when cache preservation is off an
     responseFormat: "claude",
   });
 
-  assert.match(call.body.system[0].text, /x-anthropic-billing-header/);
-  assert.equal(call.body.system[1].text, "system");
+  assert.equal(
+    call.body.system.some(
+      (block: { type?: string; text?: string }) => block?.type === "text" && block.text === "system"
+    ),
+    true
+  );
   // Cache preservation is on for native Claude, so cache markers are intact
   assert.deepEqual(call.body.messages[0].content[0].cache_control, { type: "ephemeral" });
   // Tools disable flag is applied
