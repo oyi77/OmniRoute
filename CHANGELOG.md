@@ -15,6 +15,7 @@
 
 ### 🐛 Bug Fixes
 
+- **fix(chatcore):** Apply proactive compression before provider translation to prevent token limit errors in combo routes (#1406)
 - **fix(claude-code):** Scope thinking stripping to executor boundaries to prevent issues with normal API requests (#1401)
 - **fix(mitm):** Resolve MITM not working when connecting Antigravity (#1399)
 - **fix(security):** Resolve CodeQL password hash alert and fix TruffleHog CI failure (#161)
