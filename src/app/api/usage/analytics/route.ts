@@ -41,6 +41,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const range = searchParams.get("range") || "30d";
     const sinceIso = getRangeStartIso(range);
+    const presetsParam = searchParams.get("presets");
 
     const db = getDbInstance();
     const whereClause = sinceIso ? "WHERE timestamp >= @since" : "";
@@ -349,6 +350,68 @@ export async function GET(request) {
       weeklyCounts,
       range,
     };
+
+    if (presetsParam) {
+      const allowedRanges = new Set(["1d", "7d", "30d", "90d", "ytd", "all"]);
+      const presetRanges = presetsParam
+        .split(",")
+        .map((preset) => preset.trim())
+        .filter((preset) => allowedRanges.has(preset));
+      const presetSummaries: Record<string, { totalCost: number }> = {};
+
+      for (const presetRange of presetRanges) {
+        if (presetRange === range) {
+          presetSummaries[presetRange] = {
+            totalCost: Number(analytics.summary?.totalCost || 0),
+          };
+          continue;
+        }
+
+        const presetSinceIso = getRangeStartIso(presetRange);
+        const presetWhere = presetSinceIso ? "WHERE timestamp >= @presetSince" : "";
+        const presetParams = presetSinceIso ? { presetSince: presetSinceIso } : {};
+
+        const presetModelRows = db
+          .prepare(
+            `
+            SELECT
+              model,
+              provider,
+              COALESCE(SUM(tokens_input), 0) as promptTokens,
+              COALESCE(SUM(tokens_output), 0) as completionTokens
+            FROM usage_history
+            ${presetWhere}
+            GROUP BY model, provider
+          `
+          )
+          .all(presetParams) as Array<Record<string, unknown>>;
+
+        let presetTotalCost = 0;
+        for (const row of presetModelRows) {
+          const m = row.model as string;
+          const p = row.provider as string;
+          const short = shortModelName(m);
+          const inputTokens = Number(row.promptTokens) || 0;
+          const outputTokens = Number(row.completionTokens) || 0;
+          
+          try {
+            const modelPricing = pricingByProvider[p]?.[m] || pricingByProvider[p]?.[short];
+            if (modelPricing && typeof modelPricing === "object") {
+              const mp = modelPricing as Record<string, unknown>;
+              const inputPrice = Number(mp.input) || 0;
+              const outputPrice = Number(mp.output) || 0;
+              presetTotalCost += (inputTokens * inputPrice + outputTokens * outputPrice) / 1_000_000;
+            }
+          } catch {}
+        }
+
+        presetSummaries[presetRange] = {
+          totalCost: Math.round(presetTotalCost * 100) / 100,
+        };
+      }
+
+      analytics.presetSummaries = presetSummaries;
+    }
 
     return NextResponse.json(analytics);
   } catch (error) {
