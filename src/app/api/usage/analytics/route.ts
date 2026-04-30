@@ -46,6 +46,11 @@ export async function GET(request) {
     const whereClause = sinceIso ? "WHERE timestamp >= @since" : "";
     const params = sinceIso ? { since: sinceIso } : {};
 
+    // Fetch pricing data for cost calculation (no rows loaded)
+    const { getPricing } = await import("@/lib/db/settings");
+    const pricingByProvider = await getPricing();
+    const { normalizeModelName } = await import("@/lib/usage/costCalculator");
+
     const summaryRow = db
       .prepare(
         `
@@ -84,8 +89,11 @@ export async function GET(request) {
       )
       .all(params) as Array<Record<string, unknown>>;
 
-    const heatmapStart = new Date();
-    heatmapStart.setDate(heatmapStart.getDate() - 364);
+    // Use requested range for heatmap if available, else default to 364 days (1 year) as fallback
+    const heatmapStart = sinceIso ? new Date(sinceIso) : new Date();
+    if (!sinceIso) {
+      heatmapStart.setDate(heatmapStart.getDate() - 364);
+    }
     const heatmapRows = db
       .prepare(
         `
@@ -207,27 +215,36 @@ export async function GET(request) {
       successRatePct:
         Number(summaryRow?.totalRequests || 0) > 0
           ? Number(
-              (Number(summaryRow?.successfulRequests || 0) /
-                Number(summaryRow?.totalRequests || 1)) *
+              (
+                (Number(summaryRow?.successfulRequests || 0) /
+                  Number(summaryRow?.totalRequests || 1)) *
                 100
-            ).toFixed(2)
+              ).toFixed(2)
+            )
           : 0,
       avgLatencyMs: Math.round(Number(summaryRow?.avgLatencyMs || 0)),
-      totalCost: 0,
+      // Compute totalCost by summing cost from byModel (calculated later)
+      totalCost: 0, // Will be updated after byModel is processed
       firstRequest: summaryRow?.firstRequest || "",
       lastRequest: summaryRow?.lastRequest || "",
       fallbackCount: Number(fallbackRow?.fallbacks || 0),
       fallbackRatePct:
         Number(fallbackRow?.with_requested || 0) > 0
           ? Number(
-              (Number(fallbackRow?.fallbacks || 0) / Number(fallbackRow?.with_requested || 1)) * 100
-            ).toFixed(2)
+              (
+                (Number(fallbackRow?.fallbacks || 0) / Number(fallbackRow?.with_requested || 1)) *
+                100
+              ).toFixed(2)
+            )
           : 0,
       requestedModelCoveragePct:
         Number(fallbackRow?.total || 0) > 0
           ? Number(
-              (Number(fallbackRow?.with_requested || 0) / Number(fallbackRow?.total || 1)) * 100
-            ).toFixed(2)
+              (
+                (Number(fallbackRow?.with_requested || 0) / Number(fallbackRow?.total || 1)) *
+                100
+              ).toFixed(2)
+            )
           : 0,
     };
 
@@ -237,7 +254,6 @@ export async function GET(request) {
       promptTokens: Number(row.promptTokens),
       completionTokens: Number(row.completionTokens),
       totalTokens: Number(row.totalTokens),
-      cost: 0,
     }));
 
     const activityMap: Record<string, number> = {};
@@ -245,22 +261,49 @@ export async function GET(request) {
       activityMap[row.date as string] = Number(row.totalTokens);
     }
 
-    const byModel = modelRows.map((row) => ({
-      model: shortModelName(row.model as string),
-      provider: row.provider,
-      rawModel: row.model,
-      requests: Number(row.requests),
-      promptTokens: Number(row.promptTokens),
-      completionTokens: Number(row.completionTokens),
-      totalTokens: Number(row.totalTokens),
-      avgLatencyMs: Math.round(Number(row.avgLatencyMs)),
-      successRatePct:
-        Number(row.requests) > 0
-          ? Number((Number(row.successfulRequests) / Number(row.requests)) * 100).toFixed(2)
-          : 0,
-      lastUsed: row.lastUsed,
-      cost: 0,
-    }));
+    const byModel = modelRows.map((row) => {
+      const model = row.model as string;
+      const provider = row.provider as string;
+      const short = shortModelName(model);
+      const tokens = {
+        input: Number(row.promptTokens) || 0,
+        output: Number(row.completionTokens) || 0,
+      };
+      // Compute cost from pricing and aggregated tokens
+      let cost = 0;
+      try {
+        const modelPricing =
+          pricingByProvider[provider]?.[model] || pricingByProvider[provider]?.[short];
+        if (modelPricing && typeof modelPricing === "object") {
+          const p = modelPricing as Record<string, unknown>;
+          const inputPrice = Number(p.input) || 0;
+          const outputPrice = Number(p.output) || 0;
+          cost = (tokens.input * inputPrice + tokens.output * outputPrice) / 1_000_000;
+        }
+      } catch {
+        /* ignore */
+      }
+      return {
+        model: short,
+        provider,
+        rawModel: model,
+        requests: Number(row.requests),
+        promptTokens: tokens.input,
+        completionTokens: tokens.output,
+        totalTokens: Number(row.totalTokens),
+        avgLatencyMs: Math.round(Number(row.avgLatencyMs)),
+        successRatePct:
+          Number(row.requests) > 0
+            ? Number((Number(row.successfulRequests) / Number(row.requests)) * 100).toFixed(2)
+            : 0,
+        lastUsed: row.lastUsed,
+        cost: Math.round(cost * 100) / 100,
+      };
+    });
+
+    // Compute totalCost from byModel sum
+    const totalCost = byModel.reduce((sum, m) => sum + (m.cost || 0), 0);
+    summary.totalCost = Math.round(totalCost * 100) / 100;
 
     const byProvider = providerRows.map((row) => ({
       provider: row.provider,
@@ -273,7 +316,6 @@ export async function GET(request) {
         Number(row.requests) > 0
           ? Number((Number(row.successfulRequests) / Number(row.requests)) * 100).toFixed(2)
           : 0,
-      cost: 0,
     }));
 
     const byAccount = accountRows.map((row) => ({
@@ -284,7 +326,6 @@ export async function GET(request) {
       totalTokens: Number(row.totalTokens),
       avgLatencyMs: Math.round(Number(row.avgLatencyMs)),
       lastUsed: row.lastUsed,
-      cost: 0,
     }));
 
     const weeklyTokens = [0, 0, 0, 0, 0, 0, 0];

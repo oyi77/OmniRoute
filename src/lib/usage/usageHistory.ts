@@ -271,14 +271,15 @@ export async function getUsageDb(sinceIso?: string | null, limit?: number, curso
   let rows;
   if (cursor) {
     // Cursor-based pagination (next page after cursor)
+    // Use > cursor to get rows after the last timestamp of previous page (ASC order)
     rows = sinceIso
       ? db
           .prepare(
-            `SELECT * FROM usage_history WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC LIMIT ?`
+            `SELECT * FROM usage_history WHERE timestamp >= ? AND timestamp > ? ORDER BY timestamp ASC LIMIT ?`
           )
           .all(sinceIso, cursor, maxRows)
       : db
-          .prepare(`SELECT * FROM usage_history WHERE timestamp < ? ORDER BY timestamp ASC LIMIT ?`)
+          .prepare(`SELECT * FROM usage_history WHERE timestamp > ? ORDER BY timestamp ASC LIMIT ?`)
           .all(cursor, maxRows);
   } else if (sinceIso) {
     // Initial query with date filter
@@ -315,11 +316,7 @@ export async function getUsageDb(sinceIso?: string | null, limit?: number, curso
   });
 
   // Provide next cursor if we hit the limit (more rows exist)
-  const nextCursor =
-    rows.length === maxRows
-      ?  
-        (rows[rows.length - 1] as any)?.timestamp
-      : null;
+  const nextCursor = rows.length === maxRows ? (rows[rows.length - 1] as any)?.timestamp : null;
 
   return { data: { history, nextCursor } };
 }
