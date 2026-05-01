@@ -563,6 +563,10 @@ export function recordProviderFailure(
     if (lastFailure && now - lastFailure < CONNECTION_FAILURE_DEDUP_MS) {
       return;
     }
+    // Prevent memory leak by clearing map if it grows too large
+    if (lastConnectionFailure.size > 10000) {
+      lastConnectionFailure.clear();
+    }
     lastConnectionFailure.set(dedupKey, now);
   }
 
