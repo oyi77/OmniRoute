@@ -8,6 +8,7 @@ import {
   joinClaudeCodeCompatibleUrl,
 } from "../services/claudeCodeCompatible.ts";
 import { getGigachatAccessToken } from "../services/gigachatAuth.ts";
+import { getRegistryEntry } from "../config/providerRegistry.ts";
 import { applyProviderRequestDefaults } from "../services/providerRequestDefaults.ts";
 import {
   getOpenAICompatibleType,
@@ -193,6 +194,11 @@ export class DefaultExecutor extends BaseExecutor {
         const baseUrl = credentials?.providerSpecificData?.baseUrl || this.config.baseUrl;
         return normalizeOpenAIChatUrl(baseUrl);
       }
+      case "zai":
+      case "glm-coding-apikey": {
+        const zaiBaseUrl = credentials?.providerSpecificData?.baseUrl || this.config.baseUrl;
+        return `${zaiBaseUrl}?beta=true`;
+      }
       case "claude":
       case "glm":
       case "glmt":
@@ -206,8 +212,11 @@ export class DefaultExecutor extends BaseExecutor {
         const resourceUrl = credentials?.providerSpecificData?.resourceUrl;
         return `https://${resourceUrl || "portal.qwen.ai"}/v1/chat/completions`;
       }
-      default:
-        return this.config.baseUrl;
+      default: {
+        const url = this.config.baseUrl;
+        const entry = getRegistryEntry(this.provider);
+        return entry?.urlSuffix ? `${url}${entry.urlSuffix}` : url;
+      }
     }
   }
 
@@ -295,6 +304,8 @@ export class DefaultExecutor extends BaseExecutor {
       case "kimi-coding":
       case "bailian-coding-plan":
       case "kimi-coding-apikey":
+      case "zai":
+      case "glm-coding-apikey":
         headers["x-api-key"] = effectiveKey || credentials.accessToken;
         break;
       default:
@@ -315,9 +326,18 @@ export class DefaultExecutor extends BaseExecutor {
             headers["anthropic-version"] = "2023-06-01";
           }
         } else {
-          const bearerToken = effectiveKey || credentials.accessToken;
-          if (bearerToken) {
-            headers["Authorization"] = `Bearer ${bearerToken}`;
+          // Use registry authHeader if available, otherwise default to bearer
+          const entry = getRegistryEntry(this.provider);
+          const authHeader = entry?.authHeader || "bearer";
+          const token = effectiveKey || credentials.accessToken;
+          if (token) {
+            if (authHeader === "x-api-key") {
+              headers["x-api-key"] = token;
+            } else if (authHeader === "x-goog-api-key") {
+              headers["x-goog-api-key"] = token;
+            } else {
+              headers["Authorization"] = `Bearer ${token}`;
+            }
           }
         }
     }
