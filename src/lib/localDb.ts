@@ -80,6 +80,7 @@ export {
 } from "./db/combos";
 
 export * from "./db/compressionCacheStats";
+export * from "./db/compressionCombos";
 
 export {
   // API Keys
@@ -340,10 +341,21 @@ export {
   setReasoningCache,
   getReasoningCache,
   deleteReasoningCache,
-  cleanupExpiredReasoning,
-  getReasoningCacheStats,
-  getReasoningCacheEntries,
   clearAllReasoningCache,
 } from "./db/reasoningCache";
 
 export type { ReasoningCacheEntry, ReasoningCacheStats } from "./db/reasoningCache";
+
+export {
+  // 1proxy Integration (#1788)
+  listOneproxyProxies,
+  getOneproxyStats,
+  upsertOneproxyProxy,
+  getOneproxyProxyById,
+  deleteOneproxyProxy,
+  clearAllOneproxyProxies,
+  getOneproxyProxyForRotation,
+  markOneproxyProxyFailed,
+} from "./db/oneproxy";
+
+export type { OneproxyProxyRecord, OneproxyStats } from "./db/oneproxy";

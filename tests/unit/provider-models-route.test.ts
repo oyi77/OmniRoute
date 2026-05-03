@@ -355,8 +355,23 @@ test("provider models route returns the local catalog for embedding and rerank p
   assert.equal(jinaResponse.status, 200);
   assert.equal(jinaBody.provider, "jina-ai");
   assert.equal(jinaBody.source, "local_catalog");
-  assert.ok(jinaBody.models.some((model) => model.id === "jina-reranker-v3"));
-  assert.ok(jinaBody.models.some((model) => model.id === "jina-reranker-v2-base-multilingual"));
+  assert.ok(
+    jinaBody.models.some(
+      (model) =>
+        model.id === "jina-embeddings-v5-text-small" &&
+        model.apiFormat === "embeddings" &&
+        model.supportedEndpoints?.includes("embeddings")
+    )
+  );
+  assert.ok(
+    jinaBody.models.some(
+      (model) =>
+        model.id === "jina-reranker-v3" &&
+        model.apiFormat === "rerank" &&
+        model.supportedEndpoints?.includes("rerank")
+    )
+  );
+  assert.ok(jinaBody.models.some((model) => model.id === "jina-reranker-m0"));
 });
 
 test("provider models route returns the local catalog for Runway video models", async () => {
@@ -433,6 +448,25 @@ test("provider models route returns the local catalog for new built-in chat-open
   assert.ok(Array.isArray(body.models));
   assert.ok(body.models.length > 0);
   assert.ok(body.models.some((model) => model.id === "Qwen/Qwen3-Coder-480B-A35B-Instruct"));
+});
+
+test("provider models route merges Upstage chat and embedding catalogs", async () => {
+  const connection = await seedConnection("upstage", {
+    apiKey: "upstage-key",
+  });
+
+  const response = await callRoute(connection.id);
+  const body = (await response.json()) as any;
+  const modelIds = body.models.map((model) => model.id);
+
+  assert.equal(response.status, 200);
+  assert.equal(body.provider, "upstage");
+  assert.equal(body.source, "local_catalog");
+  assert.ok(modelIds.includes("solar-pro3"));
+  assert.ok(modelIds.includes("solar-mini"));
+  assert.ok(modelIds.includes("embedding-query"));
+  assert.ok(modelIds.includes("embedding-passage"));
+  assert.equal(modelIds.includes("document-parse"), false);
 });
 
 test("provider models route caches discovered opencode-go models per connection", async () => {
