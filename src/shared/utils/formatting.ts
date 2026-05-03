@@ -147,6 +147,29 @@ export function formatCost(usd: number | null | undefined): string {
 export const fmtCost = formatCost;
 
 /**
+ * Format a USD cost for display using abbreviated K/M/B/T suffixes.
+ * Sub-cent values show additional precision.
+ *   - Values >= 1T are shown as $X.XT
+ *   - Values >= 1B are shown as $X.XB
+ *   - Values >= 1M are shown as $X.XM
+ *   - Values >= 1K are shown as $X.XK
+ *   - Otherwise shown as $X.XX
+ * @param {number} usd - Cost in USD
+ * @returns {string}
+ */
+export function formatCostAbbreviated(usd: number | null | undefined): string {
+  const value = Number(usd || 0);
+  if (!Number.isFinite(value) || value === 0) return "$0";
+  if (value < 0.01) return `$${value.toFixed(6)}`;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000_000) return `$${(value / 1_000_000_000_000).toFixed(1)}T`;
+  if (abs >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(2)}`;
+}
+
+/**
  * Truncate a URL for compact display.
  * @param {string} url - Full URL
  * @param {number} max - Maximum characters (default: 50)
