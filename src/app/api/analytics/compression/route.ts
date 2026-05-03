@@ -1,19 +1,29 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getCompressionAnalyticsSummary } from "@/lib/db/compressionAnalytics";
-import { enforceApiKeyPolicy } from "@/shared/utils/apiKeyPolicy";
+/**
+ * GET /api/analytics/compression
+ *
+ * Returns aggregated compression analytics from the compression_analytics table.
+ * Supports ?since=24h|7d|30d|all (default: 24h).
+ */
 
-export async function GET(request: NextRequest) {
-  const authError = await enforceApiKeyPolicy(request, "analytics");
+import { NextResponse } from "next/server";
+import { getCompressionAnalyticsSummary } from "@/lib/db/compressionAnalytics";
+import { requireManagementAuth } from "@/lib/api/requireManagementAuth";
+
+export async function GET(req: Request) {
+  const authError = await requireManagementAuth(req);
   if (authError) return authError;
 
-  const { searchParams } = new URL(request.url);
-  const since = searchParams.get("since") || "24h";
-
   try {
-    const summary = getCompressionAnalyticsSummary(since);
+    const url = new URL(req.url);
+    const sinceParam = url.searchParams.get("since") ?? "24h";
+    const validSince = ["24h", "7d", "30d", "all"].includes(sinceParam) ? sinceParam : "24h";
+
+    const summary = getCompressionAnalyticsSummary(validSince === "all" ? undefined : validSince);
+
     return NextResponse.json(summary);
-  } catch (error) {
-    console.error("Compression analytics error:", error);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[/api/analytics/compression]", msg);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

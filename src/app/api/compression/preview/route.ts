@@ -1,57 +1,86 @@
-import { NextRequest, NextResponse } from "next/server";
-import { validateBody, isValidationFailure } from "@/shared/validation/helpers";
+import { NextResponse } from "next/server";
 import { z } from "zod";
+import { enforceApiKeyPolicy } from "@/shared/utils/apiKeyPolicy";
+import { applyCompression } from "@omniroute/open-sse/services/compression/strategySelector";
+import type { CompressionMode } from "@omniroute/open-sse/services/compression/types";
 
-const previewSchema = z.object({
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
+const PreviewRequestSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.string(),
+        content: z.union([z.string(), z.array(z.unknown())]),
+      })
+    )
+    .min(1),
   mode: z.enum(["off", "lite", "standard", "aggressive", "ultra"]),
 });
 
-function roughTokenCount(text: string): number {
-  return Math.ceil((text.match(/\s+/g) || []).length * 1.3);
+function countTokens(text: string): number {
+  return Math.ceil(text.split(/\s+/).filter(Boolean).length * 1.33);
 }
 
-export async function POST(request: NextRequest) {
+function messagesToText(messages: Array<{ role: string; content: unknown }>): string {
+  return messages
+    .map((m) => {
+      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+      return `${m.role}: ${content}`;
+    })
+    .join("\n");
+}
+
+export async function POST(req: Request) {
+  const policy = await enforceApiKeyPolicy(req, "settings");
+  if (policy.rejection) return policy.rejection;
+
+  let body: unknown;
   try {
-    const body = await request.json();
-    const validation = validateBody(previewSchema, body);
-    if (isValidationFailure(validation)) {
-      return NextResponse.json({ error: validation.error }, { status: 400 });
-    }
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    const { messages, mode } = validation.data;
-    const original = messages.map((m) => m.content).join("\n");
-    const originalTokens = roughTokenCount(original);
+  const parsed = PreviewRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid request", details: parsed.error.issues },
+      { status: 400 }
+    );
+  }
 
-    if (mode === "off") {
-      return NextResponse.json({
-        original,
-        compressed: original,
-        originalTokens,
-        compressedTokens: originalTokens,
-        tokensSaved: 0,
-        savingsPct: 0,
-        techniquesUsed: [],
-        durationMs: 0,
-      });
-    }
+  const { messages, mode } = parsed.data;
+  const originalText = messagesToText(messages);
+  const originalTokens = countTokens(originalText);
 
-    // Placeholder for actual compression engine call
-    const compressed = original; // TODO: call actual compression
-    const compressedTokens = roughTokenCount(compressed);
-    const tokensSaved = originalTokens - compressedTokens;
+  try {
+    const start = Date.now();
+    const requestBody = { messages };
+    const result = await applyCompression(requestBody as Record<string, unknown>, mode);
+    const durationMs = Date.now() - start;
+
+    const compressedMessages = (result.body.messages ?? messages) as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    const compressedText = messagesToText(compressedMessages);
+    const compressedTokens = countTokens(compressedText);
+    const tokensSaved = Math.max(0, originalTokens - compressedTokens);
+    const savingsPct = originalTokens > 0 ? Math.round((tokensSaved / originalTokens) * 100) : 0;
+    const techniquesUsed: string[] = result.stats?.techniquesUsed ?? [];
 
     return NextResponse.json({
-      original,
-      compressed,
+      original: originalText,
+      compressed: compressedText,
       originalTokens,
       compressedTokens,
       tokensSaved,
-      savingsPct: originalTokens > 0 ? (tokensSaved / originalTokens) * 100 : 0,
-      techniquesUsed: [mode],
-      durationMs: 0,
+      savingsPct,
+      techniquesUsed,
+      durationMs,
     });
-  } catch (error) {
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[/api/compression/preview]", msg);
+    return NextResponse.json({ error: "Compression failed", details: msg }, { status: 500 });
   }
 }
