@@ -160,13 +160,39 @@ export const fmtCost = formatCost;
 export function formatCostAbbreviated(usd: number | null | undefined): string {
   const value = Number(usd || 0);
   if (!Number.isFinite(value) || value === 0) return "$0";
-  if (value < 0.01) return `$${value.toFixed(6)}`;
   const abs = Math.abs(value);
-  if (abs >= 1_000_000_000_000) return `$${(value / 1_000_000_000_000).toFixed(1)}T`;
-  if (abs >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(2)}`;
+  if (abs < 0.01) {
+    if (value < 0) {
+      return `-$${Math.abs(value).toFixed(6)}`;
+    }
+    return `$${value.toFixed(6)}`;
+  }
+  let divisor: number, suffix: string;
+  if (abs >= 1_000_000_000_000) {
+    divisor = 1_000_000_000_000;
+    suffix = "T";
+  } else if (abs >= 1_000_000_000) {
+    divisor = 1_000_000_000;
+    suffix = "B";
+  } else if (abs >= 1_000_000) {
+    divisor = 1_000_000;
+    suffix = "M";
+  } else if (abs >= 1_000) {
+    divisor = 1_000;
+    suffix = "K";
+  } else {
+    if (value < 0) {
+      return `-$${Math.abs(value).toFixed(2)}`;
+    }
+    return `$${value.toFixed(2)}`;
+  }
+  const abbreviated = abs / divisor;
+  let formatted = abbreviated.toFixed(1);
+  if (formatted.includes(".")) {
+    formatted = formatted.replace(/\.?0+$/, "");
+  }
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${formatted}${suffix}`;
 }
 
 /**
