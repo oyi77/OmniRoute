@@ -1,6 +1,9 @@
-"use client";
-
 import CompressionSettingsTab from "@/app/(dashboard)/dashboard/settings/components/CompressionSettingsTab";
+
+export const metadata = {
+  title: "Compression",
+  description: "Configure context compression settings to reduce token usage and costs.",
+};
 
 export default function CompressionPage() {
   return (
