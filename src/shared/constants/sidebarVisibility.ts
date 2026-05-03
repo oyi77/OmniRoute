@@ -21,6 +21,7 @@ export const HIDEABLE_SIDEBAR_ITEM_IDS = [
   "audit",
   "webhooks",
   "health",
+  "proxy",
   "settings",
   "docs",
   "issues",
@@ -85,6 +86,7 @@ const SYSTEM_SIDEBAR_ITEMS: readonly SidebarItemDefinition[] = [
   { id: "audit", href: "/dashboard/audit", i18nKey: "auditLog", icon: "policy" },
   { id: "webhooks", href: "/dashboard/webhooks", i18nKey: "webhooks", icon: "webhook" },
   { id: "health", href: "/dashboard/health", i18nKey: "health", icon: "health_and_safety" },
+  { id: "proxy", href: "/dashboard/system/proxy", i18nKey: "proxy", icon: "dns" },
   { id: "settings", href: "/dashboard/settings", i18nKey: "settings", icon: "settings" },
 ];
 
