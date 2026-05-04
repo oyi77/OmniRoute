@@ -6,6 +6,7 @@
 
 import { getDbInstance } from "./core";
 import { getSettings } from "@/lib/localDb";
+import type { DatabaseSettings } from "@/types/databaseSettings";
 
 interface CleanupResult {
   deleted: number;
@@ -13,13 +14,36 @@ interface CleanupResult {
 }
 
 /**
+ * Extract database settings from the full settings object with proper typing.
+ */
+function getDatabaseSettings(): DatabaseSettings["retention"] {
+  const settings = getSettings();
+  // Database settings are stored under the 'databaseSettings' key in the main settings
+  const dbSettings = (settings as Record<string, unknown>).databaseSettings as
+    | DatabaseSettings
+    | undefined;
+  return (
+    dbSettings?.retention ?? {
+      quotaSnapshots: 30,
+      compressionAnalytics: 30,
+      mcpAudit: 30,
+      a2aEvents: 30,
+      callLogs: 7,
+      usageHistory: 90,
+      memoryEntries: 90,
+      autoCleanupEnabled: false,
+    }
+  );
+}
+
+/**
  * Clean up old quota_snapshots based on retention settings.
  */
 export async function cleanupQuotaSnapshots(): Promise<CleanupResult> {
   const db = getDbInstance();
-  const settings = await getSettings();
+  const retention = getDatabaseSettings();
 
-  const retentionDays = (settings.retention as any)?.quotaSnapshots ?? 30;
+  const retentionDays = retention.quotaSnapshots;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   const cutoffISO = cutoffDate.toISOString();
@@ -34,7 +58,7 @@ export async function cleanupQuotaSnapshots(): Promise<CleanupResult> {
     console.log(
       `[Cleanup] Deleted ${result.deleted} quota_snapshots older than ${retentionDays} days`
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error cleaning quota_snapshots:", err);
     result.errors++;
   }
@@ -47,9 +71,9 @@ export async function cleanupQuotaSnapshots(): Promise<CleanupResult> {
  */
 export async function cleanupCallLogs(): Promise<CleanupResult> {
   const db = getDbInstance();
-  const settings = await getSettings();
+  const retention = getDatabaseSettings();
 
-  const retentionDays = (settings.retention as any)?.callLogs ?? 7;
+  const retentionDays = retention.callLogs;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   const cutoffISO = cutoffDate.toISOString();
@@ -62,7 +86,7 @@ export async function cleanupCallLogs(): Promise<CleanupResult> {
     result.deleted = runResult.changes;
 
     console.log(`[Cleanup] Deleted ${result.deleted} call_logs older than ${retentionDays} days`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error cleaning call_logs:", err);
     result.errors++;
   }
@@ -75,9 +99,9 @@ export async function cleanupCallLogs(): Promise<CleanupResult> {
  */
 export async function cleanupUsageHistory(): Promise<CleanupResult> {
   const db = getDbInstance();
-  const settings = await getSettings();
+  const retention = getDatabaseSettings();
 
-  const retentionDays = (settings.retention as any)?.usageHistory ?? 90;
+  const retentionDays = retention.usageHistory;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   const cutoffISO = cutoffDate.toISOString();
@@ -92,7 +116,7 @@ export async function cleanupUsageHistory(): Promise<CleanupResult> {
     console.log(
       `[Cleanup] Deleted ${result.deleted} usage_history older than ${retentionDays} days`
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error cleaning usage_history:", err);
     result.errors++;
   }
@@ -105,9 +129,9 @@ export async function cleanupUsageHistory(): Promise<CleanupResult> {
  */
 export async function cleanupCompressionAnalytics(): Promise<CleanupResult> {
   const db = getDbInstance();
-  const settings = await getSettings();
+  const retention = getDatabaseSettings();
 
-  const retentionDays = (settings.retention as any)?.compressionAnalytics ?? 30;
+  const retentionDays = retention.compressionAnalytics;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   const cutoffISO = cutoffDate.toISOString();
@@ -122,7 +146,7 @@ export async function cleanupCompressionAnalytics(): Promise<CleanupResult> {
     console.log(
       `[Cleanup] Deleted ${result.deleted} compression_analytics older than ${retentionDays} days`
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error cleaning compression_analytics:", err);
     result.errors++;
   }
@@ -135,9 +159,9 @@ export async function cleanupCompressionAnalytics(): Promise<CleanupResult> {
  */
 export async function cleanupMcpAudit(): Promise<CleanupResult> {
   const db = getDbInstance();
-  const settings = await getSettings();
+  const retention = getDatabaseSettings();
 
-  const retentionDays = (settings.retention as any)?.mcpAudit ?? 30;
+  const retentionDays = retention.mcpAudit;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   const cutoffISO = cutoffDate.toISOString();
@@ -152,7 +176,7 @@ export async function cleanupMcpAudit(): Promise<CleanupResult> {
     console.log(
       `[Cleanup] Deleted ${result.deleted} mcp_audit_log older than ${retentionDays} days`
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error cleaning mcp_audit_log:", err);
     result.errors++;
   }
@@ -165,9 +189,9 @@ export async function cleanupMcpAudit(): Promise<CleanupResult> {
  */
 export async function cleanupA2aEvents(): Promise<CleanupResult> {
   const db = getDbInstance();
-  const settings = await getSettings();
+  const retention = getDatabaseSettings();
 
-  const retentionDays = (settings.retention as any)?.a2aEvents ?? 30;
+  const retentionDays = retention.a2aEvents;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   const cutoffISO = cutoffDate.toISOString();
@@ -180,7 +204,7 @@ export async function cleanupA2aEvents(): Promise<CleanupResult> {
     result.deleted = runResult.changes;
 
     console.log(`[Cleanup] Deleted ${result.deleted} a2a_events older than ${retentionDays} days`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error cleaning a2a_events:", err);
     result.errors++;
   }
@@ -193,9 +217,9 @@ export async function cleanupA2aEvents(): Promise<CleanupResult> {
  */
 export async function cleanupMemoryEntries(): Promise<CleanupResult> {
   const db = getDbInstance();
-  const settings = await getSettings();
+  const retention = getDatabaseSettings();
 
-  const retentionDays = (settings.retention as any)?.memoryEntries ?? 90;
+  const retentionDays = retention.memoryEntries;
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   const cutoffISO = cutoffDate.toISOString();
@@ -210,7 +234,7 @@ export async function cleanupMemoryEntries(): Promise<CleanupResult> {
     console.log(
       `[Cleanup] Deleted ${result.deleted} memory_entries older than ${retentionDays} days`
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error cleaning memory_entries:", err);
     result.errors++;
   }
@@ -226,8 +250,8 @@ export async function runAutoCleanup(): Promise<{
   totalErrors: number;
   results: Record<string, CleanupResult>;
 }> {
-  const settings = await getSettings();
-  const autoCleanupEnabled = (settings.retention as any)?.autoCleanupEnabled ?? false;
+  const retention = getDatabaseSettings();
+  const autoCleanupEnabled = retention.autoCleanupEnabled;
 
   if (!autoCleanupEnabled) {
     console.log("[Cleanup] Auto-cleanup is disabled");
@@ -267,7 +291,7 @@ export async function purgeQuotaSnapshots(): Promise<CleanupResult> {
     result.deleted = runResult.changes;
 
     console.log(`[Cleanup] Purged ${result.deleted} quota_snapshots`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error purging quota_snapshots:", err);
     result.errors++;
   }
@@ -288,7 +312,7 @@ export async function purgeCallLogs(): Promise<CleanupResult> {
     result.deleted = runResult.changes;
 
     console.log(`[Cleanup] Purged ${result.deleted} call_logs`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error purging call_logs:", err);
     result.errors++;
   }
@@ -309,7 +333,7 @@ export async function purgeDetailedLogs(): Promise<CleanupResult> {
     result.deleted = runResult.changes;
 
     console.log(`[Cleanup] Purged ${result.deleted} detailed_logs`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Cleanup] Error purging detailed_logs:", err);
     result.errors++;
   }
