@@ -39,39 +39,48 @@ export function DocsSidebarClient({ mobileOnly = false }: { mobileOnly?: boolean
   }
 
   return (
-    <div className="flex flex-col h-full w-64 bg-bg border-r border-border">
+    <nav
+      className="flex flex-col h-full w-64 bg-bg border-r border-border"
+      aria-label="Documentation pages"
+    >
       <div className="p-4 border-b border-border">
         <h2 className="font-bold text-text-primary mb-3">OmniRoute Docs</h2>
         <DocsSearchClient />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div
+        className="flex-1 overflow-y-auto p-4 space-y-6"
+        role="list"
+        aria-label="Documentation sections"
+      >
         {docsNavigation.map((section, sectionIdx) => (
-          <div key={sectionIdx} className="space-y-2">
+          <div key={sectionIdx} className="space-y-2" role="listitem">
             <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               {section.title}
             </h3>
-            <div className="space-y-1">
+            <ul className="space-y-1">
               {section.items.map((item) => (
-                <Link
-                  key={item.slug}
-                  href={`/docs/${item.slug}`}
-                  className={cn(
-                    "block rounded-md px-3 py-2 text-sm transition-colors",
-                    "hover:bg-bg-subtle hover:text-text-main",
-                    isActive(item.slug)
-                      ? "text-primary font-medium bg-primary/10"
-                      : "text-text-main"
-                  )}
-                >
-                  {item.title}
-                </Link>
+                <li key={item.slug}>
+                  <Link
+                    href={`/docs/${item.slug}`}
+                    className={cn(
+                      "block rounded-md px-3 py-2 text-sm transition-colors",
+                      "hover:bg-bg-subtle hover:text-text-main",
+                      isActive(item.slug)
+                        ? "text-primary font-medium bg-primary/10"
+                        : "text-text-main"
+                    )}
+                    aria-current={isActive(item.slug) ? "page" : undefined}
+                  >
+                    {item.title}
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         ))}
       </div>
-    </div>
+    </nav>
   );
 }
 
@@ -107,24 +116,26 @@ function MobileSidebarContent({
             <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               {section.title}
             </h3>
-            <div className="space-y-1">
+            <ul className="space-y-1">
               {section.items.map((item) => (
-                <Link
-                  key={item.slug}
-                  href={`/docs/${item.slug}`}
-                  onClick={onClose}
-                  className={cn(
-                    "block rounded-md px-3 py-2 text-sm transition-colors",
-                    "hover:bg-bg-subtle hover:text-text-main",
-                    isActive(item.slug)
-                      ? "text-primary font-medium bg-primary/10"
-                      : "text-text-main"
-                  )}
-                >
-                  {item.title}
-                </Link>
+                <li key={item.slug}>
+                  <Link
+                    href={`/docs/${item.slug}`}
+                    onClick={onClose}
+                    className={cn(
+                      "block rounded-md px-3 py-2 text-sm transition-colors",
+                      "hover:bg-bg-subtle hover:text-text-main",
+                      isActive(item.slug)
+                        ? "text-primary font-medium bg-primary/10"
+                        : "text-text-main"
+                    )}
+                    aria-current={isActive(item.slug) ? "page" : undefined}
+                  >
+                    {item.title}
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         ))}
       </div>

@@ -1,0 +1,261 @@
+import { DocNavItem } from "./docsNavigation";
+
+export interface SearchItem extends DocNavItem {
+  section: string;
+  content: string;
+  headings: string[];
+}
+
+export const SEARCH_INDEX: SearchItem[] = [
+  {
+    slug: "setup-guide",
+    title: "Setup Guide",
+    fileName: "SETUP_GUIDE.md",
+    section: "Getting Started",
+    content: "install configure setup run npm omniroute docker quick start environment variables",
+    headings: ["Quick Start", "Docker", "Configuration"],
+  },
+  {
+    slug: "user-guide",
+    title: "User Guide",
+    fileName: "USER_GUIDE.md",
+    section: "Getting Started",
+    content: "providers combos api keys dashboard endpoints management model routing fallback",
+    headings: ["Providers", "Combos", "API Keys"],
+  },
+  {
+    slug: "cli-tools",
+    title: "CLI Tools",
+    fileName: "CLI-TOOLS.md",
+    section: "Getting Started",
+    content:
+      "claude code codex gemini cli cursor cline openclaw opencode kilo copilot setup configure",
+    headings: ["Claude Code", "Codex CLI", "Gemini CLI"],
+  },
+  {
+    slug: "architecture",
+    title: "Architecture",
+    fileName: "ARCHITECTURE.md",
+    section: "Getting Started",
+    content:
+      "system architecture data layer sqlite api route pipeline streaming executor translator next.js",
+    headings: ["Data Layer", "API Routes", "Request Pipeline"],
+  },
+  {
+    slug: "features",
+    title: "Features Gallery",
+    fileName: "FEATURES.md",
+    section: "Features",
+    content: "features dashboard health analytics translator playground combo routing mcp a2a",
+    headings: ["Dashboard", "Health", "Analytics"],
+  },
+  {
+    slug: "auto-combo",
+    title: "Auto-Combo Engine",
+    fileName: "AUTO-COMBO.md",
+    section: "Features",
+    content: "auto combo routing strategy scoring mode packs self-healing failover circuit breaker",
+    headings: ["Scoring", "Mode Packs", "Self-Healing"],
+  },
+  {
+    slug: "compression-guide",
+    title: "Compression Guide",
+    fileName: "COMPRESSION_GUIDE.md",
+    section: "Features",
+    content:
+      "compression prompt tokens save caveman rtk lite standard aggressive ultra stacked pipeline",
+    headings: ["Modes", "Lite", "Standard", "RTK", "Stacked"],
+  },
+  {
+    slug: "rtk-compression",
+    title: "RTK Compression",
+    fileName: "RTK_COMPRESSION.md",
+    section: "Features",
+    content: "rtk rust token killer command output compression filters json dsl trust verify",
+    headings: ["Filters", "JSON DSL", "Trust Gate"],
+  },
+  {
+    slug: "compression-engines",
+    title: "Compression Engines",
+    fileName: "COMPRESSION_ENGINES.md",
+    section: "Features",
+    content: "caveman rtk engines registry stacked pipeline compression combo config dashboard api",
+    headings: ["Engines", "Registry", "Pipeline"],
+  },
+  {
+    slug: "compression-rules-format",
+    title: "Rules Format",
+    fileName: "COMPRESSION_RULES_FORMAT.md",
+    section: "Features",
+    content:
+      "rules format json dsl replace strip keep truncate filter custom project global trust verification",
+    headings: ["Format", "Custom Rules"],
+  },
+  {
+    slug: "compression-language-packs",
+    title: "Language Packs",
+    fileName: "COMPRESSION_LANGUAGE_PACKS.md",
+    section: "Features",
+    content: "language packs detection caveman rules internationalization multilingual compression",
+    headings: ["Detection", "Authoring"],
+  },
+  {
+    slug: "free-tiers",
+    title: "Free Tiers",
+    fileName: "FREE_TIERS.md",
+    section: "Features",
+    content:
+      "free providers kiro qoder pollinations groq cerebras nvidia cloudflare scaleway longcat quotas keys",
+    headings: ["Free Providers", "Quotas"],
+  },
+  {
+    slug: "api-reference",
+    title: "API Reference",
+    fileName: "API_REFERENCE.md",
+    section: "API & Protocols",
+    content:
+      "api reference openai compatible endpoint chat completions models embeddings images audio moderation rerank search batch files",
+    headings: ["Chat Completions", "Models", "Embeddings"],
+  },
+  {
+    slug: "api-explorer",
+    title: "API Explorer",
+    fileName: "API_REFERENCE.md",
+    section: "API & Protocols",
+    content: "interactive try it live api explorer endpoint test request response curl example",
+    headings: ["Try It", "Endpoints"],
+  },
+  {
+    slug: "mcp-server",
+    title: "MCP Server",
+    fileName: "MCP-SERVER.md",
+    section: "API & Protocols",
+    content: "mcp model context protocol server tools 37 sse stream http stdio transport 10 scopes",
+    headings: ["Tools", "Transports", "Scopes"],
+  },
+  {
+    slug: "a2a-server",
+    title: "A2A Server",
+    fileName: "A2A-SERVER.md",
+    section: "API & Protocols",
+    content:
+      "a2a agent protocol json rpc task manager skills streaming lifecycle submitted working completed",
+    headings: ["Protocol", "Tasks", "Skills"],
+  },
+  {
+    slug: "docker-guide",
+    title: "Docker Guide",
+    fileName: "DOCKER_GUIDE.md",
+    section: "Deployment",
+    content: "docker compose container deploy caddy nginx ssl https volume persistent",
+    headings: ["Docker Run", "Compose", "Caddy"],
+  },
+  {
+    slug: "vm-deployment-guide",
+    title: "VM Deployment",
+    fileName: "VM_DEPLOYMENT_GUIDE.md",
+    section: "Deployment",
+    content: "vm deployment nginx cloudflare ssl domain server setup proxy configuration",
+    headings: ["VM Setup", "Nginx", "SSL"],
+  },
+  {
+    slug: "fly-io-deployment-guide",
+    title: "Fly.io Deployment",
+    fileName: "FLY_IO_DEPLOYMENT_GUIDE.md",
+    section: "Deployment",
+    content: "fly.io deploy persistent storage volumes app machine region",
+    headings: ["Setup", "Deploy"],
+  },
+  {
+    slug: "termux-guide",
+    title: "Termux Guide",
+    fileName: "TERMUX_GUIDE.md",
+    section: "Deployment",
+    content: "termux android phone arm mobile deploy pkg node npm autostart boot",
+    headings: ["Install", "Run"],
+  },
+  {
+    slug: "pwa-guide",
+    title: "PWA Guide",
+    fileName: "PWA_GUIDE.md",
+    section: "Deployment",
+    content: "pwa progressive web app install offline service worker caching manifest",
+    headings: ["Install", "Architecture"],
+  },
+  {
+    slug: "proxy-guide",
+    title: "Proxy Guide",
+    fileName: "PROXY_GUIDE.md",
+    section: "Operations",
+    content:
+      "proxy cloudflare socks5 global per-provider 1proxy marketplace rotation quality tls fingerprint",
+    headings: ["Levels", "1proxy", "TLS Spoofing"],
+  },
+  {
+    slug: "resilience-guide",
+    title: "Resilience Guide",
+    fileName: "RESILIENCE_GUIDE.md",
+    section: "Operations",
+    content:
+      "resilience circuit breaker fallback retry cooldown anti-thundering-herd rate limit queue pacing",
+    headings: ["Breakers", "Retry", "Cooldown"],
+  },
+  {
+    slug: "environment",
+    title: "Environment Config",
+    fileName: "ENVIRONMENT.md",
+    section: "Operations",
+    content: "environment variables config port data_dir api_key require timeout dashboard ssl",
+    headings: ["Variables", "Reference"],
+  },
+  {
+    slug: "troubleshooting",
+    title: "Troubleshooting",
+    fileName: "TROUBLESHOOTING.md",
+    section: "Operations",
+    content:
+      "troubleshooting error fix debugging quota rate limit oauth proxy node version system info",
+    headings: ["Common Issues", "Debug"],
+  },
+  {
+    slug: "codebase-documentation",
+    title: "Codebase Docs",
+    fileName: "CODEBASE_DOCUMENTATION.md",
+    section: "Development",
+    content: "codebase architecture source structure modules typescript contributing testing",
+    headings: ["Structure", "Modules"],
+  },
+  {
+    slug: "coverage-plan",
+    title: "Coverage Plan",
+    fileName: "COVERAGE_PLAN.md",
+    section: "Development",
+    content:
+      "test coverage plan unit integration e2e security ecosystem vitest tdd requirements gates",
+    headings: ["Strategy", "Requirements"],
+  },
+  {
+    slug: "i18n",
+    title: "i18n Guide",
+    fileName: "I18N.md",
+    section: "Development",
+    content: "internationalization i18n localization translation rtl languages 40+ workflow",
+    headings: ["Languages", "Translation"],
+  },
+  {
+    slug: "release-checklist",
+    title: "Release Checklist",
+    fileName: "RELEASE_CHECKLIST.md",
+    section: "Development",
+    content: "release checklist version npm docker publish github actions changelog semantic",
+    headings: ["Checklist", "Process"],
+  },
+  {
+    slug: "uninstall",
+    title: "Uninstall",
+    fileName: "UNINSTALL.md",
+    section: "Development",
+    content: "uninstall remove clean data npm docker stop service system full",
+    headings: ["Uninstall", "Clean"],
+  },
+];

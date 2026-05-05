@@ -48,6 +48,7 @@ export const docsNavigation: DocNavSection[] = [
     title: "API & Protocols",
     items: [
       { slug: "api-reference", title: "API Reference", fileName: "API_REFERENCE.md" },
+      { slug: "api-explorer", title: "API Explorer", fileName: "API_REFERENCE.md" },
       { slug: "mcp-server", title: "MCP Server", fileName: "MCP-SERVER.md" },
       { slug: "a2a-server", title: "A2A Server", fileName: "A2A-SERVER.md" },
     ],

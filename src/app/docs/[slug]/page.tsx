@@ -6,6 +6,7 @@ import path from "path";
 import matter from "gray-matter";
 import { Metadata } from "next";
 import { DocCodeBlocks } from "../components/DocCodeBlocks";
+import { FeedbackWidget } from "../components/FeedbackWidget";
 
 export function generateStaticParams() {
   const allSlugs = docsNavigation.flatMap((section) =>
@@ -54,59 +55,56 @@ export function extractHeadings(content: string): { id: string; text: string; le
 }
 
 export function renderMarkdown(content: string): string {
-  return (
-    content
-      .replace(/^####\s+(.*)$/gm, '<h4 id="$1" class="text-lg font-bold mb-2 mt-6">$1</h4>')
-      .replace(/^###\s+(.*)$/gm, '<h3 id="$1" class="text-xl font-bold mb-3 mt-8">$1</h3>')
-      .replace(/^##\s+(.*)$/gm, '<h2 id="$1" class="text-2xl font-bold mb-4 mt-10">$1</h2>')
-      .replace(/^#\s+(.*)$/gm, '<h1 class="text-3xl font-bold mb-4">$1</h1>')
-      .replace(
-        /```(\w*)\n([\s\S]*?)```/g,
-        '<div class="group relative"><pre class="bg-bg-subtle p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre></div>'
-      )
-      .replace(/`([^`]+)`/g, '<code class="bg-bg-subtle px-2 py-1 rounded text-sm">$1</code>')
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.*?)\*/g, "<em>$1</em>")
-      .replace(/__(.*?)__/g, "<strong>$1</strong>")
-      .replace(/_(.*?)_/g, "<em>$1</em>")
-      .replace(
-        /\[([^\]]+)\]\(([^)]+)\)/g,
-        '<a href="$2" class="text-primary hover:underline">$1</a>'
-      )
-      .replace(
-        /!\[([^\]]+)\]\(([^)]+)\)/g,
-        '<img src="$2" alt="$1" class="max-w-full rounded-lg my-4">'
-      )
-      .replace(/^(\*|\-)\s+(.*)$/gm, '<li class="mb-1 ml-4">$2</li>')
-      .replace(/^(\d+)\.\s+(.*)$/gm, '<li class="mb-1 ml-4">$2</li>')
-      .replace(
-        /^\|\s*(.+?)\s*\|$/gm,
-        (match) => {
-          if (match.match(/^\|\s*[-:]+[-|\s:]*$/)) return "";
-          const cells = match
-            .split("|")
-            .filter((c) => c.trim())
-            .map((c) => `<td class="border border-border p-2 text-sm">${c.trim()}</td>`)
-            .join("");
-          return `<tr>${cells}</tr>`;
-        }
-      )
-      .replace(
-        /(<tr>.*<\/tr>\n?)+/g,
-        (match) => `<table class="w-full border-collapse mb-4 text-sm"><tbody>${match}</tbody></table>`
-      )
-      .replace(
-        /^>\s+(.*)$/gm,
-        '<blockquote class="border-l-4 border-primary/30 pl-4 italic text-text-muted mb-4">$1</blockquote>'
-      )
-      .replace(/^---$/gm, '<hr class="border-border my-8">')
-  );
+  return content
+    .replace(/^####\s+(.*)$/gm, '<h4 id="$1" class="text-lg font-bold mb-2 mt-6">$1</h4>')
+    .replace(/^###\s+(.*)$/gm, '<h3 id="$1" class="text-xl font-bold mb-3 mt-8">$1</h3>')
+    .replace(/^##\s+(.*)$/gm, '<h2 id="$1" class="text-2xl font-bold mb-4 mt-10">$1</h2>')
+    .replace(/^#\s+(.*)$/gm, '<h1 class="text-3xl font-bold mb-4">$1</h1>')
+    .replace(
+      /```(\w*)\n([\s\S]*?)```/g,
+      '<div class="group relative"><pre class="bg-bg-subtle p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre></div>'
+    )
+    .replace(/`([^`]+)`/g, '<code class="bg-bg-subtle px-2 py-1 rounded text-sm">$1</code>')
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/__(.*?)__/g, "<strong>$1</strong>")
+    .replace(/_(.*?)_/g, "<em>$1</em>")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary hover:underline">$1</a>')
+    .replace(
+      /!\[([^\]]+)\]\(([^)]+)\)/g,
+      '<img src="$2" alt="$1" class="max-w-full rounded-lg my-4">'
+    )
+    .replace(/^(\*|\-)\s+(.*)$/gm, '<li class="mb-1 ml-4">$2</li>')
+    .replace(/^(\d+)\.\s+(.*)$/gm, '<li class="mb-1 ml-4">$2</li>')
+    .replace(/^\|\s*(.+?)\s*\|$/gm, (match) => {
+      if (match.match(/^\|\s*[-:]+[-|\s:]*$/)) return "";
+      const cells = match
+        .split("|")
+        .filter((c) => c.trim())
+        .map((c) => `<td class="border border-border p-2 text-sm">${c.trim()}</td>`)
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .replace(
+      /(<tr>.*<\/tr>\n?)+/g,
+      (match) =>
+        `<table class="w-full border-collapse mb-4 text-sm"><tbody>${match}</tbody></table>`
+    )
+    .replace(
+      /^>\s+(.*)$/gm,
+      '<blockquote class="border-l-4 border-primary/30 pl-4 italic text-text-muted mb-4">$1</blockquote>'
+    )
+    .replace(/^---$/gm, '<hr class="border-border my-8">');
 }
 
 function cleanHeadingIds(html: string): string {
   return html.replace(
     /id="([^"]*)"/g,
-    (_, id) => `id="${id.toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}"`
+    (_, id) =>
+      `id="${id
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "-")}"`
   );
 }
 
@@ -203,90 +201,92 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
 
   return (
     <>
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
-    />
-    <div className="flex gap-8">
-      <div className="flex-1 min-w-0">
-        <nav className="mb-6">
-          <ol className="flex items-center gap-2 text-sm text-text-muted">
-            <li>
-              <Link href="/docs" className="hover:text-text-main">
-                Docs
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <div className="flex gap-8">
+        <div className="flex-1 min-w-0">
+          <nav className="mb-6">
+            <ol className="flex items-center gap-2 text-sm text-text-muted">
+              <li>
+                <Link href="/docs" className="hover:text-text-main">
+                  Docs
+                </Link>
+              </li>
+              <li className='before:content-["&gt;"] before:mx-2'>{sectionTitle}</li>
+              <li className='before:content-["&gt;"] before:mx-2'>{pageTitle}</li>
+            </ol>
+          </nav>
+
+          <div className="flex items-center gap-3 mb-6">
+            <h1 className="text-3xl font-bold text-text-main">{pageTitle}</h1>
+            {version && (
+              <span className="px-2 py-0.5 text-xs font-mono bg-primary/10 text-primary border border-primary/20 rounded">
+                v{version}
+              </span>
+            )}
+          </div>
+
+          {lastUpdated && (
+            <p className="text-xs text-text-muted mb-4">Last updated: {lastUpdated}</p>
+          )}
+
+          <div className="prose-content" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+
+          <DocCodeBlocks />
+
+          <FeedbackWidget slug={slug} />
+
+          <div className="flex items-center justify-between border-t border-border pt-6 mt-12">
+            {prevItem ? (
+              <Link
+                href={`/docs/${prev}`}
+                className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">arrow_back</span>
+                {prevItem.item.title}
               </Link>
-            </li>
-            <li className='before:content-["&gt;"] before:mx-2'>{sectionTitle}</li>
-            <li className='before:content-["&gt;"] before:mx-2'>{pageTitle}</li>
-          </ol>
-        </nav>
-
-        <div className="flex items-center gap-3 mb-6">
-          <h1 className="text-3xl font-bold text-text-main">{pageTitle}</h1>
-          {version && (
-            <span className="px-2 py-0.5 text-xs font-mono bg-primary/10 text-primary border border-primary/20 rounded">
-              v{version}
-            </span>
-          )}
+            ) : (
+              <div />
+            )}
+            {nextItem ? (
+              <Link
+                href={`/docs/${next}`}
+                className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors"
+              >
+                {nextItem.item.title}
+                <span className="material-symbols-outlined text-sm">arrow_forward</span>
+              </Link>
+            ) : (
+              <div />
+            )}
+          </div>
         </div>
 
-        {lastUpdated && (
-          <p className="text-xs text-text-muted mb-4">Last updated: {lastUpdated}</p>
-        )}
-
-        <div className="prose-content" dangerouslySetInnerHTML={{ __html: htmlContent }} />
-
-        <DocCodeBlocks />
-
-        <div className="flex items-center justify-between border-t border-border pt-6 mt-12">
-          {prevItem ? (
-            <Link
-              href={`/docs/${prev}`}
-              className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">arrow_back</span>
-              {prevItem.item.title}
-            </Link>
-          ) : (
-            <div />
-          )}
-          {nextItem ? (
-            <Link
-              href={`/docs/${next}`}
-              className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors"
-            >
-              {nextItem.item.title}
-              <span className="material-symbols-outlined text-sm">arrow_forward</span>
-            </Link>
-          ) : (
-            <div />
-          )}
-        </div>
-      </div>
-
-      {headings.length > 0 && (
-        <aside className="hidden xl:block w-56 shrink-0">
-          <div className="sticky top-8">
-            <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-              On this page
-            </h4>
-            <nav className="space-y-1">
-              {headings.map((heading) => (
-                <a
-                  key={heading.id}
-                  href={`#${heading.id}`}
-                  className={`block text-sm text-text-muted hover:text-primary transition-colors truncate
+        {headings.length > 0 && (
+          <aside className="hidden xl:block w-56 shrink-0">
+            <div className="sticky top-8">
+              <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+                On this page
+              </h4>
+              <nav className="space-y-1">
+                {headings.map((heading) => (
+                  <a
+                    key={heading.id}
+                    href={`#${heading.id}`}
+                    className={`block text-sm text-text-muted hover:text-primary transition-colors truncate
                     ${heading.level === 3 ? "pl-3" : ""}
                     ${heading.level === 4 ? "pl-6" : ""}`}
-                >
-                  {heading.text}
-                </a>
-              ))}
-            </nav>
-          </div>
-        </aside>
-      )}
-    </div>
+                  >
+                    {heading.text}
+                  </a>
+                ))}
+              </nav>
+            </div>
+          </aside>
+        )}
+      </div>
     </>
   );
 }

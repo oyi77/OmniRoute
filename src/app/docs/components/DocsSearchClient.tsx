@@ -3,14 +3,23 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Fuse from "fuse.js";
-import { docsNavigation, DocNavItem } from "../lib/docsNavigation";
+import { SEARCH_INDEX, SearchItem } from "../lib/searchIndex";
+import { docsNavigation } from "../lib/docsNavigation";
 
-const allDocItems: DocNavItem[] = docsNavigation.flatMap((section) => section.items);
-
-const fuse = new Fuse(allDocItems, {
+const fuseTitles = new Fuse(SEARCH_INDEX, {
   keys: [
-    { name: "title", weight: 2 },
+    { name: "title", weight: 3 },
     { name: "slug", weight: 1 },
+  ],
+  threshold: 0.3,
+  includeScore: true,
+});
+
+const fuseContent = new Fuse(SEARCH_INDEX, {
+  keys: [
+    { name: "title", weight: 3 },
+    { name: "content", weight: 2 },
+    { name: "headings", weight: 2 },
   ],
   threshold: 0.4,
   includeScore: true,
@@ -18,7 +27,7 @@ const fuse = new Fuse(allDocItems, {
 
 export function DocsSearchClient({ onResultClick }: { onResultClick?: () => void }) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Fuse.FuseResult<DocNavItem>[]>([]);
+  const [results, setResults] = useState<Fuse.FuseResult<SearchItem>[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,8 +39,18 @@ export function DocsSearchClient({ onResultClick }: { onResultClick?: () => void
       setIsOpen(false);
       return;
     }
-    const searchResults = fuse.search(value.trim());
-    setResults(searchResults.slice(0, 8));
+    const titleResults = fuseTitles.search(value.trim()).slice(0, 4);
+    const contentResults = fuseContent.search(value.trim()).slice(0, 4);
+
+    const seen = new Set<string>();
+    const merged: Fuse.FuseResult<SearchItem>[] = [];
+    for (const r of [...titleResults, ...contentResults]) {
+      if (!seen.has(r.item.slug)) {
+        seen.add(r.item.slug);
+        merged.push(r);
+      }
+    }
+    setResults(merged.slice(0, 8));
     setIsOpen(true);
   }, []);
 
@@ -116,9 +135,7 @@ export function DocsSearchClient({ onResultClick }: { onResultClick?: () => void
           <div className="max-h-72 overflow-y-auto">
             {results.map((result) => {
               const item = result.item;
-              const section = docsNavigation.find((s) =>
-                s.items.some((i) => i.slug === item.slug)
-              );
+              const section = docsNavigation.find((s) => s.items.some((i) => i.slug === item.slug));
               return (
                 <Link
                   key={item.slug}
@@ -126,15 +143,14 @@ export function DocsSearchClient({ onResultClick }: { onResultClick?: () => void
                   onClick={handleSelect}
                   className="flex items-center gap-3 px-3 py-2.5 hover:bg-bg-subtle transition-colors border-b border-border last:border-b-0"
                 >
-                  <span className="material-symbols-outlined text-text-muted text-sm">
-                    article
-                  </span>
+                  <span className="material-symbols-outlined text-text-muted text-sm">article</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-text-main truncate">
-                      {item.title}
-                    </div>
-                    {section && (
-                      <div className="text-xs text-text-muted">{section.title}</div>
+                    <div className="text-sm font-medium text-text-main truncate">{item.title}</div>
+                    {section && <div className="text-xs text-text-muted">{section.title}</div>}
+                    {item.content && (
+                      <div className="text-xs text-text-muted truncate mt-0.5">
+                        {item.content.slice(0, 80)}...
+                      </div>
                     )}
                   </div>
                   <span className="material-symbols-outlined text-text-muted text-xs">
