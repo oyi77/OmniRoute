@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { docsNavigation } from "../lib/docsNavigation";
+import { DocsSearchClient } from "./DocsSearchClient";
 
 export function DocsSidebarClient({ mobileOnly = false }: { mobileOnly?: boolean }) {
   const pathname = usePathname();
@@ -40,7 +41,8 @@ export function DocsSidebarClient({ mobileOnly = false }: { mobileOnly?: boolean
   return (
     <div className="flex flex-col h-full w-64 bg-bg border-r border-border">
       <div className="p-4 border-b border-border">
-        <h2 className="font-bold text-text-primary">OmniRoute Docs</h2>
+        <h2 className="font-bold text-text-primary mb-3">OmniRoute Docs</h2>
+        <DocsSearchClient />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -93,6 +95,10 @@ function MobileSidebarContent({
         >
           <span className="material-symbols-outlined">close</span>
         </button>
+      </div>
+
+      <div className="px-4 pt-3 border-b border-border">
+        <DocsSearchClient onResultClick={onClose} />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">

@@ -5,8 +5,8 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import { Metadata } from "next";
+import { DocCodeBlocks } from "../components/DocCodeBlocks";
 
-// Generate static params for all documentation pages
 export function generateStaticParams() {
   const allSlugs = docsNavigation.flatMap((section) =>
     section.items.map((item) => ({ slug: item.slug }))
@@ -14,7 +14,6 @@ export function generateStaticParams() {
   return allSlugs;
 }
 
-// Find the navigation item by slug
 export function getDocItemBySlug(slug: string) {
   for (const section of docsNavigation) {
     const item = section.items.find((item) => item.slug === slug);
@@ -25,78 +24,89 @@ export function getDocItemBySlug(slug: string) {
   return null;
 }
 
-// Simple markdown renderer
+export function getAllDocSlugsFlat(): string[] {
+  return docsNavigation.flatMap((section) => section.items.map((item) => item.slug));
+}
+
+export function getPrevNextSlugs(currentSlug: string) {
+  const allSlugs = getAllDocSlugsFlat();
+  const idx = allSlugs.indexOf(currentSlug);
+  return {
+    prev: idx > 0 ? allSlugs[idx - 1] : null,
+    next: idx < allSlugs.length - 1 ? allSlugs[idx + 1] : null,
+  };
+}
+
+export function extractHeadings(content: string): { id: string; text: string; level: number }[] {
+  const headings: { id: string; text: string; level: number }[] = [];
+  const regex = /^(#{2,4})\s+(.+)$/gm;
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    const level = match[1].length;
+    const text = match[2].replace(/\*\*/g, "").replace(/\*/g, "").replace(/`/g, "");
+    const id = text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-");
+    headings.push({ id, text, level });
+  }
+  return headings;
+}
+
 export function renderMarkdown(content: string): string {
-  // Convert markdown to HTML with basic formatting
   return (
     content
-      // Headings
+      .replace(/^####\s+(.*)$/gm, '<h4 id="$1" class="text-lg font-bold mb-2 mt-6">$1</h4>')
+      .replace(/^###\s+(.*)$/gm, '<h3 id="$1" class="text-xl font-bold mb-3 mt-8">$1</h3>')
+      .replace(/^##\s+(.*)$/gm, '<h2 id="$1" class="text-2xl font-bold mb-4 mt-10">$1</h2>')
       .replace(/^#\s+(.*)$/gm, '<h1 class="text-3xl font-bold mb-4">$1</h1>')
-      .replace(/^##\s+(.*)$/gm, '<h2 class="text-2xl font-bold mb-3">$1</h2>')
-      .replace(/^###\s+(.*)$/gm, '<h3 class="text-xl font-bold mb-2">$1</h3>')
-      .replace(/^####\s+(.*)$/gm, '<h4 class="text-lg font-bold mb-2">$1</h4>')
-
-      // Code blocks
       .replace(
         /```(\w*)\n([\s\S]*?)```/g,
-        '<pre class="bg-bg-subtle p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre>'
+        '<div class="group relative"><pre class="bg-bg-subtle p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre></div>'
       )
       .replace(/`([^`]+)`/g, '<code class="bg-bg-subtle px-2 py-1 rounded text-sm">$1</code>')
-
-      // Bold and italic
       .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
       .replace(/\*(.*?)\*/g, "<em>$1</em>")
       .replace(/__(.*?)__/g, "<strong>$1</strong>")
       .replace(/_(.*?)_/g, "<em>$1</em>")
-
-      // Links
       .replace(
         /\[([^\]]+)\]\(([^)]+)\)/g,
         '<a href="$2" class="text-primary hover:underline">$1</a>'
       )
-
-      // Images
       .replace(
         /!\[([^\]]+)\]\(([^)]+)\)/g,
         '<img src="$2" alt="$1" class="max-w-full rounded-lg my-4">'
       )
-
-      // Lists - handle both unordered and ordered
-      .replace(/^(\*|\-)\s+(.*)$/gm, '<li class="mb-1">$2</li>')
-      .replace(/^(\d+)\.\s+(.*)$/gm, '<li class="mb-1">$2</li>')
-      .replace(/^(<li>.*<\/li>)+/gm, '<ul class="list-disc pl-6 mb-4">$&</ul>')
-
-      // Tables - simplified: wrap pipe-separated rows
-      .replace(/^\|(.+)\|$/gm, (match) => {
-        const cells = match
-          .split("|")
-          .filter((c) => c.trim())
-          .map((c) => `<td class="border border-border p-2">${c.trim()}</td>`)
-          .join("");
-        return `<tr>${cells}</tr>`;
-      })
+      .replace(/^(\*|\-)\s+(.*)$/gm, '<li class="mb-1 ml-4">$2</li>')
+      .replace(/^(\d+)\.\s+(.*)$/gm, '<li class="mb-1 ml-4">$2</li>')
+      .replace(
+        /^\|\s*(.+?)\s*\|$/gm,
+        (match) => {
+          if (match.match(/^\|\s*[-:]+[-|\s:]*$/)) return "";
+          const cells = match
+            .split("|")
+            .filter((c) => c.trim())
+            .map((c) => `<td class="border border-border p-2 text-sm">${c.trim()}</td>`)
+            .join("");
+          return `<tr>${cells}</tr>`;
+        }
+      )
       .replace(
         /(<tr>.*<\/tr>\n?)+/g,
-        (match) => `<table class="w-full border-collapse mb-4"><tbody>${match}</tbody></table>`
+        (match) => `<table class="w-full border-collapse mb-4 text-sm"><tbody>${match}</tbody></table>`
       )
-
-      // Blockquotes
       .replace(
         /^>\s+(.*)$/gm,
-        '<blockquote class="border-l-4 border-border pl-4 italic text-text-muted mb-4">$1</blockquote>'
+        '<blockquote class="border-l-4 border-primary/30 pl-4 italic text-text-muted mb-4">$1</blockquote>'
       )
+      .replace(/^---$/gm, '<hr class="border-border my-8">')
+  );
+}
 
-      // Horizontal rules
-      .replace(/^---$/gm, '<hr class="border-border my-6">')
-
-      // Paragraphs (simple approach - skip lines that are already wrapped in HTML tags)
-      .replace(/^(?!<[a-z]>)(.+)$/gm, (match, p1) => {
-        // Skip empty lines and lines that look like markdown headers or list items
-        if (!p1.trim() || p1.match(/^[#\-*\d]/)) {
-          return match;
-        }
-        return `<p class="mb-4">${p1}</p>`;
-      })
+function cleanHeadingIds(html: string): string {
+  return html.replace(
+    /id="([^"]*)"/g,
+    (_, id) => `id="${id.toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}"`
   );
 }
 
@@ -130,18 +140,24 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
 
   const { sectionTitle, item } = docItem;
 
-  // Read markdown file
   const filePath = path.join(process.cwd(), "docs", item.fileName);
 
   let pageTitle = item.title;
   let htmlContent = "";
+  let headings: { id: string; text: string; level: number }[] = [];
   let loadError: string | null = null;
+  let version: string | null = null;
+  let lastUpdated: string | null = null;
 
   try {
     const fileContent = fs.readFileSync(filePath, "utf8");
     const { content, data: frontmatter } = matter(fileContent);
     pageTitle = (frontmatter.title as string) || item.title;
-    htmlContent = renderMarkdown(content);
+    version = (frontmatter.version as string) || null;
+    lastUpdated = (frontmatter.lastUpdated as string) || null;
+    headings = extractHeadings(content);
+    const rawHtml = renderMarkdown(content);
+    htmlContent = cleanHeadingIds(rawHtml);
   } catch (error) {
     console.error(`Failed to read doc file: ${filePath}`, error);
     loadError = error instanceof Error ? error.message : "Unknown error";
@@ -157,26 +173,120 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
     );
   }
 
+  const { prev, next } = getPrevNextSlugs(slug);
+  const prevItem = prev ? getDocItemBySlug(prev) : null;
+  const nextItem = next ? getDocItemBySlug(next) : null;
+
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Docs",
+        item: `https://omniroute.online/docs`,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: sectionTitle,
+        item: `https://omniroute.online/docs/${slug}`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: pageTitle,
+      },
+    ],
+  };
+
   return (
-    <div className="prose prose-lg max-w-none">
-      {/* Breadcrumb */}
-      <nav className="mb-6">
-        <ol className="flex items-center gap-2 text-sm text-text-muted">
-          <li>
-            <Link href="/docs" className="hover:text-text-main">
-              Docs
+    <>
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+    />
+    <div className="flex gap-8">
+      <div className="flex-1 min-w-0">
+        <nav className="mb-6">
+          <ol className="flex items-center gap-2 text-sm text-text-muted">
+            <li>
+              <Link href="/docs" className="hover:text-text-main">
+                Docs
+              </Link>
+            </li>
+            <li className='before:content-["&gt;"] before:mx-2'>{sectionTitle}</li>
+            <li className='before:content-["&gt;"] before:mx-2'>{pageTitle}</li>
+          </ol>
+        </nav>
+
+        <div className="flex items-center gap-3 mb-6">
+          <h1 className="text-3xl font-bold text-text-main">{pageTitle}</h1>
+          {version && (
+            <span className="px-2 py-0.5 text-xs font-mono bg-primary/10 text-primary border border-primary/20 rounded">
+              v{version}
+            </span>
+          )}
+        </div>
+
+        {lastUpdated && (
+          <p className="text-xs text-text-muted mb-4">Last updated: {lastUpdated}</p>
+        )}
+
+        <div className="prose-content" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+
+        <DocCodeBlocks />
+
+        <div className="flex items-center justify-between border-t border-border pt-6 mt-12">
+          {prevItem ? (
+            <Link
+              href={`/docs/${prev}`}
+              className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">arrow_back</span>
+              {prevItem.item.title}
             </Link>
-          </li>
-          <li className='before:content-["&gt;"] before:mx-2'>{sectionTitle}</li>
-          <li className='before:content-["&gt;"] before:mx-2'>{pageTitle}</li>
-        </ol>
-      </nav>
+          ) : (
+            <div />
+          )}
+          {nextItem ? (
+            <Link
+              href={`/docs/${next}`}
+              className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors"
+            >
+              {nextItem.item.title}
+              <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            </Link>
+          ) : (
+            <div />
+          )}
+        </div>
+      </div>
 
-      {/* Page title */}
-      <h1 className="text-3xl font-bold mb-6 text-text-main">{pageTitle}</h1>
-
-      {/* Rendered content */}
-      <div className="prose-content" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+      {headings.length > 0 && (
+        <aside className="hidden xl:block w-56 shrink-0">
+          <div className="sticky top-8">
+            <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+              On this page
+            </h4>
+            <nav className="space-y-1">
+              {headings.map((heading) => (
+                <a
+                  key={heading.id}
+                  href={`#${heading.id}`}
+                  className={`block text-sm text-text-muted hover:text-primary transition-colors truncate
+                    ${heading.level === 3 ? "pl-3" : ""}
+                    ${heading.level === 4 ? "pl-6" : ""}`}
+                >
+                  {heading.text}
+                </a>
+              ))}
+            </nav>
+          </div>
+        </aside>
+      )}
     </div>
+    </>
   );
 }
