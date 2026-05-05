@@ -35,13 +35,6 @@ const STATIC_SALT = "omniroute-field-encryption-v1";
 
 let _staticKey: Buffer | null = null;
 let _legacyDynamicKey: Buffer | null = null;
-// Module-level migration flag. Safe in Node.js because:
-// 1. Node.js is single-threaded — no concurrent access race conditions
-// 2. decrypt() is synchronous — no interleaving between flag-set and flag-read
-// 3. Used as a "check-after-decrypt" signal, not a persistent state dependency
-// 4. Same pattern as _staticKey/_legacyDynamicKey cache variables above
-let _migrationNeeded = false;
-
 /** Connection object with potentially encrypted credential fields. */
 export interface ConnectionFields {
   apiKey?: string | null;
@@ -88,7 +81,6 @@ function getLegacyDynamicKey(): Buffer | null {
   const secret = process.env.STORAGE_ENCRYPTION_KEY;
   if (!secret || typeof secret !== "string" || secret.trim().length === 0) return null;
 
-  // This is the OLD dynamic salt derivation that caused the bug
   const dynamicSalt = createHash("sha256").update(secret).digest().slice(0, 16);
   try {
     _legacyDynamicKey = scryptSync(secret, dynamicSalt, KEY_LENGTH);
@@ -96,16 +88,6 @@ function getLegacyDynamicKey(): Buffer | null {
     return null;
   }
   return _legacyDynamicKey;
-}
-
-/** Check if any tokens were decrypted using the legacy key (indicating migration is needed). */
-export function isMigrationNeeded(): boolean {
-  return _migrationNeeded;
-}
-
-/** Reset migration flag (call after migration is complete). */
-export function resetMigrationFlag(): void {
-  _migrationNeeded = false;
 }
 
 /** Check if encryption is enabled. */
@@ -198,21 +180,9 @@ export function decrypt(ciphertext: string | null | undefined): string | null | 
 
   try {
     // PRIMARY: Try static-salt key first (canonical derivation)
-    let decrypted = tryDecryptWithKey(staticKey);
+    const decrypted = tryDecryptWithKey(staticKey);
     if (decrypted !== null) {
       return decrypted;
-    }
-
-    // FALLBACK: Try legacy dynamic-salt key (backward compatibility)
-    const legacyKey = getLegacyDynamicKey();
-    if (legacyKey) {
-      const legacyDecrypted = tryDecryptWithKey(legacyKey);
-      if (legacyDecrypted !== null) {
-        // Flag for migration: this token was encrypted with the legacy key
-        // and should be re-encrypted with the static key on next write
-        _migrationNeeded = true;
-        return legacyDecrypted;
-      }
     }
 
     console.error(
@@ -294,4 +264,61 @@ export function validateEncryptionConfig(): { valid: boolean; error?: string } {
         `Generate a valid key with: openssl rand -base64 32`,
     };
   }
+}
+
+/**
+ * Specifically tests a ciphertext against the legacy key. If it succeeds, it
+ * re-encrypts the decrypted value with the canonical static key.
+ * Used exclusively by the startup migration script.
+ */
+export function migrateLegacyEncryptedString(ciphertext: string | null | undefined): {
+  updated: boolean;
+  value: string | null | undefined;
+} {
+  if (!isEncryptionEnabled()) return { updated: false, value: ciphertext };
+  if (!ciphertext || ciphertext.trim().length === 0) return { updated: false, value: ciphertext };
+  if (!ciphertext.startsWith(PREFIX)) return { updated: false, value: ciphertext };
+
+  const staticKey = getStaticKey();
+  const legacyKey = getLegacyDynamicKey();
+
+  if (!staticKey) return { updated: false, value: null };
+
+  const rawPayload = ciphertext.slice(PREFIX.length);
+  const parts = rawPayload.split(":");
+  if (parts.length !== 3) return { updated: false, value: ciphertext };
+
+  const [ivHex, encryptedHex, authTagHex] = parts;
+  const iv = Buffer.from(ivHex, "hex");
+  const authTag = Buffer.from(authTagHex, "hex");
+  const encrypted = Buffer.from(encryptedHex, "hex");
+
+  const tryDecryptWithKey = (key: Buffer): string | null => {
+    try {
+      const decipher = createDecipheriv(ALGORITHM, key, iv);
+      decipher.setAuthTag(authTag);
+      let decrypted = decipher.update(encrypted, undefined, "utf8");
+      decrypted += decipher.final("utf8");
+      return decrypted;
+    } catch {
+      return null;
+    }
+  };
+
+  // 1. If it already decrypts with the static key, no migration needed.
+  if (tryDecryptWithKey(staticKey) !== null) {
+    return { updated: false, value: ciphertext };
+  }
+
+  // 2. If it decrypts with the legacy key, it needs migration!
+  if (legacyKey) {
+    const legacyDecrypted = tryDecryptWithKey(legacyKey);
+    if (legacyDecrypted !== null) {
+      // Re-encrypt using the canonical static key and return updated
+      return { updated: true, value: encrypt(legacyDecrypted) };
+    }
+  }
+
+  // 3. Un-decryptable or corrupted, leave it alone
+  return { updated: false, value: ciphertext };
 }
