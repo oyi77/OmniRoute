@@ -5,7 +5,7 @@ import { autoAllSlugs, autoNavSections } from "../lib/docs-auto-generated";
 import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
-<import { marked } from "marked";
+import { marked } from "marked";
 import DOMPurify from "isomorphic-dompurify";
 import { Metadata } from "next";
 import { DocCodeBlocks } from "../components/DocCodeBlocks";
@@ -76,7 +76,7 @@ export function extractMermaidCharts(content: string): string[] {
   return charts;
 }
 
-<const PROSE_CLASSES: Record<string, string> = {
+const PROSE_CLASSES: Record<string, string> = {
   h1: "text-3xl font-bold mb-4",
   h2: "text-2xl font-bold mb-4 mt-10",
   h3: "text-xl font-bold mb-3 mt-8",
@@ -176,7 +176,7 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
     lastUpdated = (frontmatter.lastUpdated as string) || null;
     mermaidCharts = extractMermaidCharts(content);
     headings = extractHeadings(content);
-<    htmlContent = renderMarkdown(content);
+    htmlContent = renderMarkdown(content);
   } catch (error) {
     console.error(`Failed to read doc file for slug: ${slug}`, error);
     loadError = error instanceof Error ? error.message : "Unknown error";
