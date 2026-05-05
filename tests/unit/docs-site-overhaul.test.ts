@@ -1,0 +1,227 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  extractHeadings,
+  renderMarkdown,
+  getDocItemBySlug,
+  getAllDocSlugsFlat,
+  getPrevNextSlugs,
+} from "../../src/app/docs/[slug]/page";
+import { docsNavigation } from "../../src/app/docs/lib/docsNavigation";
+import { SEARCH_INDEX } from "../../src/app/docs/lib/searchIndex";
+
+// ──────────────────────────────────────────────
+// docsNavigation structure
+// ──────────────────────────────────────────────
+
+test("docsNavigation has 6 sections", () => {
+  assert.equal(docsNavigation.length, 6);
+});
+
+test("every section has title and items", () => {
+  for (const section of docsNavigation) {
+    assert.ok(section.title, "section must have a title");
+    assert.ok(Array.isArray(section.items), "section.items must be an array");
+    assert.ok(section.items.length > 0, "section must have at least one item");
+  }
+});
+
+test("every doc item has slug, title, fileName", () => {
+  for (const section of docsNavigation) {
+    for (const item of section.items) {
+      assert.ok(item.slug, "item must have a slug");
+      assert.ok(item.title, "item must have a title");
+      assert.ok(item.fileName, "item must have a fileName");
+    }
+  }
+});
+
+// ──────────────────────────────────────────────
+// getDocItemBySlug
+// ──────────────────────────────────────────────
+
+test("getDocItemBySlug returns section title and item for known slug", () => {
+  const result = getDocItemBySlug("setup-guide");
+  assert.ok(result, "setup-guide should be found");
+  assert.equal(result.item.slug, "setup-guide");
+  assert.equal(result.sectionTitle, "Getting Started");
+});
+
+test("getDocItemBySlug returns null for unknown slug", () => {
+  const result = getDocItemBySlug("nonexistent-page");
+  assert.equal(result, null);
+});
+
+test("getDocItemBySlug finds items in all sections", () => {
+  const sectionTitles = docsNavigation.map((s) => s.title);
+  for (const section of docsNavigation) {
+    const firstItem = section.items[0];
+    const result = getDocItemBySlug(firstItem.slug);
+    assert.ok(result, `should find ${firstItem.slug}`);
+    assert.ok(sectionTitles.includes(result.sectionTitle));
+  }
+});
+
+// ──────────────────────────────────────────────
+// getAllDocSlugsFlat
+// ──────────────────────────────────────────────
+
+test("getAllDocSlugsFlat returns all slugs from all sections", () => {
+  const slugs = getAllDocSlugsFlat();
+  const totalItems = docsNavigation.reduce((sum, s) => sum + s.items.length, 0);
+  assert.equal(slugs.length, totalItems);
+});
+
+test("getAllDocSlugsFlat includes setup-guide as first slug", () => {
+  const slugs = getAllDocSlugsFlat();
+  assert.ok(slugs.includes("setup-guide"));
+});
+
+// ──────────────────────────────────────────────
+// getPrevNextSlugs
+// ──────────────────────────────────────────────
+
+test("getPrevNextSlugs returns null prev for first slug", () => {
+  const { prev } = getPrevNextSlugs("setup-guide");
+  assert.equal(prev, null);
+});
+
+test("getPrevNextSlugs returns null next for last slug", () => {
+  const slugs = getAllDocSlugsFlat();
+  const lastSlug = slugs[slugs.length - 1];
+  const { next } = getPrevNextSlugs(lastSlug);
+  assert.equal(next, null);
+});
+
+test("getPrevNextSlugs returns correct prev and next for middle slug", () => {
+  const { prev, next } = getPrevNextSlugs("auto-combo");
+  assert.equal(prev, "features");
+  assert.equal(next, "compression-guide");
+});
+
+// ──────────────────────────────────────────────
+// extractHeadings
+// ──────────────────────────────────────────────
+
+test("extractHeadings extracts h2, h3, h4 headings", () => {
+  const md = `## First Section\nSome text\n### Subsection\nMore text\n#### Details\nEnd`;
+  const headings = extractHeadings(md);
+  assert.equal(headings.length, 3);
+  assert.equal(headings[0].text, "First Section");
+  assert.equal(headings[0].level, 2);
+  assert.equal(headings[1].text, "Subsection");
+  assert.equal(headings[1].level, 3);
+  assert.equal(headings[2].text, "Details");
+  assert.equal(headings[2].level, 4);
+});
+
+test("extractHeadings generates valid id from heading text", () => {
+  const md = `## Getting Started Guide\n### API Reference\n#### Step 1: Install`;
+  const headings = extractHeadings(md);
+  assert.equal(headings[0].id, "getting-started-guide");
+  assert.equal(headings[1].id, "api-reference");
+  assert.equal(headings[2].id, "step-1-install");
+});
+
+test("extractHeadings returns empty array for content without headings", () => {
+  const md = "Just some text without any headings";
+  const headings = extractHeadings(md);
+  assert.equal(headings.length, 0);
+});
+
+test("extractHeadings strips bold and code from heading text", () => {
+  const md = "## **Bold** Heading\n### \`Code\` Heading";
+  const headings = extractHeadings(md);
+  assert.equal(headings[0].text, "Bold Heading");
+  assert.equal(headings[1].text, "Code Heading");
+});
+
+// ──────────────────────────────────────────────
+// renderMarkdown
+// ──────────────────────────────────────────────
+
+test("renderMarkdown converts headings to HTML", () => {
+  const html = renderMarkdown("# Title\n## Section\n### Subsection\n#### Details");
+  assert.ok(html.includes('<h1 class="text-3xl'), "h1 tag");
+  assert.ok(html.includes('<h2 id="Section"'), "h2 tag with id");
+  assert.ok(html.includes('<h3 id="Subsection"'), "h3 tag with id");
+  assert.ok(html.includes('<h4 id="Details"'), "h4 tag with id");
+});
+
+test("renderMarkdown converts code blocks", () => {
+  const html = renderMarkdown("```js\nconst x = 1;\n```");
+  assert.ok(html.includes('<pre class="bg-bg-subtle'), "pre tag");
+  assert.ok(html.includes("language-js"), "language class");
+});
+
+test("renderMarkdown converts inline code", () => {
+  const html = renderMarkdown("Use `npm install` to install");
+  assert.ok(html.includes('<code class="bg-bg-subtle'), "inline code tag");
+});
+
+test("renderMarkdown converts bold text", () => {
+  const html = renderMarkdown("This is **bold** text");
+  assert.ok(html.includes("<strong>bold</strong>"));
+});
+
+test("renderMarkdown converts italic text", () => {
+  const html = renderMarkdown("This is *italic* text");
+  assert.ok(html.includes("<em>italic</em>"));
+});
+
+test("renderMarkdown converts links", () => {
+  const html = renderMarkdown("[OmniRoute](https://omniroute.online)");
+  assert.ok(html.includes('<a href="https://omniroute.online"'));
+  assert.ok(html.includes(">OmniRoute</a>"));
+});
+
+test("renderMarkdown converts unordered lists", () => {
+  const html = renderMarkdown("- Item 1\n- Item 2");
+  assert.ok(html.includes('<li class="mb-1 ml-4">'));
+});
+
+test("renderMarkdown converts ordered lists", () => {
+  const html = renderMarkdown("1. First\n2. Second");
+  assert.ok(html.includes('<li class="mb-1 ml-4">'));
+});
+
+test("renderMarkdown converts blockquotes", () => {
+  const html = renderMarkdown("> This is a quote");
+  assert.ok(html.includes("<blockquote"));
+  assert.ok(html.includes("border-l-4"));
+});
+
+test("renderMarkdown converts horizontal rules", () => {
+  const html = renderMarkdown("---");
+  assert.ok(html.includes('<hr class="border-border'));
+});
+
+// ──────────────────────────────────────────────
+// SEARCH_INDEX
+// ──────────────────────────────────────────────
+
+test("SEARCH_INDEX has entries for all doc slugs", () => {
+  const navSlugs = getAllDocSlugsFlat();
+  // searchIndex and nav slugs should have significant overlap
+  const indexSlugs = SEARCH_INDEX.map((item) => item.slug);
+  for (const slug of navSlugs) {
+    assert.ok(indexSlugs.includes(slug), `SEARCH_INDEX missing slug: ${slug}`);
+  }
+});
+
+test("SEARCH_INDEX entries have required fields", () => {
+  for (const item of SEARCH_INDEX) {
+    assert.ok(item.slug, "item must have slug");
+    assert.ok(item.title, "item must have title");
+    assert.ok(item.fileName, "item must have fileName");
+    assert.ok(item.section, "item must have section");
+    assert.ok(typeof item.content === "string", "item must have content string");
+    assert.ok(Array.isArray(item.headings), "item must have headings array");
+  }
+});
+
+test("SEARCH_INDEX entries have non-empty content", () => {
+  for (const item of SEARCH_INDEX) {
+    assert.ok(item.content.length > 0, `${item.slug} should have content`);
+  }
+});
