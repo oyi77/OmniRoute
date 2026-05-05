@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { docsNavigation } from "../lib/docsNavigation";
+import { autoAllSlugs, autoNavSections } from "../lib/docs-auto-generated";
 import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
@@ -12,10 +13,7 @@ import { DocsLazyWrapper } from "../components/DocsLazyWrapper";
 import { MermaidChartsClient } from "../components/MermaidChartsClient";
 
 export function generateStaticParams() {
-  const allSlugs = docsNavigation.flatMap((section) =>
-    section.items.map((item) => ({ slug: item.slug }))
-  );
-  return allSlugs;
+  return autoAllSlugs.map((slug) => ({ slug }));
 }
 
 export function getDocItemBySlug(slug: string) {
@@ -25,11 +23,20 @@ export function getDocItemBySlug(slug: string) {
       return { sectionTitle: section.title, item };
     }
   }
+  for (const section of autoNavSections) {
+    const item = section.items.find((i) => i.slug === slug);
+    if (item) {
+      return {
+        sectionTitle: section.title,
+        item: { slug: item.slug, title: item.title, fileName: item.fileName },
+      };
+    }
+  }
   return null;
 }
 
 export function getAllDocSlugsFlat(): string[] {
-  return docsNavigation.flatMap((section) => section.items.map((item) => item.slug));
+  return autoAllSlugs;
 }
 
 export function getPrevNextSlugs(currentSlug: string) {

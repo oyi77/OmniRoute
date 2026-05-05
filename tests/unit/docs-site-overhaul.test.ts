@@ -82,7 +82,9 @@ test("getAllDocSlugsFlat includes setup-guide as first slug", () => {
 // ──────────────────────────────────────────────
 
 test("getPrevNextSlugs returns null prev for first slug", () => {
-  const { prev } = getPrevNextSlugs("setup-guide");
+  const slugs = getAllDocSlugsFlat();
+  const firstSlug = slugs[0];
+  const { prev } = getPrevNextSlugs(firstSlug);
   assert.equal(prev, null);
 });
 
@@ -94,9 +96,12 @@ test("getPrevNextSlugs returns null next for last slug", () => {
 });
 
 test("getPrevNextSlugs returns correct prev and next for middle slug", () => {
-  const { prev, next } = getPrevNextSlugs("auto-combo");
-  assert.equal(prev, "features");
-  assert.equal(next, "compression-guide");
+  const slugs = getAllDocSlugsFlat();
+  const middleIdx = Math.floor(slugs.length / 2);
+  const middleSlug = slugs[middleIdx];
+  const { prev, next } = getPrevNextSlugs(middleSlug);
+  assert.equal(prev, slugs[middleIdx - 1]);
+  assert.equal(next, slugs[middleIdx + 1]);
 });
 
 // ──────────────────────────────────────────────
