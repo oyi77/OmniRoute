@@ -7,6 +7,9 @@ import matter from "gray-matter";
 import { Metadata } from "next";
 import { DocCodeBlocks } from "../components/DocCodeBlocks";
 import { FeedbackWidget } from "../components/FeedbackWidget";
+import { DocsPageAnalytics } from "../components/DocsPageAnalytics";
+import { DocsLazyWrapper } from "../components/DocsLazyWrapper";
+import { MermaidChartsClient } from "../components/MermaidChartsClient";
 
 export function generateStaticParams() {
   const allSlugs = docsNavigation.flatMap((section) =>
@@ -54,12 +57,26 @@ export function extractHeadings(content: string): { id: string; text: string; le
   return headings;
 }
 
+export function extractMermaidCharts(content: string): string[] {
+  const charts: string[] = [];
+  const regex = /```mermaid\n([\s\S]*?)```/g;
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    charts.push(match[1].trim());
+  }
+  return charts;
+}
+
 export function renderMarkdown(content: string): string {
   return content
     .replace(/^####\s+(.*)$/gm, '<h4 id="$1" class="text-lg font-bold mb-2 mt-6">$1</h4>')
     .replace(/^###\s+(.*)$/gm, '<h3 id="$1" class="text-xl font-bold mb-3 mt-8">$1</h3>')
     .replace(/^##\s+(.*)$/gm, '<h2 id="$1" class="text-2xl font-bold mb-4 mt-10">$1</h2>')
     .replace(/^#\s+(.*)$/gm, '<h1 class="text-3xl font-bold mb-4">$1</h1>')
+    .replace(
+      /```mermaid\n([\s\S]*?)```/g,
+      '<div class="mermaid-diagram-fallback my-6" data-mermaid="$1">$1</div>'
+    )
     .replace(
       /```(\w*)\n([\s\S]*?)```/g,
       '<div class="group relative"><pre class="bg-bg-subtle p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre></div>'
@@ -138,26 +155,27 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
 
   const { sectionTitle, item } = docItem;
 
-  const filePath = path.join(process.cwd(), "docs", item.fileName);
-
   let pageTitle = item.title;
   let htmlContent = "";
   let headings: { id: string; text: string; level: number }[] = [];
   let loadError: string | null = null;
   let version: string | null = null;
   let lastUpdated: string | null = null;
+  let mermaidCharts: string[] = [];
 
   try {
-    const fileContent = fs.readFileSync(filePath, "utf8");
+    const docsRoot = path.join(process.cwd(), "docs");
+    const fileContent = fs.readFileSync(path.join(docsRoot, item.fileName), "utf8");
     const { content, data: frontmatter } = matter(fileContent);
     pageTitle = (frontmatter.title as string) || item.title;
     version = (frontmatter.version as string) || null;
     lastUpdated = (frontmatter.lastUpdated as string) || null;
+    mermaidCharts = extractMermaidCharts(content);
     headings = extractHeadings(content);
     const rawHtml = renderMarkdown(content);
     htmlContent = cleanHeadingIds(rawHtml);
   } catch (error) {
-    console.error(`Failed to read doc file: ${filePath}`, error);
+    console.error(`Failed to read doc file for slug: ${slug}`, error);
     loadError = error instanceof Error ? error.message : "Unknown error";
   }
 
@@ -201,13 +219,14 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
 
   return (
     <>
+      <DocsPageAnalytics slug={slug} title={pageTitle} section={sectionTitle} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       <div className="flex gap-8">
         <div className="flex-1 min-w-0">
-          <nav className="mb-6">
+          <nav className="mb-6" aria-label="Breadcrumb">
             <ol className="flex items-center gap-2 text-sm text-text-muted">
               <li>
                 <Link href="/docs" className="hover:text-text-main">
@@ -232,7 +251,15 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
             <p className="text-xs text-text-muted mb-4">Last updated: {lastUpdated}</p>
           )}
 
-          <div className="prose-content" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+          <DocsLazyWrapper>
+            <div className="prose-content" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+          </DocsLazyWrapper>
+
+          {mermaidCharts.length > 0 && (
+            <DocsLazyWrapper>
+              <MermaidChartsClient charts={mermaidCharts} />
+            </DocsLazyWrapper>
+          )}
 
           <DocCodeBlocks />
 

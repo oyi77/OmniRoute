@@ -225,3 +225,80 @@ test("SEARCH_INDEX entries have non-empty content", () => {
     assert.ok(item.content.length > 0, `${item.slug} should have content`);
   }
 });
+
+// ──────────────────────────────────────────────
+// Mermaid extraction
+// ──────────────────────────────────────────────
+
+test("extractMermaidCharts extracts mermaid blocks from content", async () => {
+  const { extractMermaidCharts } = await import("../../src/app/docs/[slug]/page");
+  const content =
+    "## Diagram\n\n```mermaid\ngraph TD\n    A-->B\n```\n\nSome text\n\n```mermaid\nsequenceDiagram\n    Alice->>Bob: Hi\n```";
+  const charts = extractMermaidCharts(content);
+  assert.equal(charts.length, 2);
+  assert.ok(charts[0].includes("graph TD"));
+  assert.ok(charts[1].includes("Alice->>Bob"));
+});
+
+test("extractMermaidCharts returns empty array when no mermaid blocks", async () => {
+  const { extractMermaidCharts } = await import("../../src/app/docs/[slug]/page");
+  const content = "## Heading\n\nSome text with ```js\ncode\n```";
+  const charts = extractMermaidCharts(content);
+  assert.equal(charts.length, 0);
+});
+
+// ──────────────────────────────────────────────
+// Mermaid rendering in markdown
+// ──────────────────────────────────────────────
+
+test("renderMarkdown converts mermaid code blocks to fallback divs", () => {
+  const markdown = "```mermaid\ngraph TD\n    A-->B\n```";
+  const html = renderMarkdown(markdown);
+  assert.ok(
+    html.includes("mermaid-diagram-fallback"),
+    "Should contain mermaid-diagram-fallback class"
+  );
+  assert.ok(html.includes("data-mermaid"), "Should contain data-mermaid attribute");
+});
+
+// ──────────────────────────────────────────────
+// Analytics component
+// ──────────────────────────────────────────────
+
+test("DocsPageAnalytics is importable", async () => {
+  const mod = await import("../../src/app/docs/components/DocsPageAnalytics");
+  assert.ok(mod.DocsPageAnalytics, "DocsPageAnalytics should be exported");
+  assert.ok(typeof mod.getPopularPages === "function", "getPopularPages should be exported");
+});
+
+// ──────────────────────────────────────────────
+// What's New and Migration Guide
+// ──────────────────────────────────────────────
+
+test("WhatsNewSection is importable", async () => {
+  const mod = await import("../../src/app/docs/components/WhatsNewSection");
+  assert.ok(mod.WhatsNewSection, "WhatsNewSection should be exported");
+  assert.ok(mod.MigrationGuideBanner, "MigrationGuideBanner should be exported");
+});
+
+// ──────────────────────────────────────────────
+// i18n locale system
+// ──────────────────────────────────────────────
+
+test("DocsI18n is importable", async () => {
+  const mod = await import("../../src/app/docs/components/DocsI18n");
+  assert.ok(mod.useLocalizedSectionTitle, "useLocalizedSectionTitle should be exported");
+  assert.ok(mod.getAvailableLocales, "getAvailableLocales should be exported");
+  assert.ok(mod.LOCALE_NAMES, "LOCALE_NAMES should be exported");
+  assert.equal(mod.LOCALE_NAMES.en, "English");
+  assert.equal(mod.LOCALE_NAMES["zh-CN"], "简体中文");
+});
+
+test("getAvailableLocales returns 10 locales", async () => {
+  const { getAvailableLocales } = await import("../../src/app/docs/components/DocsI18n");
+  const locales = getAvailableLocales();
+  assert.equal(locales.length, 10);
+  assert.ok(locales.includes("en"));
+  assert.ok(locales.includes("pt-BR"));
+  assert.ok(locales.includes("zh-CN"));
+});

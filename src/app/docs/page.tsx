@@ -1,16 +1,45 @@
 import Link from "next/link";
 import { Metadata } from "next";
 import { docsNavigation } from "./lib/docsNavigation";
+import { WhatsNewSection } from "./components/WhatsNewSection";
 
 export const metadata: Metadata = {
   title: "OmniRoute Documentation",
-  description: "Everything you need to route, compress, and scale your AI — setup guides, API reference, compression, deployment, and more.",
+  description:
+    "Everything you need to route, compress, and scale your AI — setup guides, API reference, compression, deployment, and more.",
+  openGraph: {
+    title: "OmniRoute Documentation",
+    description:
+      "Comprehensive docs for OmniRoute AI gateway — setup, API, compression, deployment, and more.",
+    type: "website",
+    url: "https://omniroute.online/docs",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "OmniRoute Documentation",
+    description: "Comprehensive docs for OmniRoute AI gateway",
+  },
 };
 
 const featuredLinks = [
-  { slug: "setup-guide", title: "Setup Guide", icon: "rocket_launch", desc: "Get OmniRoute running in 3 minutes" },
-  { slug: "api-reference", title: "API Reference", icon: "code", desc: "All endpoints with examples" },
-  { slug: "compression-guide", title: "Compression Guide", icon: "compress", desc: "Save 15-95% eligible tokens automatically" },
+  {
+    slug: "setup-guide",
+    title: "Setup Guide",
+    icon: "rocket_launch",
+    desc: "Get OmniRoute running in 3 minutes",
+  },
+  {
+    slug: "api-reference",
+    title: "API Reference",
+    icon: "code",
+    desc: "All endpoints with examples",
+  },
+  {
+    slug: "compression-guide",
+    title: "Compression Guide",
+    icon: "compress",
+    desc: "Save 15-95% eligible tokens automatically",
+  },
 ];
 
 export default function DocsHomePage() {
@@ -22,7 +51,11 @@ export default function DocsHomePage() {
           Everything you need to route, compress, and scale your AI
         </p>
         <p className="text-sm text-text-muted">
-          Press <kbd className="px-1.5 py-0.5 bg-bg-subtle border border-border rounded font-mono text-xs">⌘K</kbd> to search the docs
+          Press{" "}
+          <kbd className="px-1.5 py-0.5 bg-bg-subtle border border-border rounded font-mono text-xs">
+            ⌘K
+          </kbd>{" "}
+          to search the docs
         </p>
       </div>
 
@@ -34,7 +67,9 @@ export default function DocsHomePage() {
             className="flex flex-col items-center text-center p-6 bg-bg-subtle border border-border rounded-xl
               hover:border-primary hover:bg-primary/5 transition-all group"
           >
-            <span className="material-symbols-outlined text-3xl text-primary mb-3">{link.icon}</span>
+            <span className="material-symbols-outlined text-3xl text-primary mb-3">
+              {link.icon}
+            </span>
             <span className="font-semibold text-text-main group-hover:text-primary transition-colors">
               {link.title}
             </span>
@@ -65,6 +100,8 @@ export default function DocsHomePage() {
           </div>
         ))}
       </div>
+
+      <WhatsNewSection />
     </div>
   );
 }
