@@ -4,6 +4,8 @@ import { getModelPricing } from "./providerCostData";
 import { isExplicitlyFree } from "./providerCostData";
 import { mergeTierConfig, DEFAULT_TIER_CONFIG } from "./tierConfig";
 
+let dbPersistenceChecked = false;
+
 const tierCache = new Map<string, TierAssignment>();
 let currentConfig: TierConfig = DEFAULT_TIER_CONFIG;
 
@@ -105,8 +107,17 @@ export function classifyTier(provider: string, model: string): TierAssignment {
   return assignment;
 }
 
-export function setTierConfig(config: Partial<TierConfig>): void {
-  currentConfig = mergeTierConfig(config);
+export function setTierConfig(config?: Partial<TierConfig> | null): void {
+  if (config === null || config === undefined) {
+    try {
+      const { loadTierConfig } = require("../../src/lib/db/tierConfig");
+      currentConfig = loadTierConfig();
+    } catch {
+      currentConfig = DEFAULT_TIER_CONFIG;
+    }
+  } else {
+    currentConfig = mergeTierConfig(config);
+  }
   tierCache.clear();
 }
 
