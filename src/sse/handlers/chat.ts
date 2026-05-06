@@ -278,7 +278,21 @@ export async function handleChat(request: any, clientRawRequest: any = null) {
 
   // Check if model is a combo (has multiple models with fallback)
   telemetry.startPhase("resolve");
-  const combo: any = await getComboForModel(resolvedModelStr);
+  let combo: any = await getComboForModel(resolvedModelStr);
+
+  // "auto" prefix fuzzy matching: "auto/fast" → "auto/best-fast", etc.
+  // parseModel splits "auto/fast" into provider="auto" which isn't a real provider.
+  if (!combo && resolvedModelStr.startsWith("auto/")) {
+    const suffix = resolvedModelStr.slice(5);
+    for (const candidate of [`auto/best-${suffix}`, `auto/${suffix}`]) {
+      combo = await getComboForModel(candidate);
+      if (combo) {
+        log.info("ROUTING", `"${resolvedModelStr}" → combo "${candidate}" (auto fuzzy)`);
+        break;
+      }
+    }
+  }
+
   if (combo) {
     log.info(
       "CHAT",
@@ -487,6 +501,30 @@ async function handleSingleModelChat(
   // 1. Resolve model → provider/model
   const resolved = await resolveModelOrError(modelStr, body, clientRawRequest?.endpoint);
   if (resolved.error) return resolved.error;
+
+  // Safety net: if auto-combo resolution returned a combo object, redirect
+  // to combo flow. This handles the case where the auto-fuzzy match in
+  // resolveModelOrError found a combo but the main handler's combo lookup missed it.
+  if ((resolved as any).combo) {
+    const redirectCombo = (resolved as any).combo;
+    log.info("ROUTING", `Auto-combo redirect from handleSingleModelChat for "${modelStr}"`);
+    try {
+      const { handleComboChat } = await import("@omniroute/open-sse/services/combo");
+      const comboResult = await handleComboChat(
+        redirectCombo,
+        body,
+        clientRawRequest,
+        request,
+        modelStr,
+        apiKeyInfo,
+        telemetry,
+        runtimeOptions
+      );
+      return comboResult;
+    } catch (err: any) {
+      log.warn("ROUTING", `Auto-combo redirect failed: ${err.message}`);
+    }
+  }
 
   const { provider, model, sourceFormat, targetFormat, extendedContext } = resolved;
   const forceLiveComboTest = runtimeOptions.forceLiveComboTest === true;
