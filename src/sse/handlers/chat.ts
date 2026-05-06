@@ -508,22 +508,45 @@ async function handleSingleModelChat(
   if ((resolved as any).combo) {
     const redirectCombo = (resolved as any).combo;
     log.info("ROUTING", `Auto-combo redirect from handleSingleModelChat for "${modelStr}"`);
-    try {
-      const { handleComboChat } = await import("@omniroute/open-sse/services/combo");
-      const comboResult = await handleComboChat(
-        redirectCombo,
-        body,
-        clientRawRequest,
-        request,
-        modelStr,
-        apiKeyInfo,
-        telemetry,
-        runtimeOptions
-      );
-      return comboResult;
-    } catch (err: any) {
-      log.warn("ROUTING", `Auto-combo redirect failed: ${err.message}`);
-    }
+    log.info("ROUTING", `Auto-combo redirect to combo flow for "${modelStr}"`);
+    return handleComboChat({
+      body,
+      combo: redirectCombo,
+      handleSingleModel: (
+        b: any,
+        m: string,
+        target?: {
+          connectionId?: string | null;
+          executionKey?: string | null;
+          stepId?: string | null;
+        }
+      ) =>
+        handleSingleModelChat(
+          b,
+          m,
+          clientRawRequest,
+          request,
+          redirectCombo.name ?? modelStr,
+          apiKeyInfo,
+          telemetry,
+          {
+            sessionId: "", // safety-net redirect doesn't have session context
+            forceLiveComboTest: false,
+            forcedConnectionId: null,
+            allowedConnectionIds: null,
+            comboStepId: null,
+            comboExecutionKey: null,
+          },
+          redirectCombo.strategy ?? "priority",
+          false
+        ),
+      isModelAvailable: async () => true,
+      log,
+      settings: {},
+      allCombos: [],
+      relayOptions: undefined,
+      signal: request?.signal ?? null,
+    });
   }
 
   const { provider, model, sourceFormat, targetFormat, extendedContext } = resolved;
