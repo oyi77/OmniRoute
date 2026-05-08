@@ -84,6 +84,15 @@ if (args.includes("--help") || args.includes("-h")) {
     omniroute --no-open       Don't open browser automatically
     omniroute --mcp           Start MCP server (stdio transport for IDEs)
     omniroute reset-encrypted-columns  Reset encrypted credentials (recovery)
+
+  \x1b[1mCLI Integration Suite:\x1b[0m
+    omniroute setup           Interactive wizard to configure CLI tools
+    omniroute doctor         Run health diagnostics
+    omniroute status         Show comprehensive status
+    omniroute logs           Stream request logs
+    omniroute provider add   Add OmniRoute as OpenCode provider
+    omniroute update         Check for updates
+
     omniroute --help          Show this help
     omniroute --version       Show version
 
@@ -116,6 +125,16 @@ if (args.includes("--version") || args.includes("-v")) {
   } catch {
     console.log("unknown");
   }
+  process.exit(0);
+}
+
+// ── CLI Integration Suite subcommands ───────────────────────────────────────
+const subcommands = ["setup", "doctor", "status", "logs", "provider", "update"];
+const subcommand = args[0];
+
+if (subcommands.includes(subcommand)) {
+  const { runSubcommand } = await import("./cli-commands.mjs");
+  await runSubcommand(subcommand, args.slice(1));
   process.exit(0);
 }
 
