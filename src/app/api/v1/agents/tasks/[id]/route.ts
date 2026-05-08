@@ -3,6 +3,9 @@ import { extractApiKey } from "@/sse/services/auth";
 import { getAgent } from "@/lib/cloudAgent/registry";
 import { getCloudAgentTaskById, updateCloudAgentTask } from "@/lib/cloudAgent/db";
 import { z } from "zod/v4";
+import pino from "pino";
+
+const logger = pino({ name: "cloud-agents-api" });
 
 function getCorsHeaders() {
   return {
@@ -64,7 +67,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
               ? new Date().toISOString()
               : null,
         });
-      } catch {}
+      } catch (err) {
+        console.error("Failed to sync task status:", err);
+      }
     }
 
     const updatedTask = getCloudAgentTaskById(id);
@@ -166,6 +171,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     return NextResponse.json({ success: true }, { headers: getCorsHeaders() });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Validation failed", details: error.errors },
+        { status: 400, headers: getCorsHeaders() }
+      );
+    }
+    logger.error({ err: error }, "Failed to process task action");
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500, headers: getCorsHeaders() }

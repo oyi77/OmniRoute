@@ -11,6 +11,10 @@ import {
 } from "@/lib/cloudAgent/db";
 import { CreateCloudAgentTaskSchema } from "@/lib/cloudAgent/types";
 import { CLOUD_AGENT_PROVIDERS } from "@/shared/constants/providers";
+import { z } from "zod/v4";
+import pino from "pino";
+
+const logger = pino({ name: "cloud-agents-api" });
 
 function getCorsHeaders() {
   return {
@@ -131,6 +135,13 @@ export async function POST(request: NextRequest) {
       { status: 201, headers: getCorsHeaders() }
     );
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Validation failed", details: error.errors },
+        { status: 400, headers: getCorsHeaders() }
+      );
+    }
+    logger.error({ err: error }, "Failed to create cloud agent task");
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500, headers: getCorsHeaders() }
