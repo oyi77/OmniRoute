@@ -6,6 +6,8 @@ export const PROVIDER_TIER = {
 
 export type ProviderTier = (typeof PROVIDER_TIER)[keyof typeof PROVIDER_TIER];
 
+export const TIER_ORDER: ProviderTier[] = ["free", "cheap", "premium"];
+
 export interface TierAssignment {
   provider: string;
   model: string;
