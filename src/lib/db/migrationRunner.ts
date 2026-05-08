@@ -109,6 +109,13 @@ const RENAMED_MIGRATION_COMPATIBILITY = [
     toVersion: "029",
     toName: "provider_connection_max_concurrent",
   },
+  // 033 -> 039 must come first to vacate the slot before 032 -> 033 runs
+  {
+    fromVersion: "033",
+    fromName: "compression_cache_stats",
+    toVersion: "039",
+    toName: "compression_cache_stats",
+  },
   {
     fromVersion: "028",
     fromName: "compression_settings",
@@ -126,12 +133,6 @@ const RENAMED_MIGRATION_COMPATIBILITY = [
     fromName: "compression_analytics",
     toVersion: "038",
     toName: "compression_analytics",
-  },
-  {
-    fromVersion: "033",
-    fromName: "compression_cache_stats",
-    toVersion: "039",
-    toName: "compression_cache_stats",
   },
 ] as const;
 
