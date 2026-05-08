@@ -14,6 +14,7 @@ export const HIDEABLE_SIDEBAR_ITEM_IDS = [
   "limits",
   "cli-tools",
   "agents",
+  "cloud-agents",
   "memory",
   "skills",
   "translator",
