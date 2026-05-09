@@ -514,6 +514,8 @@ interface ConnectionRowProps {
   isCodex?: boolean;
   isFirst: boolean;
   isLast: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onToggleActive: (isActive?: boolean) => void | Promise<void>;
@@ -1016,6 +1018,8 @@ export default function ProviderDetailPage() {
   );
   const [applyingCodexAuthId, setApplyingCodexAuthId] = useState<string | null>(null);
   const [exportingCodexAuthId, setExportingCodexAuthId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isCcCompatible = isClaudeCodeCompatibleProvider(providerId);
   const isAnthropicCompatible =
@@ -1348,13 +1352,57 @@ export default function ProviderDetailPage() {
       const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
       if (res.ok) {
         setConnections(connections.filter((c) => c.id !== id));
-        // Refresh model list after connection deletion (synced models may change)
         if (providerId === "gemini") {
           await fetchProviderModelMeta();
         }
       }
     } catch (error) {
       console.log("Error deleting connection:", error);
+    }
+  };
+
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) =>
+      prev.size === connections.length ? new Set() : new Set(connections.map((c) => c.id))
+    );
+  }, [connections]);
+
+  const handleToggleSelectOne = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(t("batchDeleteConfirm", { count: selectedIds.size }))) return;
+
+    setBatchDeleting(true);
+    try {
+      const res = await fetch("/api/providers", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+
+      if (res.ok) {
+        setSelectedIds(new Set());
+        await fetchConnections();
+        notify.success(t("batchDeleteSuccess", { count: selectedIds.size }));
+        if (providerId === "gemini") {
+          await fetchProviderModelMeta();
+        }
+      } else {
+        const data = await res.json();
+        notify.error(data.error || "Batch delete failed");
+      }
+    } catch {
+      notify.error("Network error during batch delete");
+    } finally {
+      setBatchDeleting(false);
     }
   };
 
@@ -2912,88 +2960,122 @@ export default function ProviderDetailPage() {
               );
 
               if (!hasAnyTag) {
-                // No tags — render flat list as before
+                const allSelected = selectedIds.size === connections.length && connections.length > 0;
+                const someSelected = selectedIds.size > 0 && selectedIds.size < connections.length;
                 return (
-                  <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-                    {sorted.map((conn, index) => (
-                      <ConnectionRow
-                        key={conn.id}
-                        connection={conn}
-                        isOAuth={conn.authType === "oauth"}
-                        isClaude={providerId === "claude"}
-                        isFirst={index === 0}
-                        isLast={index === sorted.length - 1}
-                        onMoveUp={() => handleSwapPriority(conn, sorted[index - 1])}
-                        onMoveDown={() => handleSwapPriority(conn, sorted[index + 1])}
-                        onToggleActive={(isActive) =>
-                          handleUpdateConnectionStatus(conn.id, isActive)
-                        }
-                        onToggleRateLimit={(enabled) => handleToggleRateLimit(conn.id, enabled)}
-                        onToggleClaudeExtraUsage={(enabled) =>
-                          handleToggleClaudeExtraUsage(conn.id, enabled)
-                        }
-                        isCodex={providerId === "codex"}
-                        isCcCompatible={isCcCompatible}
-                        cliproxyapiEnabled={cpaProviderEnabled}
-                        onToggleCliproxyapiMode={(enabled) =>
-                          handleToggleCliproxyapiMode(conn.id, enabled)
-                        }
-                        onToggleCodex5h={(enabled) =>
-                          handleToggleCodexLimit(conn.id, "use5h", enabled)
-                        }
-                        onToggleCodexWeekly={(enabled) =>
-                          handleToggleCodexLimit(conn.id, "useWeekly", enabled)
-                        }
-                        onRetest={() => handleRetestConnection(conn.id)}
-                        isRetesting={retestingId === conn.id}
-                        onEdit={() => {
-                          setSelectedConnection(conn);
-                          setShowEditModal(true);
-                        }}
-                        onDelete={() => handleDelete(conn.id)}
-                        onReauth={
-                          conn.authType === "oauth"
-                            ? () => setShowOAuthModal(true, conn)
-                            : undefined
-                        }
-                        onRefreshToken={
-                          conn.authType === "oauth" ? () => handleRefreshToken(conn.id) : undefined
-                        }
-                        isRefreshing={refreshingId === conn.id}
-                        onApplyCodexAuthLocal={
-                          providerId === "codex"
-                            ? () => handleApplyCodexAuthLocal(conn.id)
-                            : undefined
-                        }
-                        isApplyingCodexAuthLocal={applyingCodexAuthId === conn.id}
-                        onExportCodexAuthFile={
-                          providerId === "codex"
-                            ? () => handleExportCodexAuthFile(conn.id)
-                            : undefined
-                        }
-                        isExportingCodexAuthFile={exportingCodexAuthId === conn.id}
-                        onProxy={() =>
-                          setProxyTarget({
-                            level: "key",
-                            id: conn.id,
-                            label: pickDisplayValue(
-                              [conn.name, conn.email],
-                              emailsVisible,
-                              conn.id
-                            ),
-                          })
-                        }
-                        hasProxy={!!connProxyMap[conn.id]?.proxy}
-                        proxySource={connProxyMap[conn.id]?.level || null}
-                        proxyHost={connProxyMap[conn.id]?.proxy?.host || null}
-                      />
-                    ))}
-                  </div>
-                );
-              }
+                  <>
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-t-lg border border-b-0 border-border">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someSelected;
+                          }}
+                          onChange={handleToggleSelectAll}
+                          className="w-4 h-4 rounded border-border text-primary focus:ring-primary/30 cursor-pointer"
+                        />
+                        <span className="text-sm font-medium text-text-muted">
+                          {selectedIds.size > 0
+                            ? `${selectedIds.size} selected`
+                            : `${connections.length} accounts`}
+                        </span>
+                      </label>
 
-              // Build ordered tag groups: untagged first, then alphabetically
-              const groupMap = new Map<string, typeof sorted>();
+                      {selectedIds.size > 0 && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          icon="delete"
+                          loading={batchDeleting}
+                          onClick={handleBatchDelete}
+                        >
+                          {t("batchDeleteSelected", { count: selectedIds.size })}
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+                      {sorted.map((conn, index) => (
+                        <ConnectionRow
+                          key={conn.id}
+                          connection={conn}
+                          isOAuth={conn.authType === "oauth"}
+                          isClaude={providerId === "claude"}
+                          isFirst={index === 0}
+                          isLast={index === sorted.length - 1}
+                          isSelected={selectedIds.has(conn.id)}
+                          onToggleSelect={() => handleToggleSelectOne(conn.id)}
+                          onMoveUp={() => handleSwapPriority(conn, sorted[index - 1])}
+                          onMoveDown={() => handleSwapPriority(conn, sorted[index + 1])}
+                          onToggleActive={(isActive) =>
+                            handleUpdateConnectionStatus(conn.id, isActive)
+                          }
+                          onToggleRateLimit={(enabled) => handleToggleRateLimit(conn.id, enabled)}
+                          onToggleClaudeExtraUsage={(enabled) =>
+                            handleToggleClaudeExtraUsage(conn.id, enabled)
+                          }
+                          isCodex={providerId === "codex"}
+                          isCcCompatible={isCcCompatible}
+                          cliproxyapiEnabled={cpaProviderEnabled}
+                          onToggleCliproxyapiMode={(enabled) =>
+                            handleToggleCliproxyapiMode(conn.id, enabled)
+                          }
+                          onToggleCodex5h={(enabled) =>
+                            handleToggleCodexLimit(conn.id, "use5h", enabled)
+                          }
+                          onToggleCodexWeekly={(enabled) =>
+                            handleToggleCodexLimit(conn.id, "useWeekly", enabled)
+                          }
+                          onRetest={() => handleRetestConnection(conn.id)}
+                          isRetesting={retestingId === conn.id}
+                          onEdit={() => {
+                            setSelectedConnection(conn);
+                            setShowEditModal(true);
+                          }}
+                          onDelete={() => handleDelete(conn.id)}
+                          onReauth={
+                            conn.authType === "oauth"
+                              ? () => setShowOAuthModal(true, conn)
+                              : undefined
+                          }
+                          onRefreshToken={
+                            conn.authType === "oauth" ? () => handleRefreshToken(conn.id) : undefined
+                          }
+                          isRefreshing={refreshingId === conn.id}
+                          onApplyCodexAuthLocal={
+                            providerId === "codex"
+                              ? () => handleApplyCodexAuthLocal(conn.id)
+                              : undefined
+                          }
+                          isApplyingCodexAuthLocal={applyingCodexAuthId === conn.id}
+                          onExportCodexAuthFile={
+                            providerId === "codex"
+                              ? () => handleExportCodexAuthFile(conn.id)
+                              : undefined
+                          }
+                          isExportingCodexAuthFile={exportingCodexAuthId === conn.id}
+                          onProxy={() =>
+                            setProxyTarget({
+                              level: "key",
+                              id: conn.id,
+                              label: pickDisplayValue(
+                                [conn.name, conn.email],
+                                emailsVisible,
+                                conn.id
+                              ),
+                            })
+                          }
+                          hasProxy={!!connProxyMap[conn.id]?.proxy}
+                          proxySource={connProxyMap[conn.id]?.level || null}
+                          proxyHost={connProxyMap[conn.id]?.proxy?.host || null}
+                        />
+                      ))}
+                    </div>
+                  );
+                }
+
+                // Build ordered tag groups: untagged first, then alphabetically
+              const groupMap = new Map<string, ConnectionRowConnection[]>();
               for (const conn of sorted) {
                 const tag = (conn.providerSpecificData?.tag as string | undefined)?.trim() || "";
                 if (!groupMap.has(tag)) groupMap.set(tag, []);
@@ -3043,6 +3125,8 @@ export default function ProviderDetailPage() {
                               isLast={
                                 gi === groupKeys.length - 1 && index === groupConns.length - 1
                               }
+                              isSelected={selectedIds.has(conn.id)}
+                              onToggleSelect={() => handleToggleSelectOne(conn.id)}
                               onMoveUp={() =>
                                 handleSwapPriority(conn, sorted[sorted.indexOf(conn) - 1])
                               }
@@ -3059,6 +3143,8 @@ export default function ProviderDetailPage() {
                                 handleToggleClaudeExtraUsage(conn.id, enabled)
                               }
                               isCodex={providerId === "codex"}
+                              isCcCompatible={isCcCompatible}
+                              cliproxyapiEnabled={cpaProviderEnabled}
                               onToggleCodex5h={(enabled) =>
                                 handleToggleCodexLimit(conn.id, "use5h", enabled)
                               }
@@ -3117,8 +3203,8 @@ export default function ProviderDetailPage() {
                   })}
                 </div>
               );
-            })()
-          )}
+            })()}
+          </div>
         </Card>
       )}
 
@@ -4987,6 +5073,8 @@ function ConnectionRow({
   cliproxyapiEnabled,
   isFirst,
   isLast,
+  isSelected,
+  onToggleSelect,
   onMoveUp,
   onMoveDown,
   onToggleActive,
@@ -5096,6 +5184,14 @@ function ConnectionRow({
       className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggleSelect}
+            className="w-4 h-4 shrink-0 rounded border-border text-primary focus:ring-primary/30 cursor-pointer"
+          />
+        )}
         {/* Priority arrows */}
         <div className="flex flex-col">
           <button

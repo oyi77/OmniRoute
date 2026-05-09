@@ -435,6 +435,24 @@ export async function deleteProviderConnection(id: string) {
   return true;
 }
 
+export async function deleteProviderConnections(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const db = getDbInstance() as unknown as DbLike;
+
+  const deleteSnapshots = db.prepare("DELETE FROM quota_snapshots WHERE connection_id = ?");
+  for (const id of ids) {
+    deleteSnapshots.run(id);
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  const result = db.prepare(
+    `DELETE FROM provider_connections WHERE id IN (${placeholders})`
+  ).run(...ids);
+
+  backupDbFile("pre-write");
+  invalidateDbCache("connections");
+  return result.changes ?? 0;
+}
+
 export async function deleteProviderConnectionsByProvider(providerId: string) {
   const db = getDbInstance() as unknown as DbLike;
   const connectionIds = db
