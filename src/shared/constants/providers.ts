@@ -516,6 +516,32 @@ export const APIKEY_PROVIDERS = {
     freeNote: "Free unlimited access to Claude, GPT, Gemini — no credit card, no rate limits",
     apiHint: "Sign up at https://completions.me for free API key. OpenAI-compatible endpoint.",
   },
+  enally: {
+    id: "enally",
+    alias: "enly",
+    name: "Enally AI",
+    icon: "school",
+    color: "#8B5CF6",
+    textIcon: "EN",
+    website: "https://ai.enally.in",
+    hasFree: true,
+    freeNote: "Free for students and developers — no credit card, OTP verification",
+    apiHint:
+      "Get free API key at https://ai.enally.in/api — requires email and domain whitelisting.",
+  },
+  freetheai: {
+    id: "freetheai",
+    alias: "fta",
+    name: "FreeTheAi",
+    icon: "lock_open",
+    color: "#10B981",
+    textIcon: "FT",
+    website: "https://freetheai.xyz",
+    hasFree: true,
+    freeNote: "Community-run — free forever, no paid tiers, no credit card",
+    apiHint:
+      "Get free API key via Discord: https://freetheai.xyz — 16,000+ models, OpenAI-compatible.",
+  },
   xai: {
     id: "xai",
     alias: "xai",
