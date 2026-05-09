@@ -1,6 +1,6 @@
 <!-- SEO Meta Tags -->
 <meta name="description" content="Unified AI proxy/router with 160+ providers, RTK+Caveman compression (15-95% savings), Auto-Combo intelligent routing, and auto-fallback to FREE & low-cost AI models.">
-<meta name="keywords" content="AI gateway, LLM router, OpenAI proxy, Anthropic proxy, multi-provider AI, free AI API, prompt compression, token optimization, AI proxy, API router, ChatGPT alternative, Claude API gateway, OmniRoute, Auto-Combo, 6-factor routing">
+<meta name="keywords" content="AI gateway, LLM router, OpenAI proxy, Anthropic proxy, multi-provider AI, free AI API, prompt compression, token optimization, AI proxy, API router, ChatGPT alternative, Claude API gateway, OmniRoute, Auto-Combo, 7-factor routing">
 
 <!-- OpenGraph -->
 <meta property="og:type" content="website">
@@ -42,7 +42,7 @@
   "features": [
     "160+ AI providers",
     "Prompt compression (RTK + Caveman)",
-    "Auto-Combo 6-factor routing",
+    "Auto-Combo 7-factor routing",
     "Auto-fallback chain",
     "MCP Server (37 tools)",
     "A2A Protocol",
@@ -86,7 +86,7 @@
       "name": "How does Auto-Combo work?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Auto-Combo uses 6-factor scoring to automatically pick the best model for each request: (1) task type, (2) cost efficiency, (3) latency, (4) quota availability, (5) capability match, and (6) diversity. It self-heals by detecting failures and rerouting to the next best model automatically."
+        "text": "Auto-Combo uses 7-factor scoring to automatically pick the best model for each request: (1) health, (2) quota, (3) cost efficiency, (4) latency, (5) capability match, (6) stability, and (7) tier priority. It self-heals by detecting failures and rerouting to the next best model automatically."
       }
     },
     {
@@ -115,7 +115,7 @@
 
 ### Never stop coding. Save 15-95% eligible tokens with RTK+Caveman compression + **Auto-Combo** intelligent routing to **FREE & low-cost AI models**.
 
-_Auto-Combo uses 6-factor scoring (task type, cost, latency, quota, capability, diversity) to automatically pick the best model for each request with self-healing fallback._
+_Auto-Combo uses 7-factor scoring (health, quota, cost, latency, capability, stability, tier) to automatically pick the best model for each request with self-healing fallback._
 
 _The most complete open-source AI proxy — **one endpoint**, **160+ providers**, **13 routing strategies**, zero downtime. Multi-platform: **Web**, **Desktop (Electron)**, **Mobile (PWA + Termux)**. Fully extensible via **MCP Server (37 tools)**, **A2A Protocol**, and **Memory/Skills** systems. Available in **40+ languages**._
 
@@ -365,16 +365,17 @@ _Connect any AI-powered IDE or CLI tool through OmniRoute — free API gateway f
 
 ### How It Works
 
-Auto-Combo evaluates each request against **6 scoring factors**:
+Auto-Combo evaluates each request against **7 scoring factors**:
 
-| Factor                 | Description                            | Weight |
-| ---------------------- | -------------------------------------- | ------ |
-| **Task Type**          | Coding, vision, analysis, conversation | 20%    |
-| **Cost Efficiency**    | Price per 1M tokens                    | 20%    |
-| **Latency**            | Historical response time               | 20%    |
-| **Quota Availability** | Remaining rate limits                  | 15%    |
-| **Capability Match**   | Model strengths for task               | 15%    |
-| **Diversity**          | Avoid same-provider clustering         | 10%    |
+| Factor                 | Description                    | Weight |
+| ---------------------- | ------------------------------ | ------ |
+| **Health**             | Provider uptime and error rate | 25%    |
+| **Quota Availability** | Remaining rate limits          | 20%    |
+| **Cost Efficiency**    | Price per 1M tokens            | 20%    |
+| **Latency**            | Historical response time       | 15%    |
+| **Capability Match**   | Model strengths for task       | 10%    |
+| **Stability**          | Avoid same-provider clustering | 5%     |
+| **Tier Priority**      | Subscription tier preference   | 5%     |
 
 ### Mode Packs
 
@@ -1574,15 +1575,15 @@ No other gateway offers prompt compression. OmniRoute saves 15-95% tokens on eli
 
 #### 🆓 **11 Free Providers** (Exclusive)
 
-- Kiro AI — Claude Sonnet/Haiku unlimited
+- Kiro AI — Claude Sonnet/Haiku (50 credits/month)
 - Qoder AI — Kimi-K2, Qwen3 unlimited
 - Pollinations — GPT-5, no API key needed
 - LongCat — 50M tokens/day
-- - 7 more
+- 7 more
 
 #### 🤖 **Auto-Combo 6-Factor Routing** (Superior)
 
-OmniRoute scores each request on 6 factors (task, cost, latency, quota, capability, diversity) — smarter than Routerly's basic LLM-based routing.
+OmniRoute scores each request on 7 factors (health, quota, cost, latency, capability, stability, tier) — smarter than Routerly's basic LLM-based routing.
 
 #### 🔧 **MCP Server + A2A Protocol** (Exclusive)
 
