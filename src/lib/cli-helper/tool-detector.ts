@@ -3,7 +3,13 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
+const realExecFileAsync = promisify(execFile);
+let _execFileImpl: typeof realExecFileAsync = realExecFileAsync;
+
+/** @internal */
+export function __setExecFileImpl(fn: typeof realExecFileAsync): void {
+  _execFileImpl = fn;
+}
 
 export interface DetectedTool {
   id: string;
@@ -50,13 +56,13 @@ function isConfigured(content: string, baseUrl: string): boolean {
 async function detectBinary(name: string): Promise<{ installed: boolean; version?: string }> {
   const binary = BINARY_NAMES[name] || name;
   try {
-    const { stdout } = await execFileAsync(binary, ["--version"], { timeout: 5000 });
+    const { stdout } = await _execFileImpl(binary, ["--version"], { timeout: 5000 });
     const version = stdout.trim().replace(/^v/, "");
     return { installed: true, version };
   } catch {
     try {
       // Try `which` as fallback
-      const { stdout } = await execFileAsync("which", [binary], { timeout: 5000 });
+      const { stdout } = await _execFileImpl("which", [binary], { timeout: 5000 });
       if (stdout.trim()) {
         return { installed: true };
       }

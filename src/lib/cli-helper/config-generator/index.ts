@@ -14,7 +14,7 @@ export interface GenerateResult {
   error?: string;
 }
 
-function validateBaseUrl(url: string): boolean {
+export function validateBaseUrl(url: string): boolean {
   try {
     const u = new URL(url);
     return u.protocol === "http:" || u.protocol === "https:";

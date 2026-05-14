@@ -4,6 +4,13 @@ import { resolveDataDir, resolveStoragePath } from "../data-dir.mjs";
 import path from "node:path";
 import fs from "node:fs";
 import { homedir } from "node:os";
+import {
+  getProviderConnections,
+  getProviderConnectionById,
+  createProviderConnection,
+  deleteProviderConnection,
+  setDefaultProvider,
+} from "../../src/lib/db/providers.js";
 
 function printProviderHelp() {
   console.log(`
@@ -90,63 +97,49 @@ export async function runProviderCommand(argv) {
       return 0;
     }
 
-    // Generic provider addition via SQLite
-    const dbPath = resolveStoragePath(resolveDataDir());
-    if (!fs.existsSync(dbPath)) {
-      printError("Database not found. Run `omniroute setup` first.");
-      return 1;
-    }
-
-    const { default: Database } = await import("better-sqlite3");
-    const db = new Database(dbPath);
-
+    // Generic provider addition via domain module
     try {
-      const stmt = db.prepare(`
-        INSERT INTO provider_connections (provider, name, api_key, default_model, provider_specific_data)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      const specificData = baseUrl ? JSON.stringify({ baseUrl }) : null;
-      stmt.run(
-        providerName,
-        displayName || providerName,
-        apiKey || "",
-        defaultModel || null,
-        specificData
-      );
+      const result = await createProviderConnection({
+        provider: providerName,
+        name: displayName || providerName,
+        apiKey: apiKey || "",
+        defaultModel: defaultModel || null,
+        providerSpecificData: baseUrl ? { baseUrl } : undefined,
+        authType: "apikey",
+        isActive: true,
+      });
+
+      if (!result) {
+        printError("Failed to add provider — database error");
+        return 1;
+      }
       printSuccess(`Provider "${displayName || providerName}" added`);
-    } finally {
-      db.close();
+    } catch (err) {
+      printError(`Failed to add provider: ${err.message}`);
+      return 1;
     }
 
     return 0;
   }
 
   if (subcommand === "list") {
-    const dbPath = resolveStoragePath(resolveDataDir());
-    if (!fs.existsSync(dbPath)) {
-      if (isJson()) console.log(JSON.stringify([]));
-      else printInfo("No database found. Run `omniroute setup` first.");
-      return 0;
-    }
-
-    const { default: Database } = await import("better-sqlite3");
-    const db = new Database(dbPath);
-    try {
-      const rows = db
-        .prepare("SELECT id, provider, name, default_model FROM provider_connections")
-        .all();
-      if (isJson()) {
-        console.log(JSON.stringify(rows, null, 2));
-      } else {
-        printHeading("Configured Providers");
-        for (const r of rows) {
-          console.log(
-            `  [${r.id}] ${r.name} (${r.provider})${r.default_model ? ` — model: ${r.default_model}` : ""}`
-          );
-        }
+    if (isJson()) {
+      const connections = await getProviderConnections();
+      console.log(JSON.stringify(connections, null, 2));
+    } else {
+      const connections = await getProviderConnections();
+      if (connections.length === 0) {
+        printInfo(
+          "No database found or no providers configured. Run `omniroute setup` and add a provider."
+        );
+        return 0;
       }
-    } finally {
-      db.close();
+      printHeading("Configured Providers");
+      for (const conn of connections) {
+        console.log(
+          `  [${conn.id}] ${conn.name} (${conn.provider})${conn.defaultModel ? ` — model: ${conn.defaultModel}` : ""}`
+        );
+      }
     }
     return 0;
   }
@@ -158,27 +151,27 @@ export async function runProviderCommand(argv) {
       return 1;
     }
 
-    const dbPath = resolveStoragePath(resolveDataDir());
-    if (!fs.existsSync(dbPath)) {
-      printError("Database not found.");
+    // Find the connection using domain module
+    const isId = /^[a-f0-9-]{36}$/.test(target); // UUID format
+    let connection;
+    if (isId) {
+      connection = await getProviderConnectionById(target);
+    } else {
+      const connections = await getProviderConnections({});
+      connection = connections.find((c) => c.name === target || c.provider === target);
+    }
+
+    if (!connection) {
+      printError("Provider not found");
       return 1;
     }
 
-    const { default: Database } = await import("better-sqlite3");
-    const db = new Database(dbPath);
-    try {
-      const isId = /^\d+$/.test(target);
-      const stmt = isId
-        ? db.prepare("DELETE FROM provider_connections WHERE id = ?")
-        : db.prepare("DELETE FROM provider_connections WHERE name = ? OR provider = ?");
-      const result = stmt.run(isId ? parseInt(target, 10) : target);
-      if (result.changes > 0) {
-        printSuccess(`Removed ${result.changes} provider(s)`);
-      } else {
-        printError("Provider not found");
-      }
-    } finally {
-      db.close();
+    const deleted = await deleteProviderConnection(connection.id);
+    if (deleted) {
+      printSuccess(`Removed provider "${connection.name}"`);
+    } else {
+      printError("Failed to remove provider");
+      return 1;
     }
     return 0;
   }
@@ -190,44 +183,40 @@ export async function runProviderCommand(argv) {
       return 1;
     }
 
-    const dbPath = resolveStoragePath(resolveDataDir());
-    if (!fs.existsSync(dbPath)) {
-      printError("Database not found.");
+    // Find the connection using domain module
+    const isId = /^[a-f0-9-]{36}$/.test(target); // UUID format
+    let connection;
+    if (isId) {
+      connection = await getProviderConnectionById(target);
+    } else {
+      const connections = await getProviderConnections({});
+      connection = connections.find((c) => c.name === target || c.provider === target);
+    }
+
+    if (!connection) {
+      printError("Provider not found");
       return 1;
     }
 
-    const { default: Database } = await import("better-sqlite3");
-    const db = new Database(dbPath);
-    try {
-      const isId = /^\d+$/.test(target);
-      const row = isId
-        ? db.prepare("SELECT * FROM provider_connections WHERE id = ?").get(parseInt(target, 10))
-        : db
-            .prepare("SELECT * FROM provider_connections WHERE name = ? OR provider = ?")
-            .get(target);
+    const { testProviderApiKey } = await import("../provider-test.mjs");
+    const providerSpecificData = connection.providerSpecificData
+      ? typeof connection.providerSpecificData === "string"
+        ? JSON.parse(connection.providerSpecificData)
+        : connection.providerSpecificData
+      : {};
+    const result = await testProviderApiKey({
+      provider: connection.provider,
+      apiKey: connection.apiKey || "",
+      defaultModel: connection.defaultModel || null,
+      baseUrl: providerSpecificData.baseUrl || null,
+    });
 
-      if (!row) {
-        printError("Provider not found");
-        return 1;
-      }
-
-      const { testProviderApiKey } = await import("../provider-test.mjs");
-      const result = await testProviderApiKey({
-        provider: row.provider,
-        apiKey: row.api_key,
-        defaultModel: row.default_model,
-        baseUrl: row.provider_specific_data ? JSON.parse(row.provider_specific_data).baseUrl : null,
-      });
-
-      if (isJson()) {
-        console.log(JSON.stringify(result, null, 2));
-      } else if (result.valid) {
-        printSuccess(`Provider "${row.name}" is reachable`);
-      } else {
-        printError(`Provider test failed: ${result.error || "unknown error"}`);
-      }
-    } finally {
-      db.close();
+    if (isJson()) {
+      console.log(JSON.stringify(result, null, 2));
+    } else if (result.valid) {
+      printSuccess(`Provider "${connection.name}" is reachable`);
+    } else {
+      printError(`Provider test failed: ${result.error || "unknown error"}`);
     }
     return 0;
   }
@@ -239,32 +228,32 @@ export async function runProviderCommand(argv) {
       return 1;
     }
 
-    const dbPath = resolveStoragePath(resolveDataDir());
-    if (!fs.existsSync(dbPath)) {
-      printError("Database not found.");
+    // Find the connection using domain module
+    const isId = /^[a-f0-9-]{36}$/.test(target); // UUID format
+    let connection;
+    if (isId) {
+      connection = await getProviderConnectionById(target);
+    } else {
+      const connections = await getProviderConnections({});
+      connection = connections.find((c) => c.name === target || c.provider === target);
+    }
+
+    if (!connection) {
+      printError("Provider not found");
       return 1;
     }
 
-    const { default: Database } = await import("better-sqlite3");
-    const db = new Database(dbPath);
     try {
-      const isId = /^\d+$/.test(target);
-      const row = isId
-        ? db.prepare("SELECT * FROM provider_connections WHERE id = ?").get(parseInt(target, 10))
-        : db
-            .prepare("SELECT * FROM provider_connections WHERE name = ? OR provider = ?")
-            .get(target);
-
-      if (!row) {
-        printError("Provider not found");
+      const success = await setDefaultProvider(connection.id);
+      if (success) {
+        printSuccess(`Default provider set to "${connection.name}"`);
+      } else {
+        printError("Failed to set default provider.");
         return 1;
       }
-
-      db.prepare("UPDATE provider_connections SET is_default = 0").run();
-      db.prepare("UPDATE provider_connections SET is_default = 1 WHERE id = ?").run(row.id);
-      printSuccess(`Default provider set to "${row.name}"`);
-    } finally {
-      db.close();
+    } catch (err) {
+      printError(`Error setting default provider: ${err.message}`);
+      return 1;
     }
     return 0;
   }
