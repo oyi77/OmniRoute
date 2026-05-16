@@ -1,3 +1,5 @@
+<!-- Parent: ../AGENTS.md -->
+
 # omniroute — Agent Guidelines
 
 ## Project
