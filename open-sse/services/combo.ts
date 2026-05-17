@@ -1739,14 +1739,10 @@ export async function handleComboChat({
       typeof autoConfigSource.modePack === "string" ? autoConfigSource.modePack : undefined;
 
     let lastKnownGoodProvider: string | undefined;
-    let lastKnownGoodConnectionId: string | undefined;
     try {
       const { getLKGP } = await import("../../src/lib/localDb");
       const lkgp = await getLKGP(combo.name, combo.id || combo.name);
-      if (lkgp) {
-        lastKnownGoodProvider = lkgp.provider;
-        lastKnownGoodConnectionId = lkgp.connectionId;
-      }
+      if (lkgp) lastKnownGoodProvider = lkgp.provider;
     } catch (err) {
       log.warn("COMBO", "Failed to retrieve Last Known Good Provider. This is non-fatal.", { err });
     }
@@ -1761,7 +1757,7 @@ export async function handleComboChat({
         try {
           const decision = selectWithStrategy(
             candidates,
-            { taskType, requestHasTools, lastKnownGoodProvider, lastKnownGoodConnectionId },
+            { taskType, requestHasTools, lastKnownGoodProvider },
             routingStrategy
           );
           selectedProvider = decision.provider;

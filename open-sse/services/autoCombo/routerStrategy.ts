@@ -17,7 +17,6 @@ export interface RoutingContext {
   requestHasVision?: boolean;
   estimatedInputTokens?: number;
   lastKnownGoodProvider?: string;
-  lastKnownGoodConnectionId?: string;
   lkgpEnabled?: boolean;
 }
 
@@ -140,7 +139,7 @@ class LKGPStrategyImpl implements RouterStrategy {
           provider: best.provider,
           model: best.model,
           strategy: this.name,
-          reason: `LKGP: using last known good provider ${best.provider}${context.lastKnownGoodConnectionId ? ` (account ${context.lastKnownGoodConnectionId})` : ""}`,
+          reason: `LKGP: using last known good provider ${best.provider}`,
           candidatesConsidered: 1,
           finalScore: 1.0,
         };
