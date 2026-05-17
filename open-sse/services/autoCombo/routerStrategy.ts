@@ -17,6 +17,7 @@ export interface RoutingContext {
   requestHasVision?: boolean;
   estimatedInputTokens?: number;
   lastKnownGoodProvider?: string;
+  lastKnownGoodConnectionId?: string;
   lkgpEnabled?: boolean;
 }
 
@@ -130,15 +131,16 @@ class LKGPStrategyImpl implements RouterStrategy {
     }
 
     if (context.lastKnownGoodProvider) {
-      const best = pool.find(
+      const candidates = pool.filter(
         (c) => c.provider === context.lastKnownGoodProvider && c.circuitBreakerState !== "OPEN"
       );
-      if (best) {
+      if (candidates.length > 0) {
+        const best = candidates[0];
         return {
           provider: best.provider,
           model: best.model,
           strategy: this.name,
-          reason: `LKGP: using last known good provider ${best.provider}`,
+          reason: `LKGP: using last known good provider ${best.provider}${context.lastKnownGoodConnectionId ? ` (account ${context.lastKnownGoodConnectionId})` : ""}`,
           candidatesConsidered: 1,
           finalScore: 1.0,
         };
