@@ -297,7 +297,6 @@ export class CopilotWebExecutor extends BaseExecutor {
                   break;
                 }
                 case "replaceText": {
-                  // Full text replacement — send as content delta
                   if (event.text) {
                     const chunk = {
                       id: `chatcmpl-copilot-${Date.now()}`,
@@ -308,6 +307,79 @@ export class CopilotWebExecutor extends BaseExecutor {
                         {
                           index: 0,
                           delta: { content: event.text },
+                          finish_reason: null,
+                        },
+                      ],
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+                  }
+                  break;
+                }
+                case "imageGenerated": {
+                  if (event.url) {
+                    const chunk = {
+                      id: `chatcmpl-copilot-${Date.now()}`,
+                      object: "chat.completion.chunk",
+                      created: Math.floor(Date.now() / 1000),
+                      model: "copilot",
+                      choices: [
+                        {
+                          index: 0,
+                          delta: {
+                            content: [
+                              {
+                                type: "image_url",
+                                image_url: { url: event.url, detail: "auto" },
+                              },
+                            ],
+                          },
+                          finish_reason: null,
+                        },
+                      ],
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+                  }
+                  break;
+                }
+                case "citation": {
+                  if (event.url) {
+                    const annotation = {
+                      type: "url_citation",
+                      url_citation: {
+                        url: event.url,
+                        title: event.title || event.url,
+                      },
+                    };
+                    const chunk = {
+                      id: `chatcmpl-copilot-${Date.now()}`,
+                      object: "chat.completion.chunk",
+                      created: Math.floor(Date.now() / 1000),
+                      model: "copilot",
+                      choices: [
+                        {
+                          index: 0,
+                          delta: { annotations: [annotation] },
+                          finish_reason: null,
+                        },
+                      ],
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+                  }
+                  break;
+                }
+                case "suggestedFollowups": {
+                  if (event.suggestions && Array.isArray(event.suggestions)) {
+                    const chunk = {
+                      id: `chatcmpl-copilot-${Date.now()}`,
+                      object: "chat.completion.chunk",
+                      created: Math.floor(Date.now() / 1000),
+                      model: "copilot",
+                      choices: [
+                        {
+                          index: 0,
+                          delta: {
+                            content: `\n\n**Suggested follow-ups:**\n${event.suggestions.map((s: string) => `- ${s}`).join("\n")}`,
+                          },
                           finish_reason: null,
                         },
                       ],
