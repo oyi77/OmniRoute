@@ -50,6 +50,9 @@ const DEFAULT_MODE = "chat";
 interface CopilotStartResponse {
   currentConversationId?: string;
   conversationId?: string;
+  remainingTurns?: number;
+  isBlocked?: boolean;
+  banExpiresAt?: string;
 }
 
 interface CopilotWsEvent {
@@ -103,7 +106,15 @@ export class CopilotWebExecutor extends BaseExecutor {
   /**
    * Start a new Copilot conversation to get a conversationId.
    */
-  private async startConversation(accessToken?: string, signal?: AbortSignal): Promise<string> {
+  private async startConversation(
+    accessToken?: string,
+    signal?: AbortSignal
+  ): Promise<{
+    conversationId: string;
+    remainingTurns: number;
+    isBlocked: boolean;
+    banExpiresAt?: string;
+  }> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "User-Agent": COPILOT_USER_AGENT,
@@ -137,7 +148,12 @@ export class CopilotWebExecutor extends BaseExecutor {
     if (!convId) {
       throw new Error("Copilot /c/api/start returned no conversationId");
     }
-    return convId;
+    return {
+      conversationId: convId,
+      remainingTurns: data.remainingTurns ?? 0,
+      isBlocked: data.isBlocked ?? false,
+      banExpiresAt: data.banExpiresAt,
+    };
   }
 
   /**
@@ -490,8 +506,43 @@ export class CopilotWebExecutor extends BaseExecutor {
     // Start conversation
     const mergedSignal = signal;
     let conversationId: string;
+    let remainingTurns = 0;
     try {
-      conversationId = await this.startConversation(accessToken || undefined, mergedSignal);
+      const session = await this.startConversation(accessToken || undefined, mergedSignal);
+      conversationId = session.conversationId;
+      remainingTurns = session.remainingTurns;
+
+      // Rate limit check
+      if (session.isBlocked) {
+        const banMsg = session.banExpiresAt
+          ? `Copilot account blocked until ${session.banExpiresAt}`
+          : "Copilot account blocked";
+        return {
+          response: new Response(JSON.stringify({ error: { message: banMsg, type: "blocked" } }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          }),
+          url: COPILOT_START_URL,
+          headers: {},
+          transformedBody: null,
+        };
+      }
+      if (remainingTurns <= 0) {
+        return {
+          response: new Response(
+            JSON.stringify({
+              error: {
+                message: "Copilot rate limit exceeded — no remaining turns. Try again later.",
+                type: "rate_limit",
+              },
+            }),
+            { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "3600" } }
+          ),
+          url: COPILOT_START_URL,
+          headers: {},
+          transformedBody: null,
+        };
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to start Copilot conversation";
       return {
