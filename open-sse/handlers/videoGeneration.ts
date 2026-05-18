@@ -16,6 +16,7 @@
  */
 
 import { getVideoProvider, parseVideoModel } from "../config/videoRegistry.ts";
+import { buildAuthHeaders } from "../config/registryUtils.ts";
 import { kieExecutor } from "../executors/kie.ts";
 import { isJsonObject, parseKieResultJson } from "../utils/kieTask.ts";
 import {
@@ -68,6 +69,50 @@ export async function handleVideoGeneration({ body, credentials, log }) {
 
   if (providerConfig.format === "runwayml") {
     return handleRunwayVideoGeneration({ model, provider, providerConfig, body, credentials, log });
+  }
+
+  if (providerConfig.format === "pollinations-video") {
+    return handlePollinationsVideoGeneration({
+      model,
+      provider,
+      providerConfig,
+      body,
+      credentials,
+      log,
+    });
+  }
+
+  if (providerConfig.format === "minimax-video") {
+    return handleMinimaxVideoGeneration({
+      model,
+      provider,
+      providerConfig,
+      body,
+      credentials,
+      log,
+    });
+  }
+
+  if (providerConfig.format === "together-video") {
+    return handleTogetherVideoGeneration({
+      model,
+      provider,
+      providerConfig,
+      body,
+      credentials,
+      log,
+    });
+  }
+
+  if (providerConfig.format === "replicate-video") {
+    return handleReplicateVideoGeneration({
+      model,
+      provider,
+      providerConfig,
+      body,
+      credentials,
+      log,
+    });
   }
 
   return {
@@ -757,6 +802,364 @@ async function normalizeRunwayVideoResult(task, body) {
   }
 
   return videos;
+}
+
+/**
+ * Handle Pollinations video generation (simple GET endpoint)
+ */
+async function handlePollinationsVideoGeneration({
+  model,
+  provider,
+  providerConfig,
+  body,
+  credentials,
+  log,
+}) {
+  try {
+    const token = credentials?.apiKey || credentials?.providerSpecificData?.apiKey || "";
+    const encodedPrompt = encodeURIComponent(String(body.prompt || ""));
+    const seed = body.seed || Math.floor(Math.random() * 1000000);
+    const url = `https://gen.pollinations.ai/video/${encodedPrompt}?model=${encodeURIComponent(model)}&seed=${seed}`;
+
+    if (log) {
+      const promptPreview = String(body.prompt ?? "").slice(0, 60);
+      log.info(
+        "VIDEO",
+        `${provider}/${model} (pollinations-video) | prompt: "${promptPreview}..."`
+      );
+    }
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(url, { headers });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      return {
+        success: false,
+        status: res.status,
+        error: errorText || `Pollinations video error ${res.status}`,
+      };
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    const b64 = Buffer.from(arrayBuffer).toString("base64");
+
+    return {
+      success: true,
+      data: [{ b64_json: b64, format: "mp4" }],
+      created: Math.floor(Date.now() / 1000),
+    };
+  } catch (err) {
+    if (log) log.error("VIDEO", `${provider} pollinations error: ${err.message}`);
+    return { success: false, status: 502, error: err.message };
+  }
+}
+
+/**
+ * Handle MiniMax video generation (async task model)
+ */
+async function handleMinimaxVideoGeneration({
+  model,
+  provider,
+  providerConfig,
+  body,
+  credentials,
+  log,
+}) {
+  try {
+    const token = credentials?.apiKey || credentials?.providerSpecificData?.apiKey || "";
+    if (!token) return { success: false, status: 401, error: "MiniMax API key required" };
+
+    if (log) {
+      const promptPreview = String(body.prompt ?? "").slice(0, 60);
+      log.info("VIDEO", `${provider}/${model} (minimax-video) | prompt: "${promptPreview}..."`);
+    }
+
+    const baseUrl = providerConfig.baseUrl || "https://api.minimax.io";
+    const submitRes = await fetch(`${baseUrl}/v1/video_generation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        model,
+        prompt: body.prompt,
+        duration: body.duration || 6,
+        resolution: body.resolution || "1080P",
+      }),
+    });
+
+    if (!submitRes.ok) {
+      const errText = await submitRes.text();
+      return { success: false, status: submitRes.status, error: errText };
+    }
+
+    const submitData = await submitRes.json();
+    const taskId = submitData?.task_id;
+    if (!taskId)
+      return {
+        success: false,
+        status: 502,
+        error: `MiniMax did not return task_id: ${JSON.stringify(submitData).slice(0, 400)}`,
+      };
+
+    // Poll for completion (max 60 polls, 5s each = 5 min)
+    for (let i = 0; i < 60; i++) {
+      await sleep(5000);
+      const pollRes = await fetch(`${baseUrl}/v1/query/video_generation?task_id=${taskId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!pollRes.ok) continue;
+
+      const pollData = await pollRes.json();
+      const status = pollData?.status;
+
+      if (status === "Success" || status === "success") {
+        const fileId = pollData?.file_id;
+        if (!fileId)
+          return { success: false, status: 502, error: "MiniMax task completed but no file_id" };
+
+        const fileRes = await fetch(`${baseUrl}/v1/files/retrieve?file_id=${fileId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!fileRes.ok)
+          return {
+            success: false,
+            status: 502,
+            error: `MiniMax file retrieve error ${fileRes.status}`,
+          };
+
+        const fileData = await fileRes.json();
+        const downloadUrl = fileData?.file?.download_url || fileData?.download_url;
+        if (!downloadUrl) return { success: false, status: 502, error: "MiniMax no download URL" };
+
+        const videoRes = await fetch(downloadUrl);
+        const arrayBuffer = await videoRes.arrayBuffer();
+        const b64 = Buffer.from(arrayBuffer).toString("base64");
+
+        return {
+          success: true,
+          data: [{ b64_json: b64, format: "mp4" }],
+          created: Math.floor(Date.now() / 1000),
+        };
+      }
+
+      if (status === "Fail" || status === "fail" || status === "failed") {
+        return {
+          success: false,
+          status: 502,
+          error: `MiniMax video task failed: ${JSON.stringify(pollData).slice(0, 400)}`,
+        };
+      }
+    }
+
+    return { success: false, status: 504, error: `MiniMax video task timeout (taskId=${taskId})` };
+  } catch (err) {
+    if (log) log.error("VIDEO", `${provider} minimax error: ${err.message}`);
+    return { success: false, status: 502, error: err.message };
+  }
+}
+
+/**
+ * Handle Together video generation (async task model)
+ */
+async function handleTogetherVideoGeneration({
+  model,
+  provider,
+  providerConfig,
+  body,
+  credentials,
+  log,
+}) {
+  try {
+    const token = credentials?.apiKey || credentials?.providerSpecificData?.apiKey || "";
+    if (!token) return { success: false, status: 401, error: "Together API key required" };
+
+    if (log) {
+      const promptPreview = String(body.prompt ?? "").slice(0, 60);
+      log.info("VIDEO", `${provider}/${model} (together-video) | prompt: "${promptPreview}..."`);
+    }
+
+    const baseUrl = providerConfig.baseUrl || "https://api.together.xyz";
+    const submitRes = await fetch(`${baseUrl}/videos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        model,
+        prompt: body.prompt,
+        width: body.width || 832,
+        height: body.height || 480,
+        seconds: body.seconds || "5",
+      }),
+    });
+
+    if (!submitRes.ok) {
+      const errText = await submitRes.text();
+      return { success: false, status: submitRes.status, error: errText };
+    }
+
+    const submitData = await submitRes.json();
+    const taskId = submitData?.id;
+    if (!taskId)
+      return {
+        success: false,
+        status: 502,
+        error: `Together did not return task id: ${JSON.stringify(submitData).slice(0, 400)}`,
+      };
+
+    // Poll for completion (max 60 polls, 5s each = 5 min)
+    for (let i = 0; i < 60; i++) {
+      await sleep(5000);
+      const pollRes = await fetch(`${baseUrl}/videos/${taskId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!pollRes.ok) continue;
+
+      const pollData = await pollRes.json();
+      const videoUrl = pollData?.outputs?.video_url || pollData?.output?.video_url;
+
+      if (videoUrl) {
+        const videoRes = await fetch(videoUrl);
+        const arrayBuffer = await videoRes.arrayBuffer();
+        const b64 = Buffer.from(arrayBuffer).toString("base64");
+
+        return {
+          success: true,
+          data: [{ b64_json: b64, format: "mp4" }],
+          created: Math.floor(Date.now() / 1000),
+        };
+      }
+
+      const status = pollData?.status || "";
+      if (status === "failed" || status === "error") {
+        return {
+          success: false,
+          status: 502,
+          error: `Together video task failed: ${JSON.stringify(pollData).slice(0, 400)}`,
+        };
+      }
+    }
+
+    return { success: false, status: 504, error: `Together video task timeout (taskId=${taskId})` };
+  } catch (err) {
+    if (log) log.error("VIDEO", `${provider} together error: ${err.message}`);
+    return { success: false, status: 502, error: err.message };
+  }
+}
+
+/**
+ * Handle Replicate video generation (universal predictions API)
+ */
+async function handleReplicateVideoGeneration({
+  model,
+  provider,
+  providerConfig,
+  body,
+  credentials,
+  log,
+}) {
+  try {
+    const token = credentials?.apiKey || credentials?.providerSpecificData?.apiKey || "";
+    if (!token) return { success: false, status: 401, error: "Replicate API key required" };
+
+    if (log) {
+      const promptPreview = String(body.prompt ?? "").slice(0, 60);
+      log.info("VIDEO", `${provider}/${model} (replicate-video) | prompt: "${promptPreview}..."`);
+    }
+
+    const baseUrl = providerConfig.baseUrl || "https://api.replicate.com";
+    const submitRes = await fetch(`${baseUrl}/v1/predictions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        Prefer: "wait=60",
+      },
+      body: JSON.stringify({
+        version: model,
+        input: { prompt: body.prompt },
+      }),
+    });
+
+    if (!submitRes.ok) {
+      const errText = await submitRes.text();
+      return { success: false, status: submitRes.status, error: errText };
+    }
+
+    const submitData = await submitRes.json();
+
+    // If sync mode returned completed result directly
+    if (
+      submitData?.status === "succeeded" &&
+      Array.isArray(submitData.output) &&
+      submitData.output.length > 0
+    ) {
+      const videoUrl = submitData.output[0];
+      const videoRes = await fetch(videoUrl);
+      const arrayBuffer = await videoRes.arrayBuffer();
+      const b64 = Buffer.from(arrayBuffer).toString("base64");
+      return {
+        success: true,
+        data: [{ b64_json: b64, format: "mp4" }],
+        created: Math.floor(Date.now() / 1000),
+      };
+    }
+
+    const predictionId = submitData?.id;
+    if (!predictionId)
+      return {
+        success: false,
+        status: 502,
+        error: `Replicate did not return prediction id: ${JSON.stringify(submitData).slice(0, 400)}`,
+      };
+
+    // Poll for completion (max 60 polls, 5s each = 5 min)
+    for (let i = 0; i < 60; i++) {
+      await sleep(5000);
+      const pollRes = await fetch(`${baseUrl}/v1/predictions/${predictionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!pollRes.ok) continue;
+
+      const pollData = await pollRes.json();
+
+      if (pollData?.status === "succeeded") {
+        const output = pollData?.output;
+        const videoUrl = Array.isArray(output) ? output[0] : output;
+        if (!videoUrl)
+          return {
+            success: false,
+            status: 502,
+            error: "Replicate task completed but no output URL",
+          };
+
+        const videoRes = await fetch(videoUrl);
+        const arrayBuffer = await videoRes.arrayBuffer();
+        const b64 = Buffer.from(arrayBuffer).toString("base64");
+
+        return {
+          success: true,
+          data: [{ b64_json: b64, format: "mp4" }],
+          created: Math.floor(Date.now() / 1000),
+        };
+      }
+
+      if (pollData?.status === "failed" || pollData?.status === "canceled") {
+        return {
+          success: false,
+          status: 502,
+          error: `Replicate video task ${pollData.status}: ${pollData?.error || "unknown error"}`,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      status: 504,
+      error: `Replicate video task timeout (predictionId=${predictionId})`,
+    };
+  } catch (err) {
+    if (log) log.error("VIDEO", `${provider} replicate error: ${err.message}`);
+    return { success: false, status: 502, error: err.message };
+  }
 }
 
 function sleep(ms) {

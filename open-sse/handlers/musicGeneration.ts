@@ -15,6 +15,7 @@
  */
 
 import { getMusicProvider, parseMusicModel } from "../config/musicRegistry.ts";
+import { buildAuthHeaders } from "../config/registryUtils.ts";
 import { kieExecutor } from "../executors/kie.ts";
 import {
   submitComfyWorkflow,
@@ -99,6 +100,17 @@ export async function handleMusicGeneration({ body, credentials, log }) {
 
   if (providerConfig.format === "kie-music") {
     return handleKieMusicGeneration({ model, provider, providerConfig, body, credentials, log });
+  }
+
+  if (providerConfig.format === "minimax-music") {
+    return handleMinimaxMusicGeneration({
+      model,
+      provider,
+      providerConfig,
+      body,
+      credentials,
+      log,
+    });
   }
 
   return {
@@ -365,4 +377,122 @@ async function handleKieMusicGeneration({
       error: `Music provider error: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
+}
+
+/**
+ * Handle MiniMax music generation (async task model)
+ */
+async function handleMinimaxMusicGeneration({
+  model,
+  provider,
+  providerConfig,
+  body,
+  credentials,
+  log,
+}) {
+  try {
+    const token = credentials?.apiKey || credentials?.providerSpecificData?.apiKey || "";
+    if (!token) return { success: false, status: 401, error: "MiniMax API key required" };
+
+    if (log) {
+      const promptPreview = String(body.prompt ?? "").slice(0, 60);
+      log.info(
+        "MUSIC",
+        `${provider}/${model || "music-2.6"} (minimax-music) | prompt: "${promptPreview}..."`
+      );
+    }
+
+    const baseUrl = providerConfig.baseUrl || "https://api.minimax.io";
+    const submitRes = await fetch(`${baseUrl}/v1/music_generation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        model: model || "music-2.6",
+        prompt: body.prompt || "",
+        lyrics: body.lyrics || "",
+        lyrics_optimizer: true,
+        is_instrumental: body.instrumental || false,
+      }),
+    });
+
+    if (!submitRes.ok) {
+      const errText = await submitRes.text();
+      return { success: false, status: submitRes.status, error: errText };
+    }
+
+    const submitData = await submitRes.json();
+    const taskId = submitData?.task_id;
+    if (!taskId)
+      return {
+        success: false,
+        status: 502,
+        error: `MiniMax music did not return task_id: ${JSON.stringify(submitData).slice(0, 400)}`,
+      };
+
+    // Poll for completion (max 60 polls, 5s each = 5 min)
+    for (let i = 0; i < 60; i++) {
+      await sleep(5000);
+      const pollRes = await fetch(`${baseUrl}/v1/query/music_generation?task_id=${taskId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!pollRes.ok) continue;
+
+      const pollData = await pollRes.json();
+      const status = pollData?.status;
+
+      if (status === "Success" || status === "success") {
+        const fileId = pollData?.file_id;
+        if (!fileId)
+          return {
+            success: false,
+            status: 502,
+            error: "MiniMax music task completed but no file_id",
+          };
+
+        const fileRes = await fetch(`${baseUrl}/v1/files/retrieve?file_id=${fileId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!fileRes.ok)
+          return {
+            success: false,
+            status: 502,
+            error: `MiniMax music file retrieve error ${fileRes.status}`,
+          };
+
+        const fileData = await fileRes.json();
+        const downloadUrl = fileData?.file?.download_url || fileData?.download_url;
+        if (!downloadUrl)
+          return { success: false, status: 502, error: "MiniMax music no download URL" };
+
+        const audioRes = await fetch(downloadUrl);
+        const arrayBuffer = await audioRes.arrayBuffer();
+        const b64 = Buffer.from(arrayBuffer).toString("base64");
+
+        return {
+          success: true,
+          data: {
+            created: Math.floor(Date.now() / 1000),
+            data: [{ b64_json: b64, format: "mp3" }],
+          },
+        };
+      }
+
+      if (status === "Fail" || status === "fail" || status === "failed") {
+        return {
+          success: false,
+          status: 502,
+          error: `MiniMax music task failed: ${JSON.stringify(pollData).slice(0, 400)}`,
+        };
+      }
+    }
+
+    return { success: false, status: 504, error: `MiniMax music task timeout (taskId=${taskId})` };
+  } catch (err) {
+    if (log) log.error("MUSIC", `${provider} minimax error: ${err.message}`);
+    return { success: false, status: 502, error: err.message };
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

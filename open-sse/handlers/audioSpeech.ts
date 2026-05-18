@@ -771,6 +771,73 @@ async function handleXiaomiMimoSpeech(providerConfig, body, modelId, token, cred
 }
 
 /**
+ * Handle MiniMax TTS
+ * POST https://api.minimax.io/v1/t2a_v2 with Bearer auth
+ * Returns hex-encoded audio in data.audio field, or binary
+ */
+async function handleMinimaxTTS(providerConfig, body, token) {
+  const baseUrl = providerConfig.baseUrl || "https://api.minimax.io";
+  const res = await fetch(`${baseUrl}/v1/t2a_v2`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      model: "speech-2.8-hd",
+      text: body.input,
+      stream: false,
+      voice_setting: {
+        voice_id: body.voice || "English_expressive_narrator",
+        speed: body.speed || 1,
+        vol: 1,
+        pitch: 0,
+      },
+      audio_setting: {
+        sample_rate: 32000,
+        bitrate: 128000,
+        format: "mp3",
+        channel: 1,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    return upstreamErrorResponse(res, await res.text());
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+
+  // If response is binary audio directly, stream it
+  if (contentType.startsWith("audio/")) {
+    return audioStreamResponse(res);
+  }
+
+  // Otherwise parse JSON and decode hex-encoded audio
+  const data = await res.json();
+  const audioHex = data?.data?.audio || data?.audio;
+
+  if (!audioHex) {
+    return errorResponse(502, "MiniMax TTS response did not contain audio data");
+  }
+
+  // Decode hex string to binary
+  const hexString = typeof audioHex === "string" ? audioHex : "";
+  const bytes = new Uint8Array(hexString.length / 2);
+  for (let i = 0; i < hexString.length; i += 2) {
+    bytes[i / 2] = parseInt(hexString.substring(i, i + 2), 16);
+  }
+
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      ...CORS_HEADERS,
+      "Content-Type": "audio/mpeg",
+    },
+  });
+}
+
+/**
  * Handle Coqui TTS (local, no auth)
  * POST {baseUrl} with { text, speaker_id } → WAV audio
  */
@@ -914,6 +981,10 @@ export async function handleAudioSpeech({
 
     if (providerConfig.format === "xiaomi-mimo-tts") {
       return handleXiaomiMimoSpeech(providerConfig, body, modelId, token, credentials);
+    }
+
+    if (providerConfig.format === "minimax-tts") {
+      return handleMinimaxTTS(providerConfig, body, token);
     }
 
     if (providerConfig.format === "coqui") {
