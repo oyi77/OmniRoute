@@ -2684,7 +2684,12 @@ export const REGISTRY: Record<string, RegistryEntry> = {
         name: "Mixtral 8x7B Instruct (Free)",
         contextLength: 32768,
       },
-      { id: "deepseek-ai/deepseek-r1", name: "DeepSeek R1 (Free)", contextLength: 65536 },
+      {
+        id: "deepseek-ai/deepseek-r1",
+        name: "DeepSeek R1 (Free)",
+        contextLength: 65536,
+        supportsReasoning: true,
+      },
     ],
   },
 

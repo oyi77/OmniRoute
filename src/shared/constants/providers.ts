@@ -885,7 +885,8 @@ export const APIKEY_PROVIDERS = {
     textIcon: "RE",
     website: "https://replicate.com",
     hasFree: true,
-    freeNote: "Free community models — Llama, Mistral, SDXL, Whisper, MusicGen.",
+    freeNote:
+      "Free community models — Llama 3.1, Mixtral, DeepSeek R1. Passthrough for SDXL, Whisper, MusicGen.",
     passthroughModels: true,
     authHint: "Get API token at replicate.com/account/api-tokens",
   },
