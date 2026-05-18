@@ -84,7 +84,7 @@ export const VIDEO_PROVIDERS: Record<string, VideoProvider> = {
     format: "together-video",
     models: [
       { id: "wan-ai/wan2.1-t2v-480p", name: "Wan 2.1 T2V 480p" },
-      { id: "Wan-AI/Wan2.7-T2V", name: "Wan 2.7 T2V" },
+      { id: "wan-ai/wan2.7-t2v", name: "Wan 2.7 T2V" },
     ],
   },
 
