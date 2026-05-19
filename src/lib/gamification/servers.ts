@@ -82,10 +82,16 @@ export async function syncLeaderboard(
       entries: Array<{ apiKeyId: string; score: number }>;
     };
 
-    // Merge into local leaderboard
-    const { updateScore } = await import("./leaderboard");
+    // Overwrite local scores with remote scores (not additive)
+    const db2 = (await import("../db/core")).getDbInstance();
     for (const entry of data.entries) {
-      updateScore(entry.apiKeyId, "global", entry.score);
+      db2
+        .prepare(
+          `INSERT INTO leaderboard (api_key_id, scope, score, updated_at)
+         VALUES (?, 'global', ?, datetime('now'))
+         ON CONFLICT(api_key_id, scope) DO UPDATE SET score = excluded.score, updated_at = excluded.updated_at`
+        )
+        .run(entry.apiKeyId, entry.score);
     }
 
     // Update last sync time

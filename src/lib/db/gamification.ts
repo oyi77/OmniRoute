@@ -279,26 +279,32 @@ export function transferTokens(
   reason: string,
   idempotencyKey: string
 ): { success: boolean; error?: string } {
-  // Check for duplicate
-  const existing = db()
-    .prepare(`SELECT id FROM token_ledger WHERE idempotency_key = ?`)
-    .get(idempotencyKey) as { id: number } | undefined;
-  if (existing) return { success: true };
+  // Atomic transaction: balance check + insert
+  const instance = getDbInstance();
+  const txn = instance.transaction(() => {
+    // Check for duplicate
+    const existing = instance
+      .prepare(`SELECT id FROM token_ledger WHERE idempotency_key = ?`)
+      .get(idempotencyKey) as { id: number } | undefined;
+    if (existing) return { success: true };
 
-  // Balance check
-  const balance = getBalance(fromId);
-  if (balance < amount) {
-    return { success: false, error: "insufficient_balance" };
-  }
+    // Balance check (inside transaction to prevent race)
+    const balance = getBalance(fromId);
+    if (balance < amount) {
+      return { success: false, error: "insufficient_balance" };
+    }
 
-  db()
-    .prepare(
-      `INSERT INTO token_ledger (from_api_key_id, to_api_key_id, amount, reason, idempotency_key)
-     VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(fromId, toId, amount, reason, idempotencyKey);
+    instance
+      .prepare(
+        `INSERT INTO token_ledger (from_api_key_id, to_api_key_id, amount, reason, idempotency_key)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(fromId, toId, amount, reason, idempotencyKey);
 
-  return { success: true };
+    return { success: true };
+  });
+
+  return txn();
 }
 
 export function getBalance(apiKeyId: string): number {
@@ -441,4 +447,65 @@ export function listServers(): CommunityServer[] {
     status: r.status,
     errorMessage: r.error_message,
   }));
+}
+
+/**
+ * Get neighbors around a user on the leaderboard.
+ */
+export function getLeaderboardNeighbors(
+  apiKeyId: string,
+  scope: string,
+  radius: number = 5
+): {
+  above: Array<{ apiKeyId: string; score: number }>;
+  below: Array<{ apiKeyId: string; score: number }>;
+} {
+  const d = db();
+
+  const scoreRow = d
+    .prepare("SELECT score FROM leaderboard WHERE api_key_id = ? AND scope = ?")
+    .get(apiKeyId, scope) as { score: number } | undefined;
+
+  if (!scoreRow) return { above: [], below: [] };
+
+  const above = d
+    .prepare(
+      `SELECT api_key_id, score FROM leaderboard
+       WHERE scope = ? AND score > ?
+       ORDER BY score ASC LIMIT ?`
+    )
+    .all(scope, scoreRow.score, radius) as Array<{ api_key_id: string; score: number }>;
+
+  const below = d
+    .prepare(
+      `SELECT api_key_id, score FROM leaderboard
+       WHERE scope = ? AND score < ?
+       ORDER BY score DESC LIMIT ?`
+    )
+    .all(scope, scoreRow.score, radius) as Array<{ api_key_id: string; score: number }>;
+
+  return {
+    above: above.reverse().map((r) => ({ apiKeyId: r.api_key_id, score: r.score })),
+    below: below.map((r) => ({ apiKeyId: r.api_key_id, score: r.score })),
+  };
+}
+
+/**
+ * Rotate weekly/monthly scopes. Archive old data, reset current.
+ */
+export function rotateLeaderboardScope(scope: "weekly" | "monthly"): void {
+  const d = db();
+  const archiveSuffix =
+    scope === "weekly"
+      ? `week_${new Date().toISOString().slice(0, 10)}`
+      : `month_${new Date().toISOString().slice(0, 7)}`;
+
+  const instance = getDbInstance();
+  instance.exec(`
+    INSERT OR IGNORE INTO leaderboard (api_key_id, scope, score, updated_at)
+    SELECT api_key_id, '${archiveSuffix}', score, updated_at
+    FROM leaderboard WHERE scope = '${scope}'
+  `);
+
+  d.prepare("DELETE FROM leaderboard WHERE scope = ?").run(scope);
 }

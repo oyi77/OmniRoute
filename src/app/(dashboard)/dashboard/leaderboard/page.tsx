@@ -69,6 +69,12 @@ export default function LeaderboardPage() {
 
     es.onerror = () => {
       es.close();
+      // Reconnect after 3s with exponential backoff
+      setTimeout(() => {
+        if (eventSourceRef.current === es) {
+          fetchLeaderboard(scope);
+        }
+      }, 3000);
     };
 
     return () => {

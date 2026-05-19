@@ -14,7 +14,8 @@ export async function transferTokens(
   fromApiKeyId: string,
   toApiKeyId: string,
   amount: number,
-  reason?: string
+  reason?: string,
+  idempotencyKey?: string
 ): Promise<{ success: boolean; idempotencyKey: string; error?: string }> {
   if (fromApiKeyId === toApiKeyId) {
     return { success: false, idempotencyKey: "", error: "Cannot transfer to yourself" };
@@ -23,24 +24,18 @@ export async function transferTokens(
     return { success: false, idempotencyKey: "", error: "Amount must be positive" };
   }
 
-  const idempotencyKey = crypto.randomUUID();
+  const key = idempotencyKey || crypto.randomUUID();
 
   try {
     const { transferTokens: dbTransfer } = await import("../db/gamification");
-    const result = dbTransfer(
-      fromApiKeyId,
-      toApiKeyId,
-      amount,
-      reason || "transfer",
-      idempotencyKey
-    );
+    const result = dbTransfer(fromApiKeyId, toApiKeyId, amount, reason || "transfer", key);
     if (!result.success) {
-      return { success: false, idempotencyKey, error: result.error };
+      return { success: false, idempotencyKey: key, error: result.error };
     }
-    return { success: true, idempotencyKey };
+    return { success: true, idempotencyKey: key };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return { success: false, idempotencyKey, error: message };
+    return { success: false, idempotencyKey: key, error: message };
   }
 }
 

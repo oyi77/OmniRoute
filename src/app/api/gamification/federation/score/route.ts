@@ -19,6 +19,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate token against connected community servers
+  const token = authHeader.slice(7);
+  const crypto = await import("crypto");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const { getDbInstance } = await import("@/lib/db/core");
+  const db = getDbInstance();
+  const server = db
+    .prepare("SELECT id FROM community_servers WHERE api_key_hash = ? AND status = 'connected'")
+    .get(tokenHash) as { id: string } | undefined;
+
+  if (!server) {
+    return NextResponse.json(
+      { error: "Invalid or unauthorized token" },
+      { status: 403, headers: CORS_HEADERS }
+    );
+  }
+
   const body = await request.json();
   const schema = z.object({
     apiKeyId: z.string(),

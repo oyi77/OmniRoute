@@ -4,8 +4,6 @@
  * @module lib/gamification/leaderboard
  */
 
-import { getDbInstance } from "../db/core";
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type LeaderboardScope = "global" | "weekly" | "monthly" | "tokens_shared" | "contributions";
@@ -13,23 +11,6 @@ export type LeaderboardScope = "global" | "weekly" | "monthly" | "tokens_shared"
 export interface LeaderboardEntry {
   apiKeyId: string;
   score: number;
-}
-
-// ─── Statement / DB helpers (match gamification.ts pattern) ──────────────────
-
-interface StatementLike<TRow = unknown> {
-  all: (...params: unknown[]) => TRow[];
-  get: (...params: unknown[]) => TRow | undefined;
-  run: (...params: unknown[]) => { changes: number };
-}
-
-interface DbLike {
-  prepare: <TRow = unknown>(sql: string) => StatementLike<TRow>;
-  exec: (sql: string) => void;
-}
-
-function db(): DbLike {
-  return getDbInstance() as unknown as DbLike;
 }
 
 // ─── Score Management ────────────────────────────────────────────────────────
@@ -70,54 +51,14 @@ export async function getNeighbors(
   scope: LeaderboardScope,
   radius: number = 5
 ): Promise<{ above: LeaderboardEntry[]; below: LeaderboardEntry[] }> {
-  const d = db();
-
-  const scoreRow = d
-    .prepare("SELECT score FROM leaderboard WHERE api_key_id = ? AND scope = ?")
-    .get(apiKeyId, scope) as { score: number } | undefined;
-
-  if (!scoreRow) return { above: [], below: [] };
-
-  const above = d
-    .prepare(
-      `SELECT api_key_id, score FROM leaderboard
-       WHERE scope = ? AND score > ?
-       ORDER BY score ASC LIMIT ?`
-    )
-    .all(scope, scoreRow.score, radius) as Array<{ api_key_id: string; score: number }>;
-
-  const below = d
-    .prepare(
-      `SELECT api_key_id, score FROM leaderboard
-       WHERE scope = ? AND score < ?
-       ORDER BY score DESC LIMIT ?`
-    )
-    .all(scope, scoreRow.score, radius) as Array<{ api_key_id: string; score: number }>;
-
-  return {
-    above: above.reverse().map((r) => ({ apiKeyId: r.api_key_id, score: r.score })),
-    below: below.map((r) => ({ apiKeyId: r.api_key_id, score: r.score })),
-  };
+  const { getLeaderboardNeighbors } = await import("../db/gamification");
+  return getLeaderboardNeighbors(apiKeyId, scope, radius);
 }
 
 /**
  * Rotate weekly/monthly scopes. Archive old data, reset current.
- * Call this from a cron job or on first request of new period.
  */
 export async function rotateScope(scope: "weekly" | "monthly"): Promise<void> {
-  const d = db();
-  const archiveSuffix =
-    scope === "weekly"
-      ? `week_${new Date().toISOString().slice(0, 10)}`
-      : `month_${new Date().toISOString().slice(0, 7)}`;
-
-  // Archive current scores
-  d.exec(`
-    INSERT OR IGNORE INTO leaderboard (api_key_id, scope, score, updated_at)
-    SELECT api_key_id, '${archiveSuffix}', score, updated_at
-    FROM leaderboard WHERE scope = '${scope}'
-  `);
-
-  // Reset current scope
-  d.prepare("DELETE FROM leaderboard WHERE scope = ?").run(scope);
+  const { rotateLeaderboardScope } = await import("../db/gamification");
+  rotateLeaderboardScope(scope);
 }

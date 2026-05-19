@@ -39,8 +39,11 @@ export async function GET(request: NextRequest) {
           const entries = await getTopN(scope, 50);
           const data = JSON.stringify({ type: "leaderboard", scope, entries });
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-        } catch {
-          // Swallow errors to keep stream alive
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          controller.enqueue(
+            encoder.encode(`event: error\ndata: ${JSON.stringify({ error: msg })}\n\n`)
+          );
         }
       };
 
