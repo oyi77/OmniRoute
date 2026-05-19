@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface BadgeUnlockEvent {
   badgeId: string;
@@ -16,34 +16,69 @@ const RARITY_COLORS: Record<string, string> = {
   legendary: "border-yellow-500 bg-yellow-900/30",
 };
 
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+
 export function BadgeToast({ apiKeyId }: { apiKeyId: string }) {
   const [toasts, setToasts] = useState<BadgeUnlockEvent[]>([]);
+  const timeoutIds = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   const addToast = useCallback((event: BadgeUnlockEvent) => {
     setToasts((prev) => [...prev, event]);
-    // Auto-dismiss after 5s
-    setTimeout(() => {
+    // Auto-dismiss after 5s, track timeout for cleanup
+    const tid = setTimeout(() => {
       setToasts((prev) => prev.slice(1));
+      timeoutIds.current.delete(tid);
     }, 5000);
+    timeoutIds.current.add(tid);
   }, []);
 
   useEffect(() => {
-    const es = new EventSource(`/api/gamification/notifications?apiKeyId=${apiKeyId}`);
+    let reconnectDelay = RECONNECT_BASE_MS;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let unmounted = false;
 
-    es.addEventListener("badge_unlock", (event) => {
-      try {
-        const data = JSON.parse(event.data) as BadgeUnlockEvent;
-        addToast(data);
-      } catch {
-        // ignore parse errors
+    function connect() {
+      if (unmounted) return;
+      es = new EventSource(`/api/gamification/notifications?apiKeyId=${apiKeyId}`);
+
+      es.addEventListener("badge_unlock", (event) => {
+        try {
+          const data = JSON.parse(event.data) as BadgeUnlockEvent;
+          addToast(data);
+        } catch {
+          // ignore parse errors
+        }
+        // Reset backoff on successful message
+        reconnectDelay = RECONNECT_BASE_MS;
+      });
+
+      es.onerror = () => {
+        if (es) es.close();
+        if (unmounted) return;
+        // Reconnect with exponential backoff
+        reconnectTimer = setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+          connect();
+        }, reconnectDelay);
+      };
+    }
+
+    connect();
+
+    // Capture ref value for cleanup
+    const currentTimeoutIds = timeoutIds.current;
+    return () => {
+      unmounted = true;
+      if (es) es.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      // Clear all pending toast timeouts
+      for (const tid of currentTimeoutIds) {
+        clearTimeout(tid);
       }
-    });
-
-    es.onerror = () => {
-      es.close();
+      currentTimeoutIds.clear();
     };
-
-    return () => es.close();
   }, [apiKeyId, addToast]);
 
   if (toasts.length === 0) return null;

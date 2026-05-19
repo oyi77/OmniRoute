@@ -426,12 +426,16 @@ export function disconnectServer(id: string): void {
   db().prepare(`UPDATE community_servers SET status = 'disconnected' WHERE id = ?`).run(id);
 }
 
-export function listServers(): CommunityServer[] {
-  const rows = db().prepare(`SELECT * FROM community_servers`).all() as Array<{
+/** List community servers (excludes api_key_hash for security). */
+export function listServers(): Omit<CommunityServer, "apiKeyHash">[] {
+  const rows = db()
+    .prepare(
+      `SELECT id, name, url, connected_at, last_sync_at, status, error_message FROM community_servers`
+    )
+    .all() as Array<{
     id: string;
     name: string;
     url: string;
-    api_key_hash: string;
     connected_at: string;
     last_sync_at: string | null;
     status: string;
@@ -441,7 +445,6 @@ export function listServers(): CommunityServer[] {
     id: r.id,
     name: r.name,
     url: r.url,
-    apiKeyHash: r.api_key_hash,
     connectedAt: r.connected_at,
     lastSyncAt: r.last_sync_at,
     status: r.status,
@@ -492,6 +495,8 @@ export function getLeaderboardNeighbors(
 
 /**
  * Rotate weekly/monthly scopes. Archive old data, reset current.
+ * Uses two-step approach (SELECT then parameterized INSERT) to avoid SQL injection.
+ * Skips if archive scope already has data for this period (double-run protection).
  */
 export function rotateLeaderboardScope(scope: "weekly" | "monthly"): void {
   const d = db();
@@ -500,12 +505,26 @@ export function rotateLeaderboardScope(scope: "weekly" | "monthly"): void {
       ? `week_${new Date().toISOString().slice(0, 10)}`
       : `month_${new Date().toISOString().slice(0, 7)}`;
 
-  const instance = getDbInstance();
-  instance.exec(`
-    INSERT OR IGNORE INTO leaderboard (api_key_id, scope, score, updated_at)
-    SELECT api_key_id, '${archiveSuffix}', score, updated_at
-    FROM leaderboard WHERE scope = '${scope}'
-  `);
+  // Double-run protection: skip if archive scope already has data
+  const existing = d
+    .prepare("SELECT COUNT(*) AS cnt FROM leaderboard WHERE scope = ?")
+    .get(archiveSuffix) as { cnt: number };
+  if (existing.cnt > 0) return;
+
+  // Step 1: SELECT rows into memory
+  const rows = d
+    .prepare("SELECT api_key_id, score, updated_at FROM leaderboard WHERE scope = ?")
+    .all(scope) as Array<{ api_key_id: string; score: number; updated_at: string }>;
+
+  // Step 2: INSERT with parameters (no string interpolation)
+  if (rows.length > 0) {
+    const insert = d.prepare(
+      "INSERT OR IGNORE INTO leaderboard (api_key_id, scope, score, updated_at) VALUES (?, ?, ?, ?)"
+    );
+    for (const row of rows) {
+      insert.run(row.api_key_id, archiveSuffix, row.score, row.updated_at);
+    }
+  }
 
   d.prepare("DELETE FROM leaderboard WHERE scope = ?").run(scope);
 }

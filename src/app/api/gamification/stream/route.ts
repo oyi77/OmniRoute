@@ -8,6 +8,7 @@
 import { NextRequest } from "next/server";
 import { type LeaderboardScope, getTopN } from "@/lib/gamification/leaderboard";
 import { CORS_HEADERS } from "@/shared/utils/cors";
+import { requireManagementAuth } from "@/lib/api/requireManagementAuth";
 
 const VALID_SCOPES: ReadonlySet<string> = new Set([
   "global",
@@ -24,6 +25,9 @@ const VALID_SCOPES: ReadonlySet<string> = new Set([
  *   scope — one of: global, weekly, monthly, tokens_shared, contributions (default: global)
  */
 export async function GET(request: NextRequest) {
+  const authErr = await requireManagementAuth(request);
+  if (authErr) return authErr;
+
   const url = new URL(request.url);
   const rawScope = url.searchParams.get("scope") || "global";
   const scope: LeaderboardScope = VALID_SCOPES.has(rawScope)

@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, Badge } from "@/shared/components";
+import {
+  xpForLevel,
+  calculateLevel,
+  cumulativeXpForLevel,
+  getLevelTier,
+  getLevelTitle,
+} from "@/lib/gamification/xp";
 
 interface UserLevel {
   apiKeyId: string;
@@ -48,25 +55,6 @@ const RARITY_COLORS: Record<string, string> = {
   epic: "text-purple-400 border-purple-500/30",
   legendary: "text-amber-400 border-amber-500/30",
 };
-
-const XP_PER_LEVEL = 1000;
-
-function getTier(level: number): string {
-  if (level >= 50) return "diamond";
-  if (level >= 30) return "platinum";
-  if (level >= 20) return "gold";
-  if (level >= 10) return "silver";
-  return "bronze";
-}
-
-function getLevelTitle(level: number): string {
-  if (level >= 50) return "Diamond Master";
-  if (level >= 30) return "Platinum Architect";
-  if (level >= 20) return "Gold Engineer";
-  if (level >= 10) return "Silver Developer";
-  if (level >= 5) return "Bronze Builder";
-  return "Newcomer";
-}
 
 export default function ProfilePage() {
   const [userLevel, setUserLevel] = useState<UserLevel | null>(null);
@@ -118,9 +106,12 @@ export default function ProfilePage() {
 
   const level = userLevel?.currentLevel ?? 1;
   const totalXp = userLevel?.totalXp ?? 0;
-  const xpInCurrentLevel = totalXp % XP_PER_LEVEL;
-  const xpProgress = (xpInCurrentLevel / XP_PER_LEVEL) * 100;
-  const tier = getTier(level);
+  const currentLevelCumulative = cumulativeXpForLevel(level);
+  const nextLevelCumulative = cumulativeXpForLevel(level + 1);
+  const xpInCurrentLevel = totalXp - currentLevelCumulative;
+  const xpForNext = nextLevelCumulative - currentLevelCumulative;
+  const xpProgress = xpForNext > 0 ? (xpInCurrentLevel / xpForNext) * 100 : 0;
+  const tier = getLevelTier(level);
   const tierConfig = TIER_CONFIG[tier] || TIER_CONFIG.bronze;
   const earnedIds = new Set(earnedBadges.map((b) => b.badgeId));
 
@@ -156,7 +147,7 @@ export default function ProfilePage() {
                 Level {level} → {level + 1}
               </span>
               <span className="text-text-muted">
-                {xpInCurrentLevel.toLocaleString()} / {XP_PER_LEVEL.toLocaleString()} XP
+                {xpInCurrentLevel.toLocaleString()} / {xpForNext.toLocaleString()} XP
               </span>
             </div>
             <div className="w-full h-3 rounded-full bg-border overflow-hidden">

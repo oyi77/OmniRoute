@@ -121,14 +121,22 @@ async function checkAndUnlockBadge(apiKeyId: string, badgeId: string): Promise<v
     unlockBadge(apiKeyId, badgeId);
     log.info("events.badge_unlocked", { apiKeyId, badgeId });
 
+    // Look up badge details from badge_definitions
+    const { getDbInstance } = await import("../db/core");
+    const badgeRow = getDbInstance()
+      .prepare("SELECT name, description, icon, rarity FROM badge_definitions WHERE id = ?")
+      .get(badgeId) as
+      | { name: string; description: string | null; icon: string | null; rarity: string }
+      | undefined;
+
     // Record notification for SSE toast
     const { recordBadgeUnlock } = await import("./notifications");
     recordBadgeUnlock(apiKeyId, {
       badgeId,
-      badgeName: badgeId,
-      badgeDescription: "",
-      badgeIcon: "award",
-      badgeRarity: "common",
+      badgeName: badgeRow?.name ?? badgeId,
+      badgeDescription: badgeRow?.description ?? "",
+      badgeIcon: badgeRow?.icon ?? "award",
+      badgeRarity: badgeRow?.rarity ?? "common",
       unlockedAt: new Date().toISOString(),
     });
   }
@@ -143,9 +151,7 @@ async function checkActionCountBadges(apiKeyId: string, action: string): Promise
 
   // Count total actions of this type
   const row = db
-    .prepare(
-      "SELECT COALESCE(SUM(xp_earned), 0) AS count FROM xp_audit_log WHERE api_key_id = ? AND action = ?"
-    )
+    .prepare("COALESCE(COUNT(*), 0) AS count FROM xp_audit_log WHERE api_key_id = ? AND action = ?")
     .get(apiKeyId, action) as { count: number };
 
   const count = row.count;
