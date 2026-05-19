@@ -120,6 +120,17 @@ async function checkAndUnlockBadge(apiKeyId: string, badgeId: string): Promise<v
   if (!earned.some((b) => b.badgeId === badgeId)) {
     unlockBadge(apiKeyId, badgeId);
     log.info("events.badge_unlocked", { apiKeyId, badgeId });
+
+    // Record notification for SSE toast
+    const { recordBadgeUnlock } = await import("./notifications");
+    recordBadgeUnlock(apiKeyId, {
+      badgeId,
+      badgeName: badgeId,
+      badgeDescription: "",
+      badgeIcon: "award",
+      badgeRarity: "common",
+      unlockedAt: new Date().toISOString(),
+    });
   }
 }
 
