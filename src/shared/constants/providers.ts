@@ -2242,6 +2242,8 @@ export function providerAllowsOptionalApiKey(providerId: unknown): boolean {
     providerId === "pollinations" ||
     providerId === "copilot-web" ||
     providerId === "hackclub" ||
+    providerId === "gitlawb" ||
+    providerId === "gitlawb-gmi" ||
     isLocalProvider(providerId) ||
     isSelfHostedChatProvider(providerId) ||
     isOpenAICompatibleProvider(providerId) ||
