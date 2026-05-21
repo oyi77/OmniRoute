@@ -4,7 +4,7 @@
 
 ### Never stop coding. Save 15-95% eligible tokens with RTK+Caveman compression + auto-fallback to **FREE & low-cost AI models**.
 
-_The most complete open-source AI proxy — **one endpoint**, **160+ providers**, **13 routing strategies**, zero downtime. Multi-platform: **Web**, **Desktop (Electron)**, **Mobile (PWA + Termux)**. Fully extensible via **MCP Server (37 tools)**, **A2A Protocol**, and **Memory/Skills** systems. Available in **40+ languages**._
+_The most complete open-source AI proxy — **one endpoint**, **198 providers**, **13 routing strategies**, zero downtime. Multi-platform: **Web**, **Desktop (Electron)**, **Mobile (PWA + Termux)**. Fully extensible via **MCP Server (37 tools)**, **A2A Protocol**, and **Memory/Skills** systems. Available in **40+ languages**._
 
 [![npm](https://img.shields.io/npm/v/omniroute?logo=npm&style=flat-square)](https://www.npmjs.com/package/omniroute)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
@@ -293,7 +293,7 @@ OmniRoute works seamlessly with **16+ AI coding tools** — one config, all tool
 
 ---
 
-## 🌐 Supported Providers — 160+
+## 🌐 Supported Providers — 198
 
 ### 🔐 OAuth Providers
 
