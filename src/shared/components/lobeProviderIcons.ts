@@ -74,6 +74,9 @@ import KiloCodeMonoIcon from "@lobehub/icons/es/KiloCode/components/Mono";
 import KimiColorIcon from "@lobehub/icons/es/Kimi/components/Color";
 import KimiMonoIcon from "@lobehub/icons/es/Kimi/components/Mono";
 import LambdaMonoIcon from "@lobehub/icons/es/Lambda/components/Mono";
+import ArceeColorIcon from "@lobehub/icons/es/Arcee/components/Color";
+import ArceeMonoIcon from "@lobehub/icons/es/Arcee/components/Mono";
+import LiquidMonoIcon from "@lobehub/icons/es/Liquid/components/Mono";
 import LmStudioMonoIcon from "@lobehub/icons/es/LmStudio/components/Mono";
 import LongCatColorIcon from "@lobehub/icons/es/LongCat/components/Color";
 import LongCatMonoIcon from "@lobehub/icons/es/LongCat/components/Mono";
@@ -212,6 +215,8 @@ const LOBE_ICON_COMPONENTS = {
   KiloCode: { mono: KiloCodeMonoIcon },
   Kimi: { mono: KimiMonoIcon, color: KimiColorIcon },
   Lambda: { mono: LambdaMonoIcon },
+  Arcee: { mono: ArceeMonoIcon, color: ArceeColorIcon },
+  Liquid: { mono: LiquidMonoIcon },
   LmStudio: { mono: LmStudioMonoIcon },
   LongCat: { mono: LongCatMonoIcon, color: LongCatColorIcon },
   Meta: { mono: MetaMonoIcon, color: MetaColorIcon },
@@ -352,6 +357,8 @@ const LOBE_PROVIDER_ALIASES = {
   nvidia: "Nvidia",
   ollama: "Ollama",
   "ollama-cloud": "Ollama",
+  "arcee-ai": "Arcee",
+  liquid: "Liquid",
   openai: "OpenAI",
   openclaw: "OpenClaw",
   opencode: "OpenCode",

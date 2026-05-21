@@ -102,6 +102,13 @@ const KNOWN_SVGS = new Set([
   "synthetic",
   "wandb",
   "youcom-search",
+  "poolside",
+  "arcee-ai",
+  "inclusionai",
+  "liquid",
+  "nomic",
+  "krutrim",
+  "monsterapi",
 ]);
 
 const ProviderIcon = memo(function ProviderIcon({
