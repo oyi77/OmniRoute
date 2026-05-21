@@ -71,9 +71,13 @@ import IBMMonoIcon from "@lobehub/icons/es/IBM/components/Mono";
 import InferenceMonoIcon from "@lobehub/icons/es/Inference/components/Mono";
 import JinaMonoIcon from "@lobehub/icons/es/Jina/components/Mono";
 import KiloCodeMonoIcon from "@lobehub/icons/es/KiloCode/components/Mono";
+import KlusterColorIcon from "@lobehub/icons/es/Kluster/components/Color";
+import KlusterMonoIcon from "@lobehub/icons/es/Kluster/components/Mono";
 import KimiColorIcon from "@lobehub/icons/es/Kimi/components/Color";
 import KimiMonoIcon from "@lobehub/icons/es/Kimi/components/Mono";
 import LambdaMonoIcon from "@lobehub/icons/es/Lambda/components/Mono";
+import LeptonAIColorIcon from "@lobehub/icons/es/LeptonAI/components/Color";
+import LeptonAIMonoIcon from "@lobehub/icons/es/LeptonAI/components/Mono";
 import LmStudioMonoIcon from "@lobehub/icons/es/LmStudio/components/Mono";
 import LongCatColorIcon from "@lobehub/icons/es/LongCat/components/Color";
 import LongCatMonoIcon from "@lobehub/icons/es/LongCat/components/Mono";
@@ -212,6 +216,8 @@ const LOBE_ICON_COMPONENTS = {
   KiloCode: { mono: KiloCodeMonoIcon },
   Kimi: { mono: KimiMonoIcon, color: KimiColorIcon },
   Lambda: { mono: LambdaMonoIcon },
+  LeptonAI: { mono: LeptonAIMonoIcon, color: LeptonAIColorIcon },
+  Kluster: { mono: KlusterMonoIcon, color: KlusterColorIcon },
   LmStudio: { mono: LmStudioMonoIcon },
   LongCat: { mono: LongCatMonoIcon, color: LongCatColorIcon },
   Meta: { mono: MetaMonoIcon, color: MetaColorIcon },
@@ -352,6 +358,10 @@ const LOBE_PROVIDER_ALIASES = {
   nvidia: "Nvidia",
   ollama: "Ollama",
   "ollama-cloud": "Ollama",
+  "ollama-search": "Ollama",
+  auto: "Automatic",
+  kluster: "Kluster",
+  lepton: "LeptonAI",
   openai: "OpenAI",
   openclaw: "OpenClaw",
   opencode: "OpenCode",
