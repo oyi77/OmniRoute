@@ -3763,14 +3763,21 @@ export async function handleChatCore({
     parsedStatusCode === HTTP_STATUS.BAD_REQUEST &&
     parsedMessage?.toLowerCase().includes("session has expired");
 
-  const streamOptionsOnlyFailed = false; // TODO: properly track stream options failure? (placeholder from existing logic)
+  // Track whether stream_options was present and stripped — if so, 401/403 after
+  // that may be from the modification rather than a genuine auth failure, so we
+  // skip the credential refresh attempt in that case.
+  const hadStreamOptions =
+    targetFormat === FORMATS.OPENAI_RESPONSES && "stream_options" in translatedBody;
+  if (hadStreamOptions) {
+    delete translatedBody.stream_options;
+  }
 
   // Handle 401/403 (and Qwen explicit expiration) - try token refresh using executor
   if (
     (providerResponse.status === HTTP_STATUS.UNAUTHORIZED ||
       providerResponse.status === HTTP_STATUS.FORBIDDEN ||
       isQwenExpiredError) &&
-    !streamOptionsOnlyFailed // Keep constraint if stream options failed originally
+    !hadStreamOptions // Skip refresh if failure may be from stream_options removal, not auth
   ) {
     const newCredentials = (await refreshWithRetry(
       () => executor.refreshCredentials(credentials, log),

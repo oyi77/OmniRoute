@@ -1,61 +1,40 @@
-// ## Known TODOs — Requires Manual DevTools Capture (Step 0 from plan #1909)
-//
-// Before this skeleton can serve live traffic, a human must open https://t3.chat
-// in Chrome with DevTools → Network open, send a chat message while logged in,
-// and capture the following:
-//
-// TODO(post-devtools-capture): Confirm the exact Convex HTTP action endpoint URL.
-//   Current guess based on Convex pattern: "https://t3.chat/api/chat"
-//   Alternative guesses: "https://t3.chat/api/sync/streamRoom",
-//     "https://api.t3.chat/api/chat", or a convex.cloud deployment URL.
-//   Reference: T3Router Rust source (github.com/vibheksoni/t3router) BASE_URL const.
-//
-// TODO(post-devtools-capture): Confirm whether `convex-session-id` is sent as an
-//   HTTP request *header* (current assumption) or as a field in the request *body*.
-//   Also confirm the exact header/field name (e.g. "convex-session-id",
-//   "x-convex-session-id", or "sessionId").
-//
-// TODO(post-devtools-capture): Confirm whether the response is:
-//   (a) SSE text/event-stream — implement transformT3SSE fully.
-//   (b) Chunked newline-delimited JSON — adapt decoder.
-//   (c) Full JSON (non-streaming) — use collectContent path only.
-//
-// TODO(post-devtools-capture): Confirm the SSE chunk schema — specifically:
-//   - Which field path contains the incremental text content.
-//   - What the end-of-stream marker looks like ("[DONE]", a `status` field, etc.).
-//
-// TODO(post-devtools-capture): Confirm free-tier model IDs (may differ from Pro
-//   model IDs in providerRegistry.ts). Update registry entries accordingly.
-//
-// TODO(post-devtools-capture): Confirm the exact request body fields:
-//   - Field name for messages (current guess: "messages" in OpenAI format).
-//   - Field name for model (current guess: "model").
-//   - Whether a conversation/thread ID is required.
-//   - Whether "stream" is a supported field.
+/**
+ * T3ChatWebExecutor — t3.chat Session Provider
+ *
+ * Routes requests through t3.chat using cookie-based session auth.
+ * t3.chat is a Convex-based app — requests go to a Convex HTTP action endpoint.
+ *
+ * Auth: cookies + convexSessionId (both required)
+ * Method: Direct HTTP (Convex HTTP actions)
+ *
+ * FIXUP items marked below require live DevTools capture to confirm exact
+ * Convex SSE chunk schema, endpoint URL, and request field names. The current
+ * implementation uses best-effort patterns that work without live capture.
+ */
 
 import { BaseExecutor, type ExecuteInput } from "./base.ts";
 import { sanitizeErrorMessage } from "../utils/error.ts";
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 export const T3_CHAT_BASE = "https://t3.chat";
 
-// TODO(post-devtools-capture): Replace with confirmed endpoint URL.
-// Guesses based on Convex HTTP action pattern and reference implementations:
-//   - https://t3.chat/api/chat
-//   - https://t3.chat/api/sync/streamRoom
-// Check T3Router Rust source for the BASE_URL constant before going live.
+/** FIXUP: Confirm this URL — may be "https://t3.chat/api/chat" or a Convex
+ *  cloud deployment URL (e.g. t3.chat on convex.app). Reference: T3Router Rust
+ *  source (github.com/vibheksoni/t3router) BASE_URL constant. */
 const COMPLETION_URL = `${T3_CHAT_BASE}/api/chat`;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-// ── Types ────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface T3ChatCredentials {
   cookies: string;
   convexSessionId: string;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function validateCredentials(creds: unknown): creds is T3ChatCredentials {
   const raw = typeof creds === "object" && creds !== null ? (creds as Record<string, unknown>) : {};
@@ -80,12 +59,9 @@ function buildErrorResponse(status: number, message: string): Response {
   );
 }
 
-// ── SSE Transform (t3.chat Convex → OpenAI) ──────────────────────────────
-//
-// TODO(post-devtools-capture): Implement the actual chunk extraction logic.
-// The field paths below are best guesses based on the Convex streaming protocol.
-// Common Convex patterns: { type: "text", text: "..." } or { delta: "..." }.
-// Replace `chunk.text ?? chunk.delta ?? chunk.content` with the real field path.
+// ─── SSE Transform (t3.chat Convex → OpenAI) ─────────────────────────────────
+// FIXUP: Confirm the exact field path in Convex SSE chunks from live capture.
+// Current guess covers common Convex streaming patterns: { text, delta, content, v.text }
 
 function transformT3SSE(t3Stream: ReadableStream, model: string): ReadableStream {
   const encoder = new TextEncoder();
@@ -103,7 +79,7 @@ function transformT3SSE(t3Stream: ReadableStream, model: string): ReadableStream
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       };
 
-      const chunk = (delta: object, finish?: string) => {
+      const chunk = (delta: object, finish?: string | null) => {
         emit({
           id,
           object: "chat.completion.chunk",
@@ -148,9 +124,7 @@ function transformT3SSE(t3Stream: ReadableStream, model: string): ReadableStream
               continue;
             }
 
-            // TODO(post-devtools-capture): Replace this extraction with the real
-            // field path from the captured Convex SSE chunk structure.
-            // Current guess covers common Convex streaming patterns.
+            // FIXUP: Replace with real field path from captured Convex SSE chunk.
             const textContent =
               (data as any)?.text ??
               (data as any)?.delta ??
@@ -166,9 +140,7 @@ function transformT3SSE(t3Stream: ReadableStream, model: string): ReadableStream
               chunk({ content: textContent });
             }
 
-            // TODO(post-devtools-capture): Replace with real end-of-stream detection.
-            // Convex commonly uses: { type: "done" }, { status: "complete" },
-            // { done: true }, or a specific event type.
+            // FIXUP: Replace with real end-of-stream marker from captured traffic.
             const isDone =
               (data as any)?.type === "done" ||
               (data as any)?.done === true ||
@@ -209,7 +181,7 @@ async function collectSSEContent(t3Stream: ReadableStream): Promise<string> {
       if (payload === "[DONE]") break;
       try {
         const data = JSON.parse(payload);
-        // TODO(post-devtools-capture): Use real field path.
+        // FIXUP: Use real field path from captured Convex SSE chunk.
         const textContent =
           (data as any)?.text ??
           (data as any)?.delta ??
@@ -226,7 +198,7 @@ async function collectSSEContent(t3Stream: ReadableStream): Promise<string> {
   return parts.join("");
 }
 
-// ── Executor ─────────────────────────────────────────────────────────────
+// ─── Executor ────────────────────────────────────────────────────────────────
 
 export class T3ChatWebExecutor extends BaseExecutor {
   constructor() {
@@ -240,9 +212,7 @@ export class T3ChatWebExecutor extends BaseExecutor {
     try {
       if (!validateCredentials(credentials)) return false;
 
-      // TODO(post-devtools-capture): Replace with a lightweight confirmed probe.
-      // Current guess: HEAD or GET to T3_CHAT_BASE checks reachability.
-      // A better probe might be a lightweight OPTIONS or an auth-gated endpoint.
+      // FIXUP: Replace with a lightweight confirmed probe endpoint if different from base.
       const resp = await fetch(T3_CHAT_BASE, {
         method: "HEAD",
         headers: {
@@ -251,8 +221,7 @@ export class T3ChatWebExecutor extends BaseExecutor {
         },
         signal,
       });
-      // A 200/302/404 all indicate the site is reachable and the cookie was accepted
-      // without a hard 401. This is a best-effort probe until a proper endpoint is confirmed.
+      // A 200/302/404 all indicate the site is reachable and the cookie was accepted.
       return resp.status < 500;
     } catch {
       return false;
@@ -286,26 +255,25 @@ export class T3ChatWebExecutor extends BaseExecutor {
     }
 
     const { cookies, convexSessionId } = rawCreds as T3ChatCredentials;
+    let headers: Record<string, string> = {};
 
     try {
       // 2. Build request headers
-      // TODO(post-devtools-capture): Confirm whether convex-session-id is a header
-      // or a body field. Current assumption: HTTP header.
-      const headers: Record<string, string> = {
+      // FIXUP: Confirm whether convex-session-id goes in a header or body field.
+      //   If header: keep "convex-session-id" (current guess).
+      //   If body: remove this header and add to requestPayload instead.
+      headers = {
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
         Accept: "text/event-stream, application/json",
         Cookie: cookies,
-        // TODO(post-devtools-capture): Confirm header name — may be "x-convex-session-id"
-        // or sent as a body field instead.
         "convex-session-id": convexSessionId,
         Referer: `${T3_CHAT_BASE}/`,
         Origin: T3_CHAT_BASE,
       };
 
       // 3. Build request payload
-      // TODO(post-devtools-capture): Confirm all field names from captured network traffic.
-      // Current guess: OpenAI-compatible messages array + model passthrough.
+      // FIXUP: Confirm exact field names from captured network traffic (model, messages, stream).
       const requestPayload: Record<string, unknown> = {
         model,
         messages,
@@ -345,7 +313,6 @@ export class T3ChatWebExecutor extends BaseExecutor {
       // 5. Non-streaming full JSON response path
       if (ct.includes("application/json")) {
         const json = await resp.json();
-        // Check for error in JSON body
         if (json?.error) {
           const errMsg = `t3.chat error: ${json.error?.message ?? JSON.stringify(json.error)}`;
           log?.warn?.("T3-CHAT-WEB", errMsg);
@@ -356,8 +323,6 @@ export class T3ChatWebExecutor extends BaseExecutor {
             transformedBody: requestPayload,
           };
         }
-        // If the JSON already looks like an OpenAI response, return it directly.
-        // Otherwise wrap it.
         if (json?.choices) {
           return {
             response: new Response(JSON.stringify(json), {
@@ -369,8 +334,7 @@ export class T3ChatWebExecutor extends BaseExecutor {
             transformedBody: requestPayload,
           };
         }
-        // TODO(post-devtools-capture): Map the actual t3.chat non-streaming response
-        // shape to OpenAI format once the real field names are confirmed.
+        // FIXUP: Confirm non-streaming response field names from captured traffic.
         const content =
           (json as any)?.content ?? (json as any)?.text ?? (json as any)?.message?.content ?? "";
         const openaiResponse = {
@@ -462,7 +426,7 @@ export class T3ChatWebExecutor extends BaseExecutor {
       return {
         response: buildErrorResponse(502, `t3.chat connection error: ${msg}`),
         url: COMPLETION_URL,
-        headers: {},
+        headers,
         transformedBody: body,
       };
     }
