@@ -5,10 +5,9 @@ import assert from "node:assert/strict";
 const { T3ChatWebExecutor, T3_CHAT_BASE } = await import("../../open-sse/executors/t3-chat-web.ts");
 const { getExecutor, hasSpecializedExecutor } = await import("../../open-sse/executors/index.ts");
 
-// NOTE: These tests use mocked HTTP transport. The COMPLETION_URL constant in
-// t3-chat-web.ts is a best-guess placeholder. Tests verify executor behavior
-// and OpenAI output format, not the specific endpoint URL.
-// TODO(post-devtools-capture): Update mock URL matchers once endpoint is confirmed.
+// NOTE: These tests use mocked HTTP transport. The completion URL is confirmed
+// via Playwright live capture (POST https://t3.chat/api/chat, TanStack Start).
+// Tests verify executor behavior and OpenAI output format.
 
 // ─── Registration ────────────────────────────────────────────────────────
 
