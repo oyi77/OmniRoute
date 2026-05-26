@@ -7217,7 +7217,9 @@ function AddApiKeyModal({
   const isBlackboxWeb = provider === "blackbox-web";
   const isMuseSparkWeb = provider === "muse-spark-web";
   const isDeepSeekWeb = provider === "deepseek-web";
-  const isWebSessionProvider = isGrokWeb || isPerplexityWeb || isBlackboxWeb || isMuseSparkWeb;
+  const isClaudeWeb = provider === "claude-web";
+  const isWebSessionProvider =
+    isGrokWeb || isPerplexityWeb || isBlackboxWeb || isMuseSparkWeb || isClaudeWeb;
   const apiKeyOptional = providerAllowsOptionalApiKey(provider);
   const commandCodeAuthPhaseLabel = commandCodeAuthState
     ? {
@@ -7288,11 +7290,13 @@ function AddApiKeyModal({
             ? t("blackboxWebCookiePlaceholder")
             : isMuseSparkWeb
               ? t("museSparkWebCookiePlaceholder")
-              : isQoder
-                ? t("qoderPatPlaceholder")
-                : apiKeyOptional
-                  ? t("optional")
-                  : undefined;
+              : isClaudeWeb
+                ? t("claudeWebCookiePlaceholder")
+                : isQoder
+                  ? t("qoderPatPlaceholder")
+                  : apiKeyOptional
+                    ? t("optional")
+                    : undefined;
   const apiCredentialHint = isQoder
     ? t("qoderPatHint")
     : isDeepSeekWeb
@@ -7305,13 +7309,15 @@ function AddApiKeyModal({
             ? t("blackboxWebCookieHint")
             : isMuseSparkWeb
               ? t("museSparkWebCookieHint")
-              : isLocalSelfHostedProvider
-                ? t("localProviderApiKeyOptionalHint", {
-                    provider: localProviderMetadata?.name || providerName || provider || "",
-                  })
-                : apiKeyOptional
-                  ? t("apiKeyOptionalHint")
-                  : undefined;
+              : isClaudeWeb
+                ? t("claudeWebCookieHint")
+                : isLocalSelfHostedProvider
+                  ? t("localProviderApiKeyOptionalHint", {
+                      provider: localProviderMetadata?.name || providerName || provider || "",
+                    })
+                  : apiKeyOptional
+                    ? t("apiKeyOptionalHint")
+                    : undefined;
 
   const handleValidate = async () => {
     setValidating(true);
