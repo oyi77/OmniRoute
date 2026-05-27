@@ -3351,6 +3351,76 @@ async function validateAdaptaWebProvider({ apiKey, providerSpecificData = {} }: 
   }
 }
 
+async function validateClaudeWebProvider({ apiKey, providerSpecificData = {} }: any) {
+  try {
+    const cookieHeader = normalizeSessionCookieHeader(String(apiKey || ""), "sessionKey");
+    if (!cookieHeader) {
+      return { valid: false, error: "Paste your sessionKey cookie from claude.ai" };
+    }
+
+    const { tlsFetchClaude, TlsClientUnavailableError } = await import(
+      "@omniroute/open-sse/services/claudeTlsClient.ts"
+    );
+
+    let response: { status: number; text: string | null };
+    try {
+      response = await tlsFetchClaude("https://claude.ai/api/organizations", {
+        method: "GET",
+        headers: applyCustomUserAgent(
+          {
+            Accept: "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            Cookie: cookieHeader,
+            Origin: "https://claude.ai",
+            Pragma: "no-cache",
+            Referer: "https://claude.ai/new",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "anthropic-client-platform": "web_claude_ai",
+          },
+          providerSpecificData
+        ),
+        timeoutMs: 30_000,
+      });
+    } catch (err: any) {
+      if (err instanceof TlsClientUnavailableError) {
+        return {
+          valid: false,
+          error: `${err.message} (claude-web requires this — without it, Cloudflare blocks every request)`,
+        };
+      }
+      throw err;
+    }
+
+    if (response.status === 200) {
+      return { valid: true, error: null };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        valid: false,
+        error: "Invalid or expired session cookie — re-paste sessionKey from claude.ai DevTools → Cookies",
+      };
+    }
+
+    if (response.status === 429) {
+      return { valid: true, error: null };
+    }
+
+    if (response.status >= 500) {
+      return { valid: false, error: `Claude.ai unavailable (${response.status})` };
+    }
+
+    return { valid: false, error: `Claude.ai validation failed (${response.status})` };
+  } catch (error: any) {
+    return toValidationErrorResult(error);
+  }
+}
+
 /** Jules API — GET /v1alpha/sources with X-Goog-Api-Key (see developers.google.com/jules/api). */
 async function validateJulesProvider({ apiKey }: { apiKey: string }) {
   try {
@@ -3550,6 +3620,7 @@ export async function validateProviderApiKey({ provider, apiKey, providerSpecifi
     "muse-spark-web": validateMuseSparkWebProvider,
     "inner-ai": validateInnerAiProvider,
     "adapta-web": validateAdaptaWebProvider,
+    "claude-web": validateClaudeWebProvider,
     "azure-openai": validateAzureOpenAIProvider,
     "azure-ai": validateAzureAiProvider,
     "voyage-ai": ({ apiKey, providerSpecificData }: any) => {
