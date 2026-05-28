@@ -404,6 +404,18 @@ export const WEB_COOKIE_PROVIDERS = {
     authHint:
       "Paste your __client cookie value from .clerk.agent.adapta.one (DevTools → Application → Cookies)",
   },
+  "duckduckgo-web": {
+    id: "duckduckgo-web",
+    alias: "ddgw",
+    name: "DuckDuckGo AI Chat",
+    icon: "auto_awesome",
+    color: "#DE5833",
+    textIcon: "DDG",
+    website: "https://duckduckgo.com/duckchat",
+    hasFree: true,
+    freeNote: "Free — anonymous access to multiple AI models via DuckDuckGo.",
+    authHint: "No credentials required — DuckDuckGo AI Chat is anonymous and free.",
+  },
 };
 
 // API Key Providers
