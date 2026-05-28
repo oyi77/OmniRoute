@@ -70,6 +70,14 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         ? AbortSignal.any([signal, controller.signal])
         : controller.signal;
 
+      if (mergedSignal.aborted) {
+        clearTimeout(timeout);
+        return new Response(
+          JSON.stringify({ error: { message: "Request cancelled" } }),
+          { status: 499, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       const vqdToken = await this.acquireVqdHash(mergedSignal);
       if (!vqdToken) {
         clearTimeout(timeout);
@@ -154,6 +162,8 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
 
   private async acquireVqdHash(signal: AbortSignal): Promise<string | null> {
     try {
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      
       const resp = await fetch(STATUS_URL, {
         method: "GET",
         headers: { ...FAKE_HEADERS, Accept: "text/event-stream" },
@@ -162,7 +172,10 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
 
       if (!resp.ok) return null;
       return resp.headers.get("x-vqd-hash-1");
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error;
+      }
       return null;
     }
   }
