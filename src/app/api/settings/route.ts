@@ -9,6 +9,8 @@ import {
   upsertUpstreamProxyConfig,
   getUpstreamProxyConfig,
 } from "@/lib/db/upstreamProxy";
+import { getProviderConnections } from "@/lib/db/providers";
+import { clearCliproxyapiUrlCache } from "@omniroute/open-sse/executors/cliproxyapi.ts";
 import {
   ensurePersistentManagementPasswordHash,
   getStoredManagementPassword,
@@ -295,6 +297,8 @@ export async function PATCH(request: Request) {
           { status: 400 }
         );
       }
+      // Invalidate the executor's URL cache so it picks up the new URL immediately
+      clearCliproxyapiUrlCache();
     }
 
     const cpaModelMapping = rawBody.cliproxyapi_model_mapping as Record<string, string> | undefined;
@@ -303,6 +307,23 @@ export async function PATCH(request: Request) {
       const enabled =
         cpaFallback ?? (settings as Record<string, unknown>).cliproxyapi_fallback_enabled;
       const mode = enabled ? "fallback" : "native";
+
+      // Get all distinct active provider IDs so each one gets its own
+      // upstream_proxy_config row. chatCore reads per-provider config
+      // (e.g. getUpstreamProxyConfig("anthropic")), not a single global row.
+      const activeConnections = await getProviderConnections({ isActive: true });
+      const activeProviderIds = [...new Set(activeConnections.map((c: Record<string, unknown>) => c.provider as string))];
+
+      for (const providerId of activeProviderIds) {
+        await upsertUpstreamProxyConfig({
+          providerId,
+          mode,
+          enabled: !!enabled,
+          ...(cpaModelMapping !== undefined ? { cliproxyapiModelMapping: cpaModelMapping } : {}),
+        });
+      }
+
+      // Also update the legacy "cliproxyapi" row for back-compat
       await upsertUpstreamProxyConfig({
         providerId: "cliproxyapi",
         mode,
