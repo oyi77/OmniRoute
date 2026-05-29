@@ -35,10 +35,18 @@ export type ConfigField = z.infer<typeof ConfigFieldSchema>;
 
 // ── Hooks ──
 
+const HookConfigSchema = z.union([
+  z.boolean(),
+  z.object({
+    enabled: z.boolean().optional(),
+    priority: z.number().optional(),
+  }),
+]);
+
 export const HooksSchema = z.object({
-  onRequest: z.boolean().optional(),
-  onResponse: z.boolean().optional(),
-  onError: z.boolean().optional(),
+  onRequest: HookConfigSchema.optional(),
+  onResponse: HookConfigSchema.optional(),
+  onError: HookConfigSchema.optional(),
 });
 
 // ── Requires ──
@@ -74,16 +82,31 @@ export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 
 // ── Defaults applied after parsing ──
 
+export interface HookConfig {
+  enabled: boolean;
+  priority: number;
+}
+
 export interface PluginManifestWithDefaults extends PluginManifest {
   license: string;
   main: string;
   source: "local" | "marketplace";
   tags: string[];
   requires: { omniroute?: string; permissions: Permission[] };
-  hooks: { onRequest: boolean; onResponse: boolean; onError: boolean };
+  hooks: { onRequest: HookConfig; onResponse: HookConfig; onError: HookConfig };
   skills: ManifestSkill[];
   enabledByDefault: boolean;
   configSchema: Record<string, ConfigField>;
+  integrity?: string;
+}
+
+function normalizeHook(value: unknown): HookConfig {
+  if (typeof value === "boolean") return { enabled: value, priority: 100 };
+  if (typeof value === "object" && value !== null) {
+    const obj = value as { enabled?: boolean; priority?: number };
+    return { enabled: obj.enabled ?? true, priority: obj.priority ?? 100 };
+  }
+  return { enabled: false, priority: 100 };
 }
 
 export function applyDefaults(manifest: PluginManifest): PluginManifestWithDefaults {
@@ -98,9 +121,9 @@ export function applyDefaults(manifest: PluginManifest): PluginManifestWithDefau
       permissions: manifest.requires?.permissions ?? [],
     },
     hooks: {
-      onRequest: manifest.hooks?.onRequest ?? false,
-      onResponse: manifest.hooks?.onResponse ?? false,
-      onError: manifest.hooks?.onError ?? false,
+      onRequest: normalizeHook(manifest.hooks?.onRequest),
+      onResponse: normalizeHook(manifest.hooks?.onResponse),
+      onError: normalizeHook(manifest.hooks?.onError),
     },
     skills: manifest.skills ?? [],
     enabledByDefault: manifest.enabledByDefault ?? false,

@@ -112,10 +112,15 @@ export async function emitHook(event: string, payload: unknown): Promise<void> {
   const list = hooks.get(event);
   if (!list || list.length === 0) return;
 
+  const { recordPluginMetric } = await import("../db/pluginMetrics");
+
   for (const reg of list) {
+    const start = performance.now();
     try {
       await reg.handler(payload);
+      recordPluginMetric(reg.pluginName, event, performance.now() - start, false);
     } catch (err: unknown) {
+      recordPluginMetric(reg.pluginName, event, performance.now() - start, true);
       const message = err instanceof Error ? err.message : String(err);
       log.error("hook.handler_error", {
         event,
@@ -145,9 +150,13 @@ export async function emitHookBlocking(
   let mergedBody: unknown = ctx.body;
   let mergedMetadata: Record<string, unknown> = (ctx.metadata as Record<string, unknown>) || {};
 
+  const { recordPluginMetric } = await import("../db/pluginMetrics");
+
   for (const reg of list) {
+    const start = performance.now();
     try {
       const result = await reg.handler(payload);
+      recordPluginMetric(reg.pluginName, event, performance.now() - start, false);
       if (result && typeof result === "object") {
         if ("body" in result) mergedBody = (result as Record<string, unknown>).body;
         if ("metadata" in result)
@@ -164,6 +173,7 @@ export async function emitHookBlocking(
         }
       }
     } catch (err: unknown) {
+      recordPluginMetric(reg.pluginName, event, performance.now() - start, true);
       const message = err instanceof Error ? err.message : String(err);
       log.error("hook.blocking_handler_error", {
         event,
@@ -217,9 +227,12 @@ export async function runOnRequest(ctx: PluginContext): Promise<PluginResult> {
 export async function runOnResponse(ctx: PluginContext, response: unknown): Promise<unknown> {
   let currentResponse = response;
   const list = hooks.get("onResponse") || [];
+  const { recordPluginMetric } = await import("../db/pluginMetrics");
   for (const reg of list) {
+    const start = performance.now();
     try {
       const result = await reg.handler({ ...ctx, response: currentResponse });
+      recordPluginMetric(reg.pluginName, "onResponse", performance.now() - start, false);
       if (
         result !== undefined &&
         result !== null &&
@@ -229,6 +242,7 @@ export async function runOnResponse(ctx: PluginContext, response: unknown): Prom
         currentResponse = (result as { response: unknown }).response;
       }
     } catch (err: unknown) {
+      recordPluginMetric(reg.pluginName, "onResponse", performance.now() - start, true);
       const message = err instanceof Error ? err.message : String(err);
       log.error("hook.response_handler_error", { pluginName: reg.pluginName, error: message });
     }

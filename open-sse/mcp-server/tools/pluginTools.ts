@@ -8,6 +8,12 @@ import { z } from "zod";
 import { listPlugins, getPluginByName, updatePluginConfig } from "../../../src/lib/db/plugins";
 import { pluginManager } from "../../../src/lib/plugins/manager";
 
+/** Sanitize error message — strip file paths to prevent info leaks. */
+function scrubPathError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "Unknown error";
+  return msg.replace(/\/[^\s]+/g, "[path]");
+}
+
 export const pluginTools = [
   {
     name: "plugin_list",
@@ -62,8 +68,12 @@ export const pluginTools = [
       name: z.string().describe("Plugin name (kebab-case)"),
     }),
     handler: async (args: { name: string }) => {
-      await pluginManager.activate(args.name);
-      return { success: true, message: `Plugin '${args.name}' activated` };
+      try {
+        await pluginManager.activate(args.name);
+        return { success: true, message: `Plugin '${args.name}' activated` };
+      } catch (err: unknown) {
+        return { success: false, error: scrubPathError(err) };
+      }
     },
   },
 
@@ -74,8 +84,12 @@ export const pluginTools = [
       name: z.string().describe("Plugin name (kebab-case)"),
     }),
     handler: async (args: { name: string }) => {
-      await pluginManager.deactivate(args.name);
-      return { success: true, message: `Plugin '${args.name}' deactivated` };
+      try {
+        await pluginManager.deactivate(args.name);
+        return { success: true, message: `Plugin '${args.name}' deactivated` };
+      } catch (err: unknown) {
+        return { success: false, error: scrubPathError(err) };
+      }
     },
   },
 
@@ -86,8 +100,12 @@ export const pluginTools = [
       name: z.string().describe("Plugin name (kebab-case)"),
     }),
     handler: async (args: { name: string }) => {
-      await pluginManager.uninstall(args.name);
-      return { success: true, message: `Plugin '${args.name}' uninstalled` };
+      try {
+        await pluginManager.uninstall(args.name);
+        return { success: true, message: `Plugin '${args.name}' uninstalled` };
+      } catch (err: unknown) {
+        return { success: false, error: scrubPathError(err) };
+      }
     },
   },
 
@@ -103,7 +121,7 @@ export const pluginTools = [
     }),
     handler: async (args: { name: string; config?: Record<string, unknown> }) => {
       const plugin = getPluginByName(args.name);
-      if (!plugin) throw new Error(`Plugin '${args.name}' not found`);
+      if (!plugin) return { success: false, error: "Plugin not found" };
 
       if (args.config) {
         const current = JSON.parse(plugin.config || "{}");
@@ -121,16 +139,34 @@ export const pluginTools = [
 
   {
     name: "plugin_executions",
-    description: "View plugin execution history (from skill_executions table).",
+    description: "View plugin execution metrics (hook calls, errors, latency).",
     inputSchema: z.object({
       name: z.string().optional().describe("Filter by plugin name"),
       limit: z.number().min(1).max(100).default(20).describe("Max results to return"),
     }),
     handler: async (args: { name?: string; limit?: number }) => {
-      // Plugin executions are tracked via the skills system
-      const { skillExecutor } = await import("../../../src/lib/skills/executor");
-      const executions = skillExecutor.listExecutions(undefined, args.limit || 20);
-      return { executions };
+      const { getPluginMetrics } = await import("../../../src/lib/db/pluginMetrics");
+      const metrics = getPluginMetrics(args.name);
+      return { metrics };
+    },
+  },
+
+  {
+    name: "plugin_upgrade",
+    description: "Upgrade an installed plugin to a newer version from a source directory.",
+    inputSchema: z.object({
+      sourceDir: z.string().describe("Absolute path to the plugin source directory with newer version"),
+    }),
+    handler: async (args: { sourceDir: string }) => {
+      try {
+        const plugin = await pluginManager.upgrade(args.sourceDir);
+        return {
+          success: true,
+          plugin: { name: plugin.name, version: plugin.version, status: plugin.status },
+        };
+      } catch (err: unknown) {
+        return { success: false, error: scrubPathError(err) };
+      }
     },
   },
 

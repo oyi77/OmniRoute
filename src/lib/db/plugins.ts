@@ -118,11 +118,7 @@ export function insertPlugin(input: PluginCreateInput): PluginRow {
   );
 
   log.info("plugin.inserted", { id: input.id, name: input.name });
-  const plugin = getPluginByName(input.name);
-  if (!plugin) {
-    throw new Error(`Failed to retrieve plugin '${input.name}' after insertion`);
-  }
-  return plugin;
+  return getPluginByName(input.name)!;
 }
 
 export function getPluginById(id: string): PluginRow | null {
