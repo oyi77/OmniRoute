@@ -47,6 +47,8 @@ export const HooksSchema = z.object({
   onRequest: HookConfigSchema.optional(),
   onResponse: HookConfigSchema.optional(),
   onError: HookConfigSchema.optional(),
+  onBeforeInstall: z.boolean().optional(),
+  onAfterInstall: z.boolean().optional(),
 });
 
 // ── Requires ──
@@ -54,6 +56,9 @@ export const HooksSchema = z.object({
 export const RequiresSchema = z.object({
   omniroute: z.string().optional(),
   permissions: z.array(PermissionSchema).optional(),
+  memoryLimitMb: z.number().min(32).max(1024).optional(),
+  plugins: z.array(z.string()).optional(),
+  sandboxLevel: z.number().min(0).max(3).optional(),
 });
 
 // ── Full manifest ──
@@ -92,8 +97,8 @@ export interface PluginManifestWithDefaults extends PluginManifest {
   main: string;
   source: "local" | "marketplace";
   tags: string[];
-  requires: { omniroute?: string; permissions: Permission[] };
-  hooks: { onRequest: HookConfig; onResponse: HookConfig; onError: HookConfig };
+  requires: { omniroute?: string; permissions: Permission[]; memoryLimitMb?: number; plugins?: string[]; sandboxLevel?: number };
+  hooks: { onRequest: HookConfig; onResponse: HookConfig; onError: HookConfig; onBeforeInstall: boolean; onAfterInstall: boolean };
   skills: ManifestSkill[];
   enabledByDefault: boolean;
   configSchema: Record<string, ConfigField>;
@@ -119,16 +124,55 @@ export function applyDefaults(manifest: PluginManifest): PluginManifestWithDefau
     requires: {
       omniroute: manifest.requires?.omniroute,
       permissions: manifest.requires?.permissions ?? [],
+      memoryLimitMb: manifest.requires?.memoryLimitMb,
+      plugins: manifest.requires?.plugins,
+      sandboxLevel: manifest.requires?.sandboxLevel,
     },
     hooks: {
       onRequest: normalizeHook(manifest.hooks?.onRequest),
       onResponse: normalizeHook(manifest.hooks?.onResponse),
       onError: normalizeHook(manifest.hooks?.onError),
+      onBeforeInstall: manifest.hooks?.onBeforeInstall ?? false,
+      onAfterInstall: manifest.hooks?.onAfterInstall ?? false,
     },
     skills: manifest.skills ?? [],
     enabledByDefault: manifest.enabledByDefault ?? false,
     configSchema: manifest.configSchema ?? {},
   };
+}
+
+// ── Config validation ──
+
+export function validatePluginConfig(
+  config: Record<string, unknown>,
+  schema: Record<string, ConfigField>
+): { valid: true } | { valid: false; errors: string[] } {
+  if (Object.keys(schema).length === 0) return { valid: true };
+  const errors: string[] = [];
+  for (const [key, value] of Object.entries(config)) {
+    const field = schema[key];
+    if (!field) {
+      errors.push(`Unknown config key: '${key}'`);
+      continue;
+    }
+    if (field.type === "number" && typeof value !== "number") {
+      errors.push(`Config '${key}' must be a number, got ${typeof value}`);
+    }
+    if (field.type === "string" && typeof value !== "string") {
+      errors.push(`Config '${key}' must be a string, got ${typeof value}`);
+    }
+    if (field.type === "boolean" && typeof value !== "boolean") {
+      errors.push(`Config '${key}' must be a boolean, got ${typeof value}`);
+    }
+    if (field.type === "number" && typeof value === "number") {
+      if (field.min !== undefined && value < field.min) errors.push(`Config '${key}' must be >= ${field.min}`);
+      if (field.max !== undefined && value > field.max) errors.push(`Config '${key}' must be <= ${field.max}`);
+    }
+    if (field.type === "select" && field.enum && !field.enum.includes(String(value))) {
+      errors.push(`Config '${key}' must be one of: ${field.enum.join(", ")}`);
+    }
+  }
+  return errors.length === 0 ? { valid: true } : { valid: false, errors };
 }
 
 // ── Validation ──
