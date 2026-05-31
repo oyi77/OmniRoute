@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS discovery_results (
   endpoint TEXT,
   models_json TEXT DEFAULT '[]',
   rate_limit TEXT,
-  feasibility INTEGER DEFAULT 0 CHECK (feasibility BETWEEN 1 AND 5),
+  feasibility INTEGER DEFAULT 1 CHECK (feasibility BETWEEN 1 AND 5),
   risk_level TEXT DEFAULT 'none' CHECK (risk_level IN ('none', 'low', 'medium', 'high', 'critical')),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'testing', 'verified', 'rejected')),
   notes TEXT,

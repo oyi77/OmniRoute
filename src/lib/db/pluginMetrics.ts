@@ -35,18 +35,22 @@ export function recordPluginMetric(
   durationMs: number,
   isError: boolean
 ): void {
-  const db = getDbInstance();
-  const now = new Date().toISOString();
+  try {
+    const db = getDbInstance();
+    const now = new Date().toISOString();
 
-  db.prepare(
-    `INSERT INTO plugin_metrics (plugin_name, event, calls, errors, total_duration_ms, last_called_at)
-     VALUES (?, ?, 1, ?, ?, ?)
-     ON CONFLICT(plugin_name, event) DO UPDATE SET
-       calls = calls + 1,
-       errors = errors + excluded.errors,
-       total_duration_ms = total_duration_ms + excluded.total_duration_ms,
-       last_called_at = excluded.last_called_at`
-  ).run(pluginName, event, isError ? 1 : 0, durationMs, now);
+    db.prepare(
+      `INSERT INTO plugin_metrics (plugin_name, event, calls, errors, total_duration_ms, last_called_at)
+       VALUES (?, ?, 1, ?, ?, ?)
+       ON CONFLICT(plugin_name, event) DO UPDATE SET
+         calls = calls + 1,
+         errors = errors + excluded.errors,
+         total_duration_ms = total_duration_ms + excluded.total_duration_ms,
+         last_called_at = excluded.last_called_at`
+    ).run(pluginName, event, isError ? 1 : 0, durationMs, now);
+  } catch {
+    // Best-effort: DB hiccup should never break hook execution
+  }
 }
 
 /**
