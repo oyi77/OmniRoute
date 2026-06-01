@@ -5838,6 +5838,17 @@ export async function handleChatCore({
     }
   }
 
+  // ── Plugin onResponse hook (fire-and-forget) ──
+  try {
+    const { runOnResponse } = await import("@/lib/plugins/index");
+    runOnResponse(
+      { requestId: traceId, body, model, provider, apiKeyInfo, metadata: {} },
+      { status: 200 }
+    ).catch(() => {});
+  } catch (_) {
+    /* plugin onResponse optional */
+  }
+
   return {
     success: true,
     response: new Response(finalStream, {
