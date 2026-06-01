@@ -1048,6 +1048,11 @@ export const providerModelMutationSchema = z.object({
       ])
     )
     .default(["chat"]),
+  // #2905: optional per-model wire format override for custom models (e.g. a
+  // custom opencode-go model that must use the Anthropic Messages shape).
+  targetFormat: z
+    .enum(["openai", "openai-responses", "claude", "gemini", "gemini-cli", "antigravity"])
+    .optional(),
   normalizeToolCallId: z.boolean().optional(),
   preserveOpenAIDeveloperRole: z.boolean().nullable().optional(),
   upstreamHeaders: upstreamHeadersRecordSchema.nullable().optional(),
@@ -1644,6 +1649,16 @@ export const oauthImportTokenSchema = z.object({
 export const cursorImportSchema = z.object({
   accessToken: z.string().trim().min(1, "Access token is required"),
   machineId: z.string().trim().optional(),
+});
+
+export const traeImportSchema = z.object({
+  accessToken: z.string().trim().min(1, "Cloud-IDE-JWT access token is required"),
+  webId: z.string().trim().optional(),
+  bizUserId: z.string().trim().optional(),
+  userUniqueId: z.string().trim().optional(),
+  scope: z.string().trim().optional(),
+  tenant: z.string().trim().optional(),
+  region: z.string().trim().optional(),
 });
 
 export const kiroImportSchema = z.object({

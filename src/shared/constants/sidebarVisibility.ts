@@ -47,7 +47,6 @@ export const HIDEABLE_SIDEBAR_ITEM_IDS = [
   "costs-pricing",
   "costs-budget",
   "costs-quota-share",
-  "costs-quota-plans",
   // Monitoring > Audit
   "audit",
   "audit-mcp",
@@ -195,6 +194,13 @@ const OMNI_PROXY_ITEMS: readonly SidebarItemDefinition[] = [
     i18nKey: "providerQuota",
     subtitleKey: "providerQuotaSubtitle",
     icon: "tune",
+  },
+  {
+    id: "costs-quota-share",
+    href: "/dashboard/costs/quota-share",
+    i18nKey: "costsQuotaShare",
+    subtitleKey: "costsQuotaShareSubtitle",
+    icon: "pie_chart",
   },
 ];
 
@@ -454,20 +460,6 @@ const COSTS_ITEMS: readonly SidebarItemDefinition[] = [
     i18nKey: "costsBudget",
     subtitleKey: "costsBudgetSubtitle",
     icon: "savings",
-  },
-  {
-    id: "costs-quota-share",
-    href: "/dashboard/costs/quota-share",
-    i18nKey: "costsQuotaShare",
-    subtitleKey: "costsQuotaShareSubtitle",
-    icon: "pie_chart",
-  },
-  {
-    id: "costs-quota-plans",
-    href: "/dashboard/costs/quota-share/plans",
-    i18nKey: "costsQuotaPlans",
-    subtitleKey: "costsQuotaPlansSubtitle",
-    icon: "fact_check",
   },
 ];
 

@@ -46,6 +46,10 @@
 - **Documentation** — `docs/frameworks/AGENTBRIDGE.md` and `docs/frameworks/TRAFFIC_INSPECTOR.md`;
   `docs/architecture/REPOSITORY_MAP.md` updated; `docs/reference/openapi.yaml` updated with
   ~28 new routes and 20+ new schemas.
+- **i18n:** translate Ukrainian (uk-UA) menu and UI strings (#2981 — thanks @Lion-killer)
+- **providers:** add SiliconFlow endpoint selector (#2975 — thanks @xz-dev)
+- **oauth:** add Trae SOLO provider (work/code modes) (#2964 — thanks @S0yora)
+- **providers:** add Qwen Web (chat.qwen.ai) web-cookie provider (#2947 — thanks @oyi77)
 
 ### Changed
 
@@ -59,6 +63,55 @@
 
 ### Fixed
 
+- **codex/providers:** `POST /api/providers/[id]/refresh` (the manual/auto "refresh
+  token" endpoint) no longer rotates rotating-refresh providers (Codex/OpenAI share
+  one Auth0 `client_id`). This was the last unguarded proactive-refresh entry point:
+  when the dashboard auto-refreshed every expiring connection on a page load (or an
+  old cached frontend bulk-called it), each Codex account's single-use refresh_token
+  was rotated, and Auth0 revoked the whole token family (`openai/codex#9648`) — every
+  account but the last died with `[403] <!DOCTYPE`. The endpoint now skips proactive
+  rotation for rotating providers and defers to the reactive, serialized 401 path
+  (same guard as `refreshAndUpdateCredentials` and the connection-test route).
+- **codex/quota:** opening the Quota / Providers dashboard no longer disconnects
+  Codex multi-account setups. The quota-sync path
+  (`refreshAndUpdateCredentials`) proactively refreshed every connection — for
+  rotating-refresh providers (Codex/OpenAI share one Auth0 `client_id`) it
+  refreshed siblings concurrently, so Auth0 revoked the whole token family
+  (`openai/codex#9648`) and every account but the last died with
+  `[403] <!DOCTYPE html>`. The quota path now skips proactive refresh for
+  rotating providers (`rotationGroupFor`) and reuses the current access_token,
+  deferring genuine expiry to the reactive, serialized 401 path. Defense in
+  depth: `serializeRefresh` now leaves a settle gap between two *queued* sibling
+  refreshes (default 2000 ms, tunable via `CODEX_REFRESH_SPACING_MS`, `"0"` to
+  opt out) while releasing a lone refresh immediately, so the reactive path adds
+  no latency.
+- **payload-rules:** saved payload rules now survive a server restart. When no
+  in-memory override is set (fresh process before the boot hook ran, or a
+  separate module instance in the standalone build), `getPayloadRulesConfig`
+  now reads the DB-persisted rules (the source of truth) before the file config,
+  instead of silently returning the empty file default. (#2986)
+- **models/custom:** custom models can now carry a per-model `targetFormat`
+  override (e.g. an opencode-go custom model that must use the Anthropic Messages
+  shape). Previously custom models always routed as OpenAI-compatible because
+  `targetFormat` was neither persisted nor consulted at routing time. Threaded
+  through `addCustomModel`/`replaceCustomModels`/`updateCustomModel`, the API
+  schema/route, `getModelInfo`, and chatCore's targetFormat resolution. (#2905)
+- **providers/pollinations:** route to `gen.pollinations.ai/v1` instead of the
+  retired `text.pollinations.ai` host, which now returns `404 "legacy API"` for
+  all models. The gen gateway is the current OpenAI-compatible endpoint. (#2987)
+- **executors/codex:** drop the CLI-injected `image_generation` hosted tool for
+  free-plan Codex accounts (`workspacePlanType === "free"`), which can't run it
+  server-side and would otherwise get an upstream 400. Paid plans keep it.
+  (mirrors CLIProxyAPI's free-plan guard; spun off from the #2980 analysis)
+- **dashboard:** custom providers (`openai-compatible-*` / `anthropic-compatible-*`)
+  now show their user-given node name instead of the raw UUID id across the
+  active-requests panel, proxy logger, and home-page provider topology. The
+  display-label resolver was extracted into a shared util reused by all surfaces
+  (previously only the request-log viewer resolved it). (#2968)
+- **docker:** the standalone launcher (Docker `CMD`) now honors
+  `OMNIROUTE_MEMORY_MB` (default 512, clamped [64, 16384]) and overrides the
+  image `NODE_OPTIONS` fallback, fixing random OOM crashes under load / with
+  large SQLite DBs. Previously only `omniroute serve` honored the knob. (#2939)
 - **docker:** add a `web` compose profile (`omniroute-web`, target `runner-web`,
   image `omniroute:web`) so web-cookie providers (gemini-web, claude-web,
   claude-turnstile) work out of the box — the default `base` image ships without
@@ -129,6 +182,27 @@
   `function_call_output` previously slipped past the orphan filter. Now
   empty-`call_id` function calls are skipped (no dangling assistant tool_call)
   and any tool result without a matching tool_call id is dropped. (#2893)
+- **deps:** remove the `proxifly` npm dependency (#3000 — thanks @terence71-glitch)
+- **proxy:** use connection proxy for OAuth refresh (#3012 — thanks @terence71-glitch)
+- **usage:** export pure helper functions for unit testing (#3015 — thanks @oyi77)
+- **docs/docker:** align memory default docs to 1024MB (#3006 — thanks @terence71-glitch)
+- **providers:** fix DuckDuckGo missing API key & update OpenCode free model list (#3008 — thanks @NekoMonci12)
+- **claude:** bump Claude Code identity to 2.1.158 and sync beta flags (#3010 — thanks @Tentoxa)
+- **test:** increase DB and usage utils coverage to >60% (#3018 — thanks @oyi77)
+- **oom:** resolve memory leak in Bottleneck limiter caches and provider registry (#2965 — thanks @soyelmismo)
+- **proxy:** show registry provider proxies in dashboard after Custom proxy flow moved them into the proxy registry (#2963 — thanks @terence71-glitch)
+- **routing:** add agy to executor map so it uses AntigravityExecutor (#2957 — thanks @ReqX)
+- **skills:** avoid Claude assistant tool_result blocks (#2956 — thanks @terence71-glitch)
+- **perf:** CPU leak from Bottleneck limiter accumulation + per-request optimizations (#2951 — thanks @soyelmismo)
+- **combo:** combo credential resolution ignores target.providerId — prefer combo target's providerId over model-inferred provider (#2946 — thanks @oyi77)
+- **dashboard:** v3.8.8 screen fixes — agent-bridge SSR + audit/logs/memory/playground (#2944)
+- **claude:** sanitize tool schemas + cloak third-party tool names on native Claude OAuth (#2943 — thanks @NomenAK)
+- **auth:** prevent Codex multi-account refresh_token family revocation (#2941)
+- **combo:** fix combo vision passthrough and Codex tool history repair (#2940 — thanks @charithharshana)
+- **claude:** map WebSearch to Responses web_search (#2938 — thanks @makcimbx)
+- **claude:** strip empty Read pages tool input (#2937 — thanks @makcimbx)
+- **dashboard:** improve self-service provider quota visibility (#2931 — thanks @guanbear)
+- **antigravity:** avoid visible signatureless tool history (#2927 — thanks @dhaern)
 
 ### ✨ New Features
 

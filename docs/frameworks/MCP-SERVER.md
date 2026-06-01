@@ -12,7 +12,7 @@ lastUpdated: 2026-05-30
 
 ![MCP tool inventory (43 tools by category)](../diagrams/exported/mcp-tools-43.svg)
 
-> Source: [diagrams/mcp-tools-43.mmd](../diagrams/mcp-tools-43.mmd) (update from `mcp-tools-37` when regenerating)
+> Source: [diagrams/mcp-tools-43.mmd](../diagrams/mcp-tools-43.mmd) (regenerate via `npm run docs:render-diagrams`).
 
 ## Installation
 
