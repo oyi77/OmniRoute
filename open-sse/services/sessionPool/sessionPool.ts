@@ -319,6 +319,8 @@ export class SessionPool {
 
   /** Start periodic pruning (every 60s) */
   startAutoPrune(intervalMs = 60_000): ReturnType<typeof setInterval> {
-    return setInterval(() => this.pruneDeadSessions(), intervalMs);
+    const timer = setInterval(() => this.pruneDeadSessions(), intervalMs);
+    timer.unref();
+    return timer;
   }
 }

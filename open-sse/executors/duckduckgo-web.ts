@@ -126,6 +126,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
       clearTimeout(timeout);
 
       if (chatResponse.status === 429) {
+        if (pool && session) pool.reportCooldown(session);
         return new Response(
           JSON.stringify({ error: { message: "DuckDuckGo rate limited" } }),
           { status: 429, headers: { "Content-Type": "application/json" } }
@@ -159,6 +160,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
       }
 
       if (chatResponse.status >= 500) {
+        if (pool && session) pool.reportDead(session);
         return new Response(
           JSON.stringify({ error: { message: "Upstream error" } }),
           { status: 502, headers: { "Content-Type": "application/json" } }
