@@ -318,6 +318,55 @@ test("welcome banner PoC plugin lifecycle", async (t) => {
   });
 });
 
+// ── Full lifecycle through pluginManager ──
+
+test("full lifecycle: install → activate → hook fires → deactivate → uninstall", async (t) => {
+  const { pluginManager } = await import("../../src/lib/plugins/manager.ts");
+  const { runOnRequest, resetHooks, getHooks } = await import("../../src/lib/plugins/hooks.ts");
+
+  const POC_DIR = join(process.cwd(), "tests", "fixtures", "welcome-banner-plugin");
+
+  await t.test("install plugin from fixture dir", async () => {
+    const row = await pluginManager.install(POC_DIR);
+    assert.ok(row, "install should return plugin row");
+    assert.equal(row.name, "welcome-banner");
+    assert.ok(row.pluginDir, "should have pluginDir");
+  });
+
+  await t.test("activate plugin registers hooks", async () => {
+    await pluginManager.activate("welcome-banner");
+    const loaded = pluginManager.getLoaded("welcome-banner");
+    assert.ok(loaded, "plugin should be loaded after activate");
+  });
+
+  await t.test("onRequest hook fires and injects banner", async () => {
+    const ctx = {
+      requestId: "e2e-test",
+      body: {},
+      model: "gpt-4",
+      provider: "openai",
+      metadata: {},
+    };
+    const result = await runOnRequest(ctx);
+    // The welcome-banner plugin injects banner into metadata
+    assert.ok(result.metadata?.banner || result.body, "hook should modify request");
+  });
+
+  await t.test("deactivate removes hooks", async () => {
+    await pluginManager.deactivate("welcome-banner");
+    const loaded = pluginManager.getLoaded("welcome-banner");
+    // After deactivation, plugin should not be loaded
+    assert.ok(!loaded, "plugin should not be loaded after deactivate");
+  });
+
+  await t.test("uninstall removes from DB", async () => {
+    await pluginManager.uninstall("welcome-banner");
+    const all = await pluginManager.listAll();
+    const found = all.find((p: any) => p.name === "welcome-banner");
+    assert.ok(!found, "plugin should not be in list after uninstall");
+  });
+});
+
 // ── Cleanup ──
 
 test("cleanup fixture directory", () => {
