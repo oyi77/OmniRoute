@@ -12,7 +12,9 @@
     "onResponse": true,
     "onError": false
   },
-  "permissions": [],
+  "requires": {
+    "permissions": []
+  },
   "enabledByDefault": true,
   "configSchema": {
     "bannerText": {
