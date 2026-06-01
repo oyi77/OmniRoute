@@ -13,6 +13,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+// Ensure pending setImmediate callbacks resolve before test runner exits
+test.after(() => new Promise((resolve) => setImmediate(resolve)));
+
 // ---------------------------------------------------------------------------
 // Scenario 5: returns synchronously (fire-and-forget)
 // ---------------------------------------------------------------------------
