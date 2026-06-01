@@ -14,7 +14,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 // Ensure pending setImmediate callbacks resolve before test runner exits
-test.after(() => new Promise((resolve) => setImmediate(resolve)));
+test.after(() => new Promise((resolve) => setTimeout(resolve, 2000)));
 
 // ---------------------------------------------------------------------------
 // Scenario 5: returns synchronously (fire-and-forget)
@@ -73,8 +73,10 @@ await test("scheduleRecordConsumption — no pool for key → silent no-op (no c
     fakeLog
   );
 
-  // Wait for setImmediate callback + recordConsumption promise to settle
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Wait for setImmediate callback to fire and recordConsumption to settle/reject
+  await new Promise((resolve) => setImmediate(resolve));
+  // recordConsumption may hang on DB — give it enough time to fail gracefully
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   // No uncaught error. warnCalls may or may not have items depending on whether
   // recordConsumption threw (which depends on DB availability).
