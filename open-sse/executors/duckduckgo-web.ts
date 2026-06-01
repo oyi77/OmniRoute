@@ -98,8 +98,6 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         );
       }
 
-      const sessionHeaders = session ? session.buildHeaders() : {};
-
       const vqdToken = await this.acquireVqdHash(mergedSignal);
       if (!vqdToken) {
         clearTimeout(timeout);
@@ -167,8 +165,25 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         );
       }
 
-      return this.processResponse(chatResponse, stream !== false);
+      const result = this.processResponse(chatResponse, stream !== false);
+
+      // Report pool status based on response
+      if (pool && session) {
+        if (chatResponse.status === 429) {
+          pool.reportCooldown(session);
+        } else if (chatResponse.status >= 500) {
+          pool.reportDead(session);
+        } else {
+          pool.reportSuccess(session);
+        }
+      }
+
+      return result;
     } catch (error) {
+      if (pool && session) {
+        pool.reportCooldown(session);
+      }
+
       if (error instanceof DOMException && error.name === "AbortError") {
         return new Response(
           JSON.stringify({ error: { message: "Request cancelled" } }),
@@ -180,6 +195,8 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         JSON.stringify({ error: { message: error instanceof Error ? error.message : "Unknown error" } }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
+    } finally {
+      session?.release();
     }
   }
 

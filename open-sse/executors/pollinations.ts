@@ -69,9 +69,21 @@ export class PollinationsExecutor extends BaseExecutor {
       };
     }
 
-    let result;
     try {
-      result = await super.execute(input);
+      const result = await super.execute(input);
+
+      if (session && pool) {
+        const status = result.response.status;
+        if (status === 429) {
+          pool.reportCooldown(session);
+        } else if (status >= 500) {
+          pool.reportDead(session);
+        } else {
+          pool.reportSuccess(session);
+        }
+      }
+
+      return result;
     } catch (err) {
       if (session && pool) {
         pool.reportCooldown(session);
@@ -80,19 +92,6 @@ export class PollinationsExecutor extends BaseExecutor {
     } finally {
       session?.release();
     }
-
-    if (session && pool) {
-      const status = result.response.status;
-      if (status === 429) {
-        pool.reportCooldown(session);
-      } else if (status >= 500) {
-        pool.reportDead(session);
-      } else {
-        pool.reportSuccess(session);
-      }
-    }
-
-    return result;
   }
 }
 
