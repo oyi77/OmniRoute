@@ -4,7 +4,13 @@
 
 ---
 
-## [3.8.8] — 2026-06-01
+## [3.8.9] — Unreleased
+
+_Development cycle in progress — entries are added as work merges into `release/v3.8.9` and finalized by the release flow._
+
+---
+
+## [3.8.8] — 2026-06-03
 
 ### Added
 
@@ -59,7 +65,11 @@
 - **providers:** add Qwen Web (chat.qwen.ai) web-cookie provider (#2947 — thanks @oyi77)
 - **Quota Share Engine — multi-provider quota pools** — Monitoring/Costs reorg plus a Quota Share Engine: group selector, grouped pool cards, exclusive-quota API keys (`allowedQuotas`), `quotaShared-*` routing models via combos, a 3-step pool wizard (legacy Plans page retired), endpoint + key preview, and full pool editing. Adds quota-pool DB migrations. (#2859 / #3022 / #3032 — thanks @diegosouzapw)
 - **Dashboard page redesigns (Nav Restructure)** — agent-skills + omni-skills with a dynamic 42-skill catalog and MCP/A2A discovery (#2827); CLI Code's + CLI Agents + ACP Agents pages (#2839); translator friendly redesign, 5 tabs → 2 (#2847); functional `/batch` + `/batch/files` redesign (#2849); Playground Studio + Search Tools Studio (#2869); memory engine redesign — sqlite-vec + hybrid RRF + Studio UI (#2873). (thanks @diegosouzapw)
-- **notion:** add Notion as an MCP context source — 6 tools (`notion_search`, `notion_list_databases`, `notion_get_database`, `notion_query_database`, `notion_read`, `notion_append_blocks`) scoped under `read:notion` / `write:notion`, with dashboard "Context Sources" tab, settings API, and token persistence in `key_value` table (#2959)
+- **notion:** add Notion as an MCP context source — 6 tools (`notion_search`, `notion_list_databases`, `notion_get_database`, `notion_query_database`, `notion_read`, `notion_append_blocks`) scoped under `read:notion` / `write:notion`, with dashboard "Context Sources" tab, settings API, and token persistence in `key_value` table (#2959 — thanks @branben)
+- **Per-API-key stream default mode** — a per-key setting that forces JSON or SSE as the default response shape (migration `077_api_key_stream_default_mode`), so integrations that expect non-streaming JSON work without client changes. (thanks @JxnLexn)
+- **Codex Responses-over-WebSocket** — opt-out flag `OMNIROUTE_CODEX_WS_ENABLED` (default ON) upgrading Codex Responses traffic to a WebSocket bridge with a clean handshake and bridge-secret auth; the Quota Share endpoints card now surfaces the Responses + codex-WS endpoints. (thanks @diegosouzapw)
+- **Xiaomi MiMo usage tracking** — self-reported usage accounting for Xiaomi MiMo plus a monthly cap preset; DeepSeek USD preset and a Claude plan preset (percent 5h + weekly) seeded into the plan registry. (thanks @diegosouzapw)
+- **API Manager: Normal vs Quota key sections** — the API keys screen now splits keys into Normal and Quota sections in a compact 2-table layout, and the Quota Share screen gains a beta banner, live per-account upstream quota, and a real-time Codex quota view backed by the cascade-safe serialized refresh. (thanks @diegosouzapw)
 
 ### Changed
 
@@ -73,6 +83,26 @@
 
 ### Fixed
 
+- **memory:** the `recent` retrieval strategy no longer drops recent memories whose
+  text doesn't overlap the current prompt. It was internally mapped to the `exact`
+  path, which relevance-filtered by the forwarded prompt (`score > 0`), so
+  recency-based injection silently returned nothing for unrelated prompts. The
+  prompt is no longer forwarded for `recent` (semantic/hybrid still use it for
+  vector search).
+- **combo:** custom-provider credential lookup now expands `provider_nodes` prefixes
+  (e.g. `78code/gpt-5.4`) to the generated internal connection ids during account
+  selection, so combos targeting compatible/custom providers resolve their live
+  credentials instead of failing to find a connection. (#3058)
+- **build:** Docker image build (`docker compose --profile cli build`, which runs
+  `next build` with Turbopack) no longer errors. Two Turbopack-only failures were
+  fixed: `sqlite-vec` is now externalized so Turbopack stops trying to bundle its
+  native `vec0.so` ("Unknown module type"), and `manager.stub.ts` now exports
+  `getAllAgentsStatus` (statically imported by `/api/tools/agent-bridge/state` — the
+  missing export aborted the build). The webpack-based VM build was unaffected, which
+  is why the deploy validated while the Docker build errored. The sqlite-vec native
+  binary is also now bundled into the standalone output, so vector/semantic memory keeps
+  working in the container instead of silently degrading to FTS5 keyword search.
+  (#3066 — thanks @freefrank)
 - **codex/providers:** `POST /api/providers/[id]/refresh` (the manual/auto "refresh
   token" endpoint) no longer rotates rotating-refresh providers (Codex/OpenAI share
   one Auth0 `client_id`). This was the last unguarded proactive-refresh entry point:
@@ -225,7 +255,55 @@
 - **dashboard:** use a lightweight ping endpoint for the MaintenanceBanner (fixes #3040) (#3043 — thanks @herjarsa)
 - **test:** resolve pre-existing test failures — env sync, PII, quota, sidebar (#3039 — thanks @oyi77)
 - **docs/mcp:** regenerate the mcp-tools diagram for 43 tools and fix the tool count (#3028 — thanks @diegosouzapw)
-- **mcp:** move `enforceScopes` guard before `MCP_TOOL_MAP` lookup, add inline `scopes` parameter to `withScopeEnforcement()`, and declare scopes on all 24 dynamic tool definitions (memory, skills, plugins, gamification, compression) to fix scope enforcement for dynamic MCP tool groups (#2958)
+- **mcp:** move `enforceScopes` guard before `MCP_TOOL_MAP` lookup, add inline `scopes` parameter to `withScopeEnforcement()`, and declare scopes on all 24 dynamic tool definitions (memory, skills, plugins, gamification, compression) to fix scope enforcement for dynamic MCP tool groups (#2958 — thanks @branben)
+- **sse/chatCore:** the heap-pressure guard now auto-calibrates its threshold to 85%
+  of the live V8 heap ceiling (floor 400 MB) instead of a fixed 200 MB that sat below
+  the app's ~260 MB baseline and returned `503 Service temporarily unavailable due to
+  resource pressure` for every request once the heap warmed up. It now tracks
+  `--max-old-space-size` across 1 GB / 2 GB / large VPS; `HEAP_PRESSURE_THRESHOLD_MB`
+  still overrides. (#3052)
+- **proxy:** fail closed for OAuth usage-account proxies (#3051 — thanks @terence71-glitch)
+- **proxy:** resolve registry proxy assignments for combo and key levels (#3048 — thanks @terence71-glitch)
+- **providers/web:** wire the session pool for fingerprint rotation on Pollinations / DuckDuckGo (#3049 — thanks @oyi77)
+- **providers/claude-web:** add `cf_clearance` cookie support and session-pool fingerprint rotation for Pollinations / DuckDuckGo (#3046 — thanks @oyi77)
+- **usage:** handle MiniMax coding-plan percent quotas (`general`/percent dimension) so MiniMax coding plans report remaining quota correctly. (thanks @diegosouzapw)
+- **home:** pass `providerId` to the quota widget icons so provider brand icons resolve on the home dashboard (#3064 — thanks @xz-dev)
+- **quota:** block `qtSd/*` models for keys with no quota-pool allocation (enforcement Check 2.9), and never flag rotating-refresh providers (Codex/OpenAI) as expired during the quota sync (#3030). (thanks @diegosouzapw)
+
+### 🏆 Contributors
+
+A special thanks to everyone who contributed to this release — 746 commits since `v3.8.7`:
+
+| Contributor | PRs / Contribution |
+| --- | --- |
+| [@diegosouzapw](https://github.com/diegosouzapw) | maintainer — AgentBridge, Traffic Inspector, Quota Share Engine, Nav Restructure, Plugins integration, releases & upstream ports |
+| [@oyi77](https://github.com/oyi77) | #2913, #2947, #2954, #2978, #3015, #3018, #3039, #3041, #3045, #3046, #3049 |
+| [@terence71-glitch](https://github.com/terence71-glitch) | #2956, #2960, #2963, #2984, #3000, #3006, #3012, #3048, #3051 |
+| [@soyelmismo](https://github.com/soyelmismo) | #2951, #2965, #2973 |
+| [@branben](https://github.com/branben) | #2958, #2959 |
+| [@makcimbx](https://github.com/makcimbx) | #2937, #2938 |
+| [@guanbear](https://github.com/guanbear) | #2931, #3031 |
+| [@Lion-killer](https://github.com/Lion-killer) | #2981, #2988 |
+| [@JxnLexn](https://github.com/JxnLexn) | per-API-key stream default mode |
+| [@androw](https://github.com/androw) | #3017 |
+| [@xz-dev](https://github.com/xz-dev) | #2975, #3064 |
+| [@S0yora](https://github.com/S0yora) | #2964 |
+| [@NekoMonci12](https://github.com/NekoMonci12) | #3008 |
+| [@Tentoxa](https://github.com/Tentoxa) | #3010 |
+| [@ReqX](https://github.com/ReqX) | #2957 |
+| [@NomenAK](https://github.com/NomenAK) | #2943 |
+| [@charithharshana](https://github.com/charithharshana) | #2940 |
+| [@dhaern](https://github.com/dhaern) | #2927 |
+| [@dangeReis](https://github.com/dangeReis) | #3021 |
+| [@bobbyunknown](https://github.com/bobbyunknown) | #3029 |
+| [@CitrusIce](https://github.com/CitrusIce) | #3035, #3058 |
+| [@wussh](https://github.com/wussh) | #3036 |
+| [@Chewji9875](https://github.com/Chewji9875) | #3037 |
+| [@herjarsa](https://github.com/herjarsa) | #3043 |
+| [@freefrank](https://github.com/freefrank) | #3066 (reported the Docker build failure) |
+
+A special thanks to everyone who contributed code, reviews, and tests for this release:
+@androw, @bobbyunknown, @branben, @charithharshana, @Chewji9875, @CitrusIce, @dangeReis, @dhaern, @diegosouzapw, @freefrank, @guanbear, @herjarsa, @JxnLexn, @Lion-killer, @makcimbx, @NekoMonci12, @NomenAK, @oyi77, @ReqX, @S0yora, @soyelmismo, @Tentoxa, @terence71-glitch, @wussh, @xz-dev
 
 ---
 
