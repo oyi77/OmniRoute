@@ -1,6 +1,5 @@
 import { BaseExecutor, type ExecuteInput } from "./base.ts";
 import { FETCH_TIMEOUT_MS } from "../config/constants.ts";
-import { prepareToolMessages, buildToolAwareResult } from "../translator/webTools.ts";
 
 export const DUCKDUCKGO_BASE = "https://duckduckgo.com";
 const STATUS_URL = `${DUCKDUCKGO_BASE}/duckchat/v1/status`;
@@ -64,26 +63,40 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
     }
   }
 
-  async execute(input: ExecuteInput) {
-    const { model, body, stream, signal } = input;
-    const bodyObj = (body || {}) as Record<string, unknown>;
-    const messages = (bodyObj.messages as Array<{ role: string; content: string }>) || [];
+  async execute(input: ExecuteInput): Promise<{
+    response: Response;
+    url: string;
+    headers: Record<string, string>;
+    transformedBody: unknown;
+  }> {
+    const { model, body, stream, signal, upstreamExtraHeaders } = input;
+    const messages = Array.isArray((body as { messages?: unknown[] } | null)?.messages)
+      ? ((body as { messages: unknown[] }).messages as Array<Record<string, unknown>>)
+      : [];
+    const isStreaming = stream !== false;
+    const upstreamHeaders = upstreamExtraHeaders || {};
 
-    if (signal?.aborted) {
-      return new Response(
-        JSON.stringify({ error: { message: "Request cancelled" } }),
-        { status: 499, headers: { "Content-Type": "application/json" } }
-      );
+    const errorResponse = (status: number, message: string): Response =>
+      new Response(JSON.stringify({ error: { message } }), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const wrap = (response: Response): {
+      response: Response;
+      url: string;
+      headers: Record<string, string>;
+      transformedBody: unknown;
+    } => ({
+      response,
+      url: CHAT_URL,
+      headers: {},
+      transformedBody: { model, messages },
+    });
+
+    if (messages.length === 0) {
+      return wrap(errorResponse(400, "No messages provided"));
     }
-
-    if (!messages || messages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: { message: "No messages provided" } }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    const { hasTools, requestedTools, effectiveMessages } = prepareToolMessages(bodyObj, messages);
 
     // Acquire session from pool for fingerprint rotation
     const pool = this.getPool();
@@ -104,19 +117,13 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
 
       if (mergedSignal.aborted) {
         clearTimeout(timeout);
-        return new Response(
-          JSON.stringify({ error: { message: "Request cancelled" } }),
-          { status: 499, headers: { "Content-Type": "application/json" } }
-        );
+        return wrap(errorResponse(499, "Request cancelled"));
       }
 
       const vqdToken = await this.acquireVqdHash(mergedSignal);
       if (!vqdToken) {
         clearTimeout(timeout);
-        return new Response(
-          JSON.stringify({ error: { message: "Failed to acquire VQD token" } }),
-          { status: 503, headers: { "Content-Type": "application/json" } }
-        );
+        return wrap(errorResponse(503, "Failed to acquire VQD token"));
       }
 
       const chatResponse = await fetch(CHAT_URL, {
@@ -124,13 +131,14 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         headers: {
           ...FAKE_HEADERS,
           ...sessionHeaders,
+          ...upstreamHeaders,
           "Content-Type": "application/json",
           "x-vqd-hash-1": vqdToken,
         },
         body: JSON.stringify({
           model,
-          messages: effectiveMessages,
-          stream: stream !== false,
+          messages,
+          stream: isStreaming,
         }),
         signal: mergedSignal,
       });
@@ -139,10 +147,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
 
       if (chatResponse.status === 429) {
         if (pool && session) pool.reportCooldown(session);
-        return new Response(
-          JSON.stringify({ error: { message: "DuckDuckGo rate limited" } }),
-          { status: 429, headers: { "Content-Type": "application/json" } }
-        );
+        return wrap(errorResponse(429, "DuckDuckGo rate limited"));
       }
 
       if (chatResponse.status === 401 || chatResponse.status === 403) {
@@ -152,34 +157,29 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
             method: "POST",
             headers: {
               ...FAKE_HEADERS,
+              ...upstreamHeaders,
               "Content-Type": "application/json",
               "x-vqd-hash-1": newVqd,
             },
             body: JSON.stringify({
               model,
-              messages: effectiveMessages,
-              stream: stream !== false,
+              messages,
+              stream: isStreaming,
             }),
             signal: mergedSignal,
           });
 
-          return this.processResponse(retryResponse, stream !== false, hasTools, requestedTools);
+          return wrap(await this.processResponse(retryResponse, isStreaming));
         }
-        return new Response(
-          JSON.stringify({ error: { message: "Service unavailable" } }),
-          { status: 503, headers: { "Content-Type": "application/json" } }
-        );
+        return wrap(errorResponse(503, "Service unavailable"));
       }
 
       if (chatResponse.status >= 500) {
         if (pool && session) pool.reportDead(session);
-        return new Response(
-          JSON.stringify({ error: { message: "Upstream error" } }),
-          { status: 502, headers: { "Content-Type": "application/json" } }
-        );
+        return wrap(errorResponse(502, "Upstream error"));
       }
 
-      const result = this.processResponse(chatResponse, stream !== false, hasTools, requestedTools);
+      const result = await this.processResponse(chatResponse, isStreaming);
 
       // Report pool status based on response
       if (pool && session) {
@@ -192,22 +192,21 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         }
       }
 
-      return result;
+      return wrap(result);
     } catch (error) {
       if (pool && session) {
         pool.reportCooldown(session);
       }
 
       if (error instanceof DOMException && error.name === "AbortError") {
-        return new Response(
-          JSON.stringify({ error: { message: "Request cancelled" } }),
-          { status: 499, headers: { "Content-Type": "application/json" } }
-        );
+        return wrap(errorResponse(499, "Request cancelled"));
       }
 
-      return new Response(
-        JSON.stringify({ error: { message: error instanceof Error ? error.message : "Unknown error" } }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+      return wrap(
+        errorResponse(
+          500,
+          error instanceof Error ? error.message : "Unknown error"
+        )
       );
     } finally {
       session?.release();
@@ -234,7 +233,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
     }
   }
 
-  private async processResponse(response: Response, streaming: boolean, hasTools?: boolean, requestedTools?: unknown): Promise<Response> {
+  private async processResponse(response: Response, streaming: boolean): Promise<Response> {
     if (!response.ok) {
       const body = await response.text();
       return new Response(body, {
@@ -243,7 +242,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
       });
     }
 
-    if (streaming && !hasTools) {
+    if (streaming) {
       const reader = response.body?.getReader();
       if (!reader) {
         return new Response(
@@ -314,15 +313,6 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         } catch {
           continue;
         }
-      }
-
-      if (hasTools) {
-        const { content, toolCalls, finishReason } = buildToolAwareResult(fullContent, requestedTools, "ddg");
-        const message: Record<string, unknown> = { role: "assistant", content };
-        if (toolCalls) { message.tool_calls = toolCalls; message.content = null; }
-        return new Response(JSON.stringify({ choices: [{ index: 0, message, finish_reason: finishReason }] }), {
-          headers: { "Content-Type": "application/json" },
-        });
       }
 
       const openaiResponse = {
