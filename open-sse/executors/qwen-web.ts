@@ -10,6 +10,7 @@
  */
 import { BaseExecutor, type ExecuteInput } from "./base.ts";
 import { makeExecutorErrorResult as makeErrorResult } from "../utils/error.ts";
+import { serializeToolsToPrompt, parseToolCallsFromText } from "../translator/webTools.ts";
 
 const BASE_URL = "https://chat.qwen.ai";
 const CHAT_URL = `${BASE_URL}/api/chat/completions`;
@@ -29,8 +30,17 @@ export class QwenWebExecutor extends BaseExecutor {
     const messages = (bodyObj.messages as Array<{ role: string; content: string }>) || [];
     const modelId = (bodyObj.model as string) || "qwen-plus";
 
+    // Tool-call translation: serialize OpenAI tools[] into a system prompt
+    // instructing the model to emit <tool>{...}</tool> blocks.
+    const requestedTools = bodyObj.tools;
+    const hasTools = Array.isArray(requestedTools) && requestedTools.length > 0;
+    const toolSystemPrompt = hasTools ? serializeToolsToPrompt(requestedTools) : "";
+    const effectiveMessages = toolSystemPrompt
+      ? [{ role: "system", content: toolSystemPrompt }, ...messages]
+      : messages;
+
     const reqBody = {
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: effectiveMessages.map((m) => ({ role: m.role, content: m.content })),
       model: modelId,
       stream: wantStream,
       max_tokens: (bodyObj.max_tokens as number) || 4096,
@@ -80,10 +90,41 @@ export class QwenWebExecutor extends BaseExecutor {
 
     if (!wantStream) {
       const data = (await upstream.json()) as Record<string, unknown>;
-      const content =
+      const rawContent =
         (data?.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content ||
         (data?.content as string) ||
         "";
+
+      if (hasTools) {
+        const { content: cleanedContent, toolCalls } = parseToolCallsFromText(
+          rawContent, `call-${Date.now()}`, requestedTools
+        );
+        const choice: Record<string, unknown> = {
+          index: 0,
+          message: { role: "assistant", content: cleanedContent },
+          finish_reason: toolCalls ? "tool_calls" : "stop",
+        };
+        if (toolCalls) {
+          (choice.message as Record<string, unknown>).tool_calls = toolCalls;
+          (choice.message as Record<string, unknown>).content = null;
+        }
+        return {
+          response: new Response(
+            JSON.stringify({
+              id: `chatcmpl-qwen-${Date.now()}`,
+              object: "chat.completion",
+              created: Math.floor(Date.now() / 1000),
+              model: modelId,
+              choices: [choice],
+            }),
+            { headers: { "Content-Type": "application/json" } }
+          ),
+          url: CHAT_URL,
+          headers: reqHeaders,
+          transformedBody: reqBody,
+        };
+      }
+
       return {
         response: new Response(
           JSON.stringify({
@@ -91,7 +132,7 @@ export class QwenWebExecutor extends BaseExecutor {
             object: "chat.completion",
             created: Math.floor(Date.now() / 1000),
             model: modelId,
-            choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+            choices: [{ index: 0, message: { role: "assistant", content: rawContent }, finish_reason: "stop" }],
           }),
           { headers: { "Content-Type": "application/json" } }
         ),
@@ -104,6 +145,62 @@ export class QwenWebExecutor extends BaseExecutor {
     // Streaming
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
+
+    if (hasTools) {
+      // Buffer full response for tool-call parsing
+      let fullContent = "";
+      const reader = upstream.body?.getReader();
+      if (reader) {
+        let buf = "";
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop() || "";
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const d = line.slice(5).trim();
+              if (d === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(d);
+                fullContent += parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.text || "";
+              } catch { /* skip */ }
+            }
+          }
+        } catch { /* upstream closed */ }
+      }
+
+      const { content: cleanedContent, toolCalls } = parseToolCallsFromText(
+        fullContent, `call-${Date.now()}`, requestedTools
+      );
+
+      const stream = new ReadableStream({
+        start(controller) {
+          const id = `chatcmpl-qwen-${Date.now()}`;
+          if (toolCalls) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: modelId, choices: [{ index: 0, delta: { role: "assistant", content: null, tool_calls: toolCalls }, finish_reason: null }] })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\n`));
+          } else {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: modelId, choices: [{ index: 0, delta: { role: "assistant", content: cleanedContent }, finish_reason: null }] })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: modelId, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`));
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+
+      return {
+        response: new Response(stream, {
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+        }),
+        url: CHAT_URL,
+        headers: reqHeaders,
+        transformedBody: reqBody,
+      };
+    }
+
     const stream = new ReadableStream({
       async start(controller) {
         const reader = upstream.body?.getReader();
