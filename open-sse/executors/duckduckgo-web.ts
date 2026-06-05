@@ -1,5 +1,6 @@
 import { BaseExecutor, type ExecuteInput } from "./base.ts";
 import { FETCH_TIMEOUT_MS } from "../config/constants.ts";
+import { serializeToolsToPrompt, parseToolCallsFromText } from "../translator/webTools.ts";
 
 export const DUCKDUCKGO_BASE = "https://duckduckgo.com";
 const STATUS_URL = `${DUCKDUCKGO_BASE}/duckchat/v1/status`;
@@ -64,7 +65,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
   }
 
   async execute(input: ExecuteInput) {
-    const { model, messages, stream, signal, upstreamHeaders } = input;
+    const { model, messages, stream, signal, upstreamHeaders, body } = input;
 
     if (!messages || messages.length === 0) {
       return new Response(
@@ -72,6 +73,14 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    const bodyObj = (body || {}) as Record<string, unknown>;
+    const requestedTools = bodyObj.tools;
+    const hasTools = Array.isArray(requestedTools) && requestedTools.length > 0;
+    const toolSystemPrompt = hasTools ? serializeToolsToPrompt(requestedTools) : "";
+    const effectiveMessages = toolSystemPrompt
+      ? [{ role: "system", content: toolSystemPrompt }, ...messages]
+      : messages;
 
     // Acquire session from pool for fingerprint rotation
     const pool = this.getPool();
@@ -117,7 +126,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         },
         body: JSON.stringify({
           model,
-          messages,
+          messages: effectiveMessages,
           stream: stream !== false,
         }),
         signal: mergedSignal,
@@ -145,13 +154,13 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
             },
             body: JSON.stringify({
               model,
-              messages,
+              messages: effectiveMessages,
               stream: stream !== false,
             }),
             signal: mergedSignal,
           });
 
-          return this.processResponse(retryResponse, stream !== false);
+          return this.processResponse(retryResponse, stream !== false, hasTools, requestedTools);
         }
         return new Response(
           JSON.stringify({ error: { message: "Service unavailable" } }),
@@ -167,7 +176,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         );
       }
 
-      const result = this.processResponse(chatResponse, stream !== false);
+      const result = this.processResponse(chatResponse, stream !== false, hasTools, requestedTools);
 
       // Report pool status based on response
       if (pool && session) {
@@ -222,7 +231,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
     }
   }
 
-  private async processResponse(response: Response, streaming: boolean): Promise<Response> {
+  private async processResponse(response: Response, streaming: boolean, hasTools?: boolean, requestedTools?: unknown): Promise<Response> {
     if (!response.ok) {
       const body = await response.text();
       return new Response(body, {
@@ -231,7 +240,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
       });
     }
 
-    if (streaming) {
+    if (streaming && !hasTools) {
       const reader = response.body?.getReader();
       if (!reader) {
         return new Response(
@@ -302,6 +311,24 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         } catch {
           continue;
         }
+      }
+
+      if (hasTools) {
+        const { content: cleanedContent, toolCalls } = parseToolCallsFromText(
+          fullContent, `call-${Date.now()}`, requestedTools
+        );
+        const choice: Record<string, unknown> = {
+          index: 0,
+          message: { role: "assistant", content: cleanedContent },
+          finish_reason: toolCalls ? "tool_calls" : "stop",
+        };
+        if (toolCalls) {
+          (choice.message as Record<string, unknown>).tool_calls = toolCalls;
+          (choice.message as Record<string, unknown>).content = null;
+        }
+        return new Response(JSON.stringify({ choices: [choice] }), {
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       const openaiResponse = {
