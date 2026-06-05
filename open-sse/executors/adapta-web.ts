@@ -1,4 +1,5 @@
 import { BaseExecutor, type ExecuteInput } from "./base.ts";
+import { serializeToolsToPrompt, parseToolCallsFromText } from "../translator/webTools.ts";
 
 const ADAPTA_APP_URL = "https://agent.adapta.one";
 const ADAPTA_CLERK_URL = "https://clerk.agent.adapta.one";
@@ -353,6 +354,13 @@ export class AdaptaWebExecutor extends BaseExecutor {
     const bodyObj = (body ?? {}) as Record<string, unknown>;
     const messages = (Array.isArray(bodyObj.messages) ? bodyObj.messages : []) as OpenAIMessage[];
 
+    const requestedTools = bodyObj.tools;
+    const hasTools = Array.isArray(requestedTools) && requestedTools.length > 0;
+    const toolSystemPrompt = hasTools ? serializeToolsToPrompt(requestedTools) : "";
+    const effectiveMessages: OpenAIMessage[] = toolSystemPrompt
+      ? [{ role: "system", content: toolSystemPrompt }, ...messages]
+      : messages;
+
     // 1. Extract and validate credentials
     const rawKey = String((credentials as Record<string, unknown>)?.apiKey ?? "");
     if (!rawKey) {
@@ -385,7 +393,7 @@ export class AdaptaWebExecutor extends BaseExecutor {
 
     // 2. Build Adapta request body
     const aiModelId = MODEL_ID_MAP[model] ?? DEFAULT_AI_MODEL_ID;
-    const adaptaMessages = buildAdaptaMessages(messages);
+    const adaptaMessages = buildAdaptaMessages(effectiveMessages);
 
     if (adaptaMessages.length === 0) {
       return {
@@ -486,6 +494,37 @@ export class AdaptaWebExecutor extends BaseExecutor {
       }
     } finally {
       reader.releaseLock();
+    }
+
+    if (hasTools) {
+      const { content: cleanedContent, toolCalls } = parseToolCallsFromText(
+        fullText, `call-${Date.now()}`, requestedTools
+      );
+      if (toolCalls) {
+        return {
+          response: new Response(
+            JSON.stringify({
+              id: `chatcmpl-adp-${Date.now()}`, object: "chat.completion",
+              created: Math.floor(Date.now() / 1000), model,
+              choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: toolCalls }, finish_reason: "tool_calls" }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          ),
+          url: ADAPTA_STREAM_URL, headers, transformedBody: requestPayload,
+        };
+      }
+      return {
+        response: new Response(
+          JSON.stringify({
+            id: `chatcmpl-adp-${Date.now()}`, object: "chat.completion",
+            created: Math.floor(Date.now() / 1000), model,
+            choices: [{ index: 0, message: { role: "assistant", content: cleanedContent }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        ),
+        url: ADAPTA_STREAM_URL, headers, transformedBody: requestPayload,
+      };
     }
 
     return {
