@@ -708,6 +708,8 @@ Automatic model pricing data synchronization from external sources.
 | `CLIPROXYAPI_PORT`                        | `5544`             | `open-sse/executors/cliproxyapi.ts`                                   | CLIProxyAPI bridge port.                                                              |
 | `CLIPROXYAPI_CONFIG_DIR`                  | `~/.cli-proxy-api` | `src/lib/versionManager/processManager.ts`                            | CLIProxyAPI config directory.                                                         |
 | `LOCAL_HOSTNAMES`                         | _(empty)_          | `open-sse/config/providerRegistry.ts`                                 | Comma-separated additional hostnames treated as "local" (Docker service names, etc.). |
+| `WEB_COOKIE_USE_BROWSER`                  | _(unset)_          | `open-sse/executors/claude-web.ts`, `duckduckgo-web.ts`               | Forces web-cookie providers (Claude Web, DDG) to use browser-backed chat instead of TLS client. Values: `1`, `true`, `on` to enable. Requires `cloakbrowser` or `playwright`. ~10-25s per request. |
+| `OMNIROUTE_BROWSER_POOL`                  | `on` (auto-start)  | `open-sse/services/browserPool.ts`                                    | Controls the shared stealth browser pool. `on`/`1`/`true` = enable pool (same as `WEB_COOKIE_USE_BROWSER=1`). `off` = fully disable — no Chromium instance is launched even when executors request a browser context. The pool uses `cloakbrowser` (preferred) or `playwright` (fallback). |
 
 `ENABLE_CC_COMPATIBLE_PROVIDER` is only for third-party relays that accept Claude Code clients
 exclusively. OmniRoute rewrites requests so those relays accept them. If you only want to use

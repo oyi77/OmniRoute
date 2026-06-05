@@ -4,29 +4,32 @@ import { parseFragment, serialize } from "parse5";
 import { BaseExecutor, type ExecuteInput } from "./base.ts";
 import { FETCH_TIMEOUT_MS } from "../config/constants.ts";
 import type { Session } from "../services/sessionPool/session.ts";
+import { tryBackedChat } from "../services/browserBackedChat.ts";
 
 export const DUCKDUCKGO_BASE = "https://duckduckgo.com";
 const DUCKAI_BASE = "https://duck.ai";
 const AUTH_TOKEN_URL = `${DUCKAI_BASE}/duckchat/v1/auth/token`;
+const COUNTRY_URL = `${DUCKAI_BASE}/country.json`;
 const STATUS_URL = `${DUCKAI_BASE}/duckchat/v1/status`;
 const CHAT_URL = `${DUCKAI_BASE}/duckchat/v1/chat`;
 const DEFAULT_FE_VERSION = "serp_20260424_180649_ET-0bdc33b2a02ebf8f235def65d887787f694720a1";
 const FE_VERSION_PATTERN = /serp_\d{8}_\d{6}_[A-Z]{2}-[0-9a-f]{40}/;
 const DEFAULT_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-  "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15";
+  "Mozilla/5.0 (X11; Linux x86_64) " +
+  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
 
 const FAKE_HEADERS: Record<string, string> = {
   Accept: "*/*",
-  "Accept-Encoding": "gzip, deflate, br",
+  "Accept-Encoding": "gzip, deflate, br, zstd",
   "Accept-Language": "en-US,en;q=0.9",
-  "Cache-Control": "no-store",
+  "Cache-Control": "no-cache",
   Origin: DUCKAI_BASE,
   Pragma: "no-cache",
   Referer: `${DUCKAI_BASE}/`,
-  "Sec-Ch-Ua": '"Not.A/Brand";v="99", "Chromium";v="136"',
+  Priority: "u=1, i",
+  "Sec-Ch-Ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
   "Sec-Ch-Ua-Mobile": "?0",
-  "Sec-Ch-Ua-Platform": '"macOS"',
+  "Sec-Ch-Ua-Platform": '"Linux"',
   "Sec-Fetch-Dest": "empty",
   "Sec-Fetch-Mode": "cors",
   "Sec-Fetch-Site": "same-origin",
@@ -40,6 +43,13 @@ const SEEDED_COOKIES: ReadonlyArray<readonly [string, string]> = [
   ["dcm", "3"],
   ["isRecentChatOn", "1"],
 ];
+
+function shouldUseBrowserBacked(): boolean {
+  const flag = process.env.WEB_COOKIE_USE_BROWSER;
+  if (flag === "1" || flag === "true" || flag === "on") return true;
+  const poolFlag = process.env.OMNIROUTE_BROWSER_POOL;
+  return poolFlag === "on" || poolFlag === "1" || poolFlag === "true";
+}
 
 interface DuckDuckGoVqdHeaders {
   vqd4: string | null;
@@ -66,10 +76,12 @@ const CHALLENGE_STUBS = String.raw`
 var __ua = __DDG_REAL_UA__;
 var __HTML_LOOKUP = __DDG_HTML_LOOKUP__;
 function __makeHtmlElement(tag) {
-  var state = { _innerHTML: '', _qsaCount: 0 };
+  var state = { _innerHTML: '', _qsaCount: 0, _cssText: '' };
   var el = {
     tagName: String(tag).toUpperCase(), nodeName: String(tag).toUpperCase(), nodeType: 1,
-    children: [], childNodes: [], classList: [], style: {}, dataset: {},
+    children: [], childNodes: [], classList: [], dataset: {},
+    offsetWidth: 1, offsetHeight: 1, clientWidth: 1, clientHeight: 1, scrollHeight: 1, scrollWidth: 1,
+    getBoundingClientRect: function(){ return { x: 0, y: 0, top: 0, left: 0, right: 1, bottom: 1, width: 1, height: 1, toJSON: function(){ return {}; } }; },
     setAttribute: function(){}, removeAttribute: function(){},
     getAttribute: function(a){ if(a==='srcdoc') return state._srcdoc||''; return null; },
     hasAttribute: function(){ return false; }, appendChild: function(c){ return c; }, removeChild: function(c){ return c; },
@@ -77,6 +89,7 @@ function __makeHtmlElement(tag) {
     querySelectorAll: function(s){ if (s === '*') { var arr = []; arr.length = state._qsaCount; return arr; } return []; },
     cloneNode: function(){ return __makeHtmlElement(tag); }
   };
+  Object.defineProperty(el, 'style', { value: new Proxy({}, { set: function(t, k, v){ t[k] = v; if (k === 'cssText') state._cssText = String(v); return true; }, get: function(t, k){ if (k === 'cssText') return state._cssText; return t[k] || ''; } }), enumerable: true, configurable: true });
   Object.defineProperty(el, 'innerHTML', { get: function(){ return state._innerHTML; }, set: function(v){ var key = String(v); var entry = __HTML_LOOKUP && __HTML_LOOKUP[key]; if (entry) { state._innerHTML = String(entry.html); state._qsaCount = entry.count|0; } else { state._innerHTML = key; state._qsaCount = 0; } }, enumerable: true, configurable: true });
   Object.defineProperty(el, 'outerHTML', { get: function(){ return '<' + tag + '>' + state._innerHTML + '</' + tag + '>'; }, enumerable: true });
   Object.defineProperty(el, 'srcdoc', { get: function(){ return state._srcdoc||''; }, set: function(v){ state._srcdoc = String(v); }, enumerable: true });
@@ -99,23 +112,29 @@ function __mkObj(name, base) {
       if (k === 'tagName' || k === 'nodeName') return 'DIV';
       if (k === 'innerHTML' || k === 'outerHTML' || k === 'textContent' || k === 'innerText' || k === 'value') return '';
       if (k === 'children' || k === 'childNodes' || k === 'classList') return [];
+      // Real numeric layout values for the DDG challenge DOM probes.
+      if (k === 'offsetWidth' || k === 'offsetHeight' || k === 'clientWidth' || k === 'clientHeight' || k === 'scrollHeight' || k === 'scrollWidth') return 1;
+      if (k === 'getBoundingClientRect') return function(){ return { x: 0, y: 0, top: 0, left: 0, right: 1, bottom: 1, width: 1, height: 1, toJSON: function(){ return {}; } }; };
       if (typeof k === 'string' && (k.indexOf('get') === 0 || k.indexOf('query') === 0 || k.indexOf('find') === 0)) return function(){ return k === 'querySelectorAll' || k === 'getElementsByTagName' || k === 'getElementsByClassName' ? [] : null; };
       return function(){ return __mkObj(name + '.' + String(k)); };
     },
     has: function(t, k){ return k in t; }, set: function(t, k, v){ t[k] = v; return true; }
   });
 }
+function __parseCssDisplay(cssText){ if(!cssText) return ''; var m = String(cssText).match(/(?:^|;)\\s*display\\s*:\\s*([^;]+)/i); return m ? String(m[1]).trim() : ''; }
+function __getComputedStyle(el){ var cssText = el && el.style && el.style.cssText || ''; var display = __parseCssDisplay(cssText); return { getPropertyValue: function(name){ if(String(name).toLowerCase()==='display') return display; return ''; }, cssText: cssText, display: display }; }
 var __ifMeta = __mkObj('meta', { getAttribute: function(a){ return a==='content' ? "default-src 'none'; script-src 'unsafe-inline';" : null; }, hasAttribute: function(a){ return a==='content'; }, tagName: 'META', nodeName: 'META' });
 var __ifDoc = __mkObj('iframeDoc', { querySelector: function(s){ if (s && s.indexOf('Content-Security-Policy') !== -1) return __ifMeta; if (s === 'meta') return __ifMeta; return null; }, querySelectorAll: function(s){ if (s && s.indexOf('Content-Security-Policy') !== -1) return [__ifMeta]; if (s === 'meta') return [__ifMeta]; return []; }, getElementsByTagName: function(t){ return t && t.toLowerCase()==='meta' ? [__ifMeta] : []; }, body: __mkObj('iframeBody'), head: __mkObj('iframeHead'), documentElement: __mkObj('iframeRoot'), createElement: function(){ return __mkObj('elem', {setAttribute:function(){}, appendChild:function(){}, removeChild:function(){}, getAttribute:function(){return null;}, hasAttribute:function(){return false;}}); }, cookie: '', readyState: 'complete' });
 var __iframeEl = __mkObj('iframe', { contentDocument: __ifDoc, contentWindow: __mkObj('iframeWin', { document: __ifDoc, top: undefined, parent: undefined }), document: __ifDoc, getAttribute: function(a){ if (a==='sandbox') return 'allow-scripts allow-same-origin'; if (a==='srcdoc') return ''; if (a==='id') return 'jsa'; return null; }, hasAttribute: function(a){ return a==='sandbox'||a==='id'; }, tagName: 'IFRAME', nodeName: 'IFRAME', id: 'jsa' });
 var document = __mkObj('document', { querySelector: function(s){ if (s === '#jsa') return __iframeEl; if (s && s.indexOf('Content-Security-Policy') !== -1) return __ifMeta; return null; }, querySelectorAll: function(s){ if (s === '#jsa') return [__iframeEl]; if (s && s.indexOf('Content-Security-Policy') !== -1) return [__ifMeta]; return []; }, getElementById: function(id){ return id==='jsa' ? __iframeEl : null; }, getElementsByTagName: function(t){ if(t&&t.toLowerCase()==='iframe') return [__iframeEl]; return []; }, getElementsByClassName: function(){ return []; }, body: __mkObj('body', {appendChild:function(){}, removeChild:function(){}, querySelector:function(s){return s==='#jsa'?__iframeEl:null;}, querySelectorAll:function(s){return s==='#jsa'?[__iframeEl]:[];}}), head: __mkObj('head'), documentElement: __mkObj('root'), createElement: function(tag){ return __makeHtmlElement(tag||'div'); }, createTextNode: function(t){ return {nodeType:3, nodeValue:String(t||''), textContent:String(t||'')}; }, cookie: '', readyState: 'complete', title: '', addEventListener: function(){}, removeEventListener: function(){} });
-var window = __mkObj('window', { document: document, __DDG_BE_VERSION__: 1, __DDG_FE_CHAT_HASH__: 1, navigator: __mkObj('navigator', { userAgent: __ua, webdriver: false, language: 'en-US', languages: ['en-US','en'], platform: 'MacIntel', vendor: 'Apple Computer, Inc.', appVersion: '5.0', cookieEnabled: true, onLine: true, hardwareConcurrency: 8, deviceMemory: 8 }), innerWidth: 1280, innerHeight: 800, outerWidth: 1280, outerHeight: 800, devicePixelRatio: 1, screen: __mkObj('screen', { width:1920, height:1080, availWidth:1920, availHeight:1080, colorDepth:24, pixelDepth:24 }), location: __mkObj('location', { href:'https://duck.ai/', origin:'https://duck.ai', host:'duck.ai', hostname:'duck.ai', protocol:'https:', pathname:'/' }), performance: __mkObj('perf', { now: function(){ return 0; }, timeOrigin: 0 }), history: __mkObj('history', { length: 1, state: null }), addEventListener: function(){}, removeEventListener: function(){}, dispatchEvent: function(){return true;}, setTimeout: function(fn){ try{fn();}catch(e){} return 0; }, clearTimeout: function(){}, hasOwnProperty: function(k){ if (k==='__DDG_BE_VERSION__'||k==='__DDG_FE_CHAT_HASH__') return true; return Object.prototype.hasOwnProperty.call(this,k); } });
+  var window = __mkObj('window', { document: document, __DDG_BE_VERSION__: 1, __DDG_FE_CHAT_HASH__: 1, navigator: __mkObj('navigator', { userAgent: __ua, webdriver: false, language: 'en-US', languages: ['en-US','en'], platform: 'Linux x86_64', vendor: 'Google Inc.', appVersion: '5.0 (X11)', cookieEnabled: true, onLine: true, hardwareConcurrency: 8, deviceMemory: 8 }), innerWidth: 1280, innerHeight: 800, outerWidth: 1280, outerHeight: 800, devicePixelRatio: 1, screen: __mkObj('screen', { width:1920, height:1080, availWidth:1920, availHeight:1080, colorDepth:24, pixelDepth:24 }), location: __mkObj('location', { href:'https://duck.ai/', origin:'https://duck.ai', host:'duck.ai', hostname:'duck.ai', protocol:'https:', pathname:'/' }), performance: __mkObj('perf', { now: function(){ return 0; }, timeOrigin: 0 }), history: __mkObj('history', { length: 1, state: null }), addEventListener: function(){}, removeEventListener: function(){}, dispatchEvent: function(){return true;}, setTimeout: function(fn){ try{fn();}catch(e){} return 0; }, clearTimeout: function(){}, hasOwnProperty: function(k){ if (k==='__DDG_BE_VERSION__'||k==='__DDG_FE_CHAT_HASH__') return true; return Object.prototype.hasOwnProperty.call(this,k); } });
 window.top = window; window.self = window; window.window = window; window.parent = window; window.globalThis = window;
 var top = window, self = window, parent = window, navigator = window.navigator, location = window.location, screen = window.screen, performance = window.performance, history = window.history;
 var __R = null, __E = null;
 function __HTMLClass(name){ var c = function(){}; c.prototype = __mkObj(name+'.proto'); return c; }
 var HTMLElement = __HTMLClass('HTMLElement'), HTMLDivElement = __HTMLClass('HTMLDivElement'), HTMLIFrameElement = __HTMLClass('HTMLIFrameElement'), HTMLDocument = __HTMLClass('HTMLDocument'), Document = __HTMLClass('Document'), Element = __HTMLClass('Element'), Node = __HTMLClass('Node'), Window = __HTMLClass('Window'), Event = __HTMLClass('Event'), MouseEvent = __HTMLClass('MouseEvent'), KeyboardEvent = __HTMLClass('KeyboardEvent'), TouchEvent = __HTMLClass('TouchEvent'), XMLHttpRequest = __HTMLClass('XMLHttpRequest'), WebSocket = __HTMLClass('WebSocket'), Image = __HTMLClass('Image'), FormData = __HTMLClass('FormData'), Blob = __HTMLClass('Blob'), File = __HTMLClass('File'), FileReader = __HTMLClass('FileReader'), URL = __HTMLClass('URL'), URLSearchParams = __HTMLClass('URLSearchParams'), Headers = __HTMLClass('Headers'), Request = __HTMLClass('Request'), Response = __HTMLClass('Response');
 var fetch = function(){ return Promise.resolve(__mkObj('resp', {ok:true, status:200, json:function(){return Promise.resolve({});}, text:function(){return Promise.resolve('');}})); };
+var getComputedStyle = __getComputedStyle;
 `;
 
 function extractDuckDuckGoContent(data: unknown): string {
@@ -181,6 +200,24 @@ function serializeCookieJar(cookieJar: Map<string, string>): string {
   return Array.from(cookieJar.entries())
     .map(([name, value]) => `${name}=${value}`)
     .join("; ");
+}
+
+function mergeHeadersCaseInsensitive(
+  ...sources: Array<Record<string, string> | undefined>
+): Record<string, string> {
+  const merged: Record<string, string> = {};
+  const canonicalNames = new Map<string, string>();
+  for (const source of sources) {
+    if (!source) continue;
+    for (const [name, value] of Object.entries(source)) {
+      const lowerName = name.toLowerCase();
+      const previousName = canonicalNames.get(lowerName);
+      if (previousName) delete merged[previousName];
+      canonicalNames.set(lowerName, name);
+      merged[name] = value;
+    }
+  }
+  return merged;
 }
 
 function normalizeDuckDuckGoModel(model: string | undefined): string {
@@ -253,17 +290,23 @@ async function solveDuckDuckGoChallenge(challenge: string, userAgent: string): P
 
 function makeDuckDuckGoFeSignals(): string {
   const start = Date.now() - 3000;
+  let delta = 80 + Math.floor(Math.random() * 101);
+  const events: Array<Record<string, unknown>> = [{ name: "onboarding_impression_1", delta }];
+  delta += 120 + Math.floor(Math.random() * 141);
+  events.push({ name: "onboarding_impression_2", delta });
+  delta += 200 + Math.floor(Math.random() * 301);
+  events.push({ name: "startNewChat", delta });
+  const keyEvents = 6 + Math.floor(Math.random() * 13);
+  for (let i = 0; i < keyEvents; i++) {
+    delta += 40 + Math.floor(Math.random() * 141);
+    events.push({ name: "user_input", delta });
+  }
+  delta += 120 + Math.floor(Math.random() * 231);
+  events.push({ name: "user_submit", delta });
   const payload = {
     start,
-    events: [
-      { name: "onboarding_impression", delta: 150 },
-      { name: "action", delta: 1450, trusted: true },
-      { name: "onboarding_finish", delta: 1510 },
-      { name: "startNewChat_free", delta: 1590 },
-      { name: "user_input", delta: 2350 },
-      { name: "user_submit", delta: 2890 },
-    ],
-    end: 3000,
+    events,
+    end: Math.max(delta + 20 + Math.floor(Math.random() * 71), 3000),
   };
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
 }
@@ -291,7 +334,8 @@ function getDurablePublicKey(): JsonWebKey {
 
 function buildDuckDuckGoPayload(
   model: string,
-  messages: Array<Record<string, unknown>>
+  messages: Array<Record<string, unknown>>,
+  canUseTools = true
 ): Record<string, unknown> {
   const capabilities = getDuckDuckGoModelCapabilities(model);
   const payload: Record<string, unknown> = {
@@ -305,7 +349,7 @@ function buildDuckDuckGoPayload(
       },
     },
     messages,
-    canUseTools: true,
+    canUseTools,
     ...(capabilities.reasoningEffort ? { reasoningEffort: capabilities.reasoningEffort } : {}),
     canUseApproxLocation: null,
     canDelegateImageGeneration: null,
@@ -362,6 +406,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
   }
 
   private warmed = false;
+  private seeded = false;
   private feVersion = DEFAULT_FE_VERSION;
   private pendingVqdHash1: string | null = null;
   private readonly cookieJar = new Map<string, string>();
@@ -384,6 +429,21 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
     }
   }
 
+  private async warmFetch(
+    url: string,
+    headers: Record<string, string>,
+    signal: AbortSignal
+  ): Promise<Response | null> {
+    try {
+      const response = await fetch(url, { headers, signal });
+      this.rememberResponseCookies(response);
+      return response;
+    } catch (error) {
+      void error;
+      return null;
+    }
+  }
+
   async testConnection(
     _credentials: Record<string, unknown>,
     signal?: AbortSignal
@@ -398,7 +458,11 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
 
       const resp = await fetch(STATUS_URL, {
         method: "GET",
-        headers: this.buildRequestHeaders({ Accept: "*/*", "x-vqd-accept": "1" }),
+        headers: this.buildRequestHeaders({
+          Accept: "*/*",
+          "Cache-Control": "no-store",
+          "x-vqd-accept": "1",
+        }),
         signal: mergedSignal,
       });
       this.rememberResponseCookies(resp);
@@ -452,6 +516,42 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
       return wrap(errorResponse(400, "No messages provided"));
     }
 
+    // Browser-backed path: opt-in via OMNIROUTE_BROWSER_POOL=on or
+    // WEB_COOKIE_USE_BROWSER=1. Routes the chat through a shared
+    // Playwright/Cloakbrowser page so DDG's VQD challenge is solved by
+    // a real browser. Latency is dominated by page navigation + AI wait
+    // (~10-25s), but it's the only way to get HTTP 200 from this
+    // environment once the Node vm solver hits its anti-bot ceiling.
+    if (shouldUseBrowserBacked()) {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      const userText = extractDuckDuckGoContent(lastUser ?? { content: "" });
+      const result = await tryBackedChat({
+        poolKey: "duckduckgo-web",
+        chatPageUrl: "https://duck.ai/chat",
+        chatUrl: CHAT_URL,
+        chatUrlMatchDomain: "duck.ai",
+        userMessage: userText || "Reply with OK",
+        inputSelector: "textarea",
+        submitButtonSelector: "button[aria-label='Ask']",
+        signal: signal ?? null,
+        postSubmitWaitMs: 15000,
+      });
+      if (result.status > 0) {
+        // Wrap the captured body as a Response so processResponse
+        // (already a streaming/non-streaming transformer) can be
+        // reused unchanged.
+        const upstreamResp = new Response(result.body, {
+          status: result.status,
+          headers: {
+            "Content-Type": result.contentType || "text/event-stream",
+          },
+        });
+        return wrap(await this.processResponse(upstreamResp, isStreaming));
+      }
+      // status 0 means no response captured (selector/navigation error).
+      return wrap(errorResponse(502, "Browser-backed chat captured no upstream response"));
+    }
+
     // Acquire session from pool for fingerprint rotation
     const pool = this.getPool();
     let session: Session | null;
@@ -473,18 +573,20 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         const payload = buildDuckDuckGoPayload(upstreamModel, messages);
         const response = await fetch(CHAT_URL, {
           method: "POST",
-          headers: {
-            ...this.buildRequestHeaders(),
-            ...sessionHeaders,
-            ...upstreamHeaders,
-            Accept: "text/event-stream",
-            "Content-Type": "application/json",
-            "x-ddg-journey-id": randomUUID().replaceAll("-", ""),
-            "x-fe-signals": makeDuckDuckGoFeSignals(),
-            "x-fe-version": this.feVersion,
-            ...(vqdHeaders.vqd4 ? { "x-vqd-4": vqdHeaders.vqd4 } : {}),
-            ...(vqdHeaders.vqdHash1 ? { "x-vqd-hash-1": vqdHeaders.vqdHash1 } : {}),
-          },
+          headers: mergeHeadersCaseInsensitive(
+            sessionHeaders,
+            this.buildRequestHeaders(),
+            upstreamHeaders,
+            {
+              Accept: "text/event-stream",
+              "Content-Type": "application/json",
+              "x-ddg-journey-id": randomUUID().replaceAll("-", ""),
+              "x-fe-signals": makeDuckDuckGoFeSignals(),
+              "x-fe-version": this.feVersion,
+              ...(vqdHeaders.vqd4 ? { "x-vqd-4": vqdHeaders.vqd4 } : {}),
+              ...(vqdHeaders.vqdHash1 ? { "x-vqd-hash-1": vqdHeaders.vqdHash1 } : {}),
+            }
+          ),
           body: JSON.stringify(payload),
           signal: mergedSignal,
         });
@@ -499,6 +601,7 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
       }
 
       await this.warmSession(mergedSignal);
+      await this.seedChallengeChain(upstreamModel, mergedSignal);
       const vqdHeaders = await this.acquireAuthHeaders(mergedSignal);
       if (!vqdHeaders.vqd4 && !vqdHeaders.vqdHash1) {
         clearTimeout(timeout);
@@ -572,7 +675,11 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
 
       const resp = await fetch(STATUS_URL, {
         method: "GET",
-        headers: this.buildRequestHeaders({ Accept: "*/*", "x-vqd-accept": "1" }),
+        headers: this.buildRequestHeaders({
+          Accept: "*/*",
+          "Cache-Control": "no-store",
+          "x-vqd-accept": "1",
+        }),
         signal,
       });
       this.rememberResponseCookies(resp);
@@ -628,45 +735,75 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
     if (this.warmed || signal.aborted) return;
     this.warmed = true;
     this.seedBrowserCookies();
+    const duckAiResponse = await this.warmFetch(
+      `${DUCKAI_BASE}/`,
+      this.buildRequestHeaders({
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Upgrade-Insecure-Requests": "1",
+      }),
+      signal
+    );
+    if (duckAiResponse) {
+      try {
+        const duckAiHtml = await duckAiResponse.clone().text();
+        const feVersion = extractDuckDuckGoFeVersion(duckAiHtml);
+        if (feVersion) this.feVersion = feVersion;
+      } catch (error) {
+        void error;
+      }
+    }
+    await this.warmFetch(COUNTRY_URL, this.buildRequestHeaders({ Accept: "*/*" }), signal);
+    await this.warmFetch(AUTH_TOKEN_URL, this.buildRequestHeaders({ Accept: "*/*" }), signal);
+    await this.warmFetch(
+      `${DUCKDUCKGO_BASE}/?q=DuckDuckGo+AI+Chat&ia=chat&duckai=1`,
+      this.buildRequestHeaders({
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        Origin: DUCKDUCKGO_BASE,
+        Referer: `${DUCKDUCKGO_BASE}/`,
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Upgrade-Insecure-Requests": "1",
+      }),
+      signal
+    );
+  }
+
+  private async seedChallengeChain(model: string, signal: AbortSignal): Promise<void> {
+    if (this.seeded || signal.aborted) return;
+    this.seeded = true;
+    const seedMessages = [{ role: "user", content: "hi" }];
+    const previousPending = this.pendingVqdHash1;
     try {
-      const duckAiResponse = await fetch(`${DUCKAI_BASE}/`, {
-        headers: this.buildRequestHeaders({
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-          "Upgrade-Insecure-Requests": "1",
+      const vqdHeaders = await this.acquireAuthHeaders(signal);
+      if (!vqdHeaders.vqd4 && !vqdHeaders.vqdHash1) {
+        this.pendingVqdHash1 = previousPending;
+        return;
+      }
+      const response = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: mergeHeadersCaseInsensitive(this.buildRequestHeaders(), {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+          "x-ddg-journey-id": randomUUID().replaceAll("-", ""),
+          "x-fe-signals": makeDuckDuckGoFeSignals(),
+          "x-fe-version": this.feVersion,
+          ...(vqdHeaders.vqd4 ? { "x-vqd-4": vqdHeaders.vqd4 } : {}),
+          ...(vqdHeaders.vqdHash1 ? { "x-vqd-hash-1": vqdHeaders.vqdHash1 } : {}),
         }),
+        body: JSON.stringify(buildDuckDuckGoPayload(model, seedMessages, false)),
         signal,
       });
-      this.rememberResponseCookies(duckAiResponse);
-      const duckAiHtml = await duckAiResponse.clone().text();
-      const feVersion = extractDuckDuckGoFeVersion(duckAiHtml);
-      if (feVersion) this.feVersion = feVersion;
-      const tokenResponse = await fetch(AUTH_TOKEN_URL, {
-        headers: this.buildRequestHeaders({ Accept: "application/json" }),
-        signal,
-      });
-      this.rememberResponseCookies(tokenResponse);
-      const serpResponse = await fetch(
-        `${DUCKDUCKGO_BASE}/?q=DuckDuckGo+AI+Chat&ia=chat&duckai=1`,
-        {
-          headers: this.buildRequestHeaders({
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            Origin: DUCKDUCKGO_BASE,
-            Referer: `${DUCKDUCKGO_BASE}/`,
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Upgrade-Insecure-Requests": "1",
-          }),
-          signal,
-        }
-      );
-      this.rememberResponseCookies(serpResponse);
+      this.rememberResponseCookies(response);
+      if (response.ok) this.rememberChallengeHeader(response);
+      else this.pendingVqdHash1 = previousPending;
+      await response.body?.cancel().catch(() => {});
     } catch (error) {
       void error;
-      this.warmed = false;
+      this.pendingVqdHash1 = previousPending;
     }
   }
 

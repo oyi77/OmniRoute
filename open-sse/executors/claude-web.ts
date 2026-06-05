@@ -26,13 +26,14 @@ import { getCfClearanceToken } from "../services/claudeTurnstileSolver.ts";
 import { normalizeSessionCookieHeader } from "@/lib/providers/webCookieAuth";
 import { randomUUID } from "crypto";
 import { sanitizeErrorMessage } from "../utils/error.ts";
+import { tryBackedChat } from "../services/browserBackedChat.ts";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const CLAUDE_WEB_API_BASE = "https://claude.ai/api";
 const CLAUDE_WEB_ORGS_URL = `${CLAUDE_WEB_API_BASE}/organizations`;
 
 const CLAUDE_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
 
 // Session cookie constants
 const CLAUDE_SESSION_COOKIE_NAME = "sessionKey";
@@ -121,9 +122,11 @@ interface ClaudeWebRequestPayload {
     assistant_message_uuid: string;
   };
   attachments: unknown[];
+  effort: string;
   files: unknown[];
   sync_sources: unknown[];
   rendering_mode: string;
+  thinking_mode: string;
   create_conversation_params: {
     name: string;
     model: string;
@@ -132,6 +135,7 @@ interface ClaudeWebRequestPayload {
     compass_mode: unknown;
     is_temporary: boolean;
     enabled_imagine: boolean;
+    tool_search_mode: string;
   };
 }
 
@@ -159,12 +163,17 @@ interface ClaudeWebStreamChunk {
 function getBrowserHeaders(deviceId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "text/event-stream",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
     "Accept-Language": "en-US,en;q=0.9",
     "Cache-Control": "no-cache",
     "Content-Type": "application/json",
     Origin: "https://claude.ai",
     Pragma: "no-cache",
+    Priority: "u=1, i",
     Referer: "https://claude.ai/new",
+    "Sec-Ch-Ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Linux"',
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-origin",
@@ -278,6 +287,14 @@ function getDefaultTools(): ClaudeWebRequestPayload["tools"] {
       type: "repl_v0",
       name: "repl",
     },
+    { type: "widget", name: "weather_fetch" },
+    { type: "widget", name: "recipe_display_v0" },
+    { type: "widget", name: "places_map_display_v0" },
+    { type: "widget", name: "message_compose_v1" },
+    { type: "widget", name: "ask_user_input_v0" },
+    { type: "widget", name: "recommend_claude_apps" },
+    { type: "widget", name: "places_search" },
+    { type: "widget", name: "fetch_sports_data" },
   ];
 }
 
@@ -329,9 +346,11 @@ function transformToClaude(body: Record<string, unknown>, model: string): Claude
     tools: getDefaultTools(),
     turn_message_uuids: generateMessageUUIDs(),
     attachments: [],
+    effort: "low",
     files: [],
     sync_sources: [],
     rendering_mode: "messages",
+    thinking_mode: "off",
     create_conversation_params: {
       name: "",
       model: model || DEFAULT_CLAUDE_MODEL,
@@ -340,6 +359,7 @@ function transformToClaude(body: Record<string, unknown>, model: string): Claude
       compass_mode: null,
       is_temporary: false,
       enabled_imagine: true,
+      tool_search_mode: "auto",
     },
   };
 }
@@ -434,6 +454,177 @@ async function getOrganizationId(
   }
 }
 
+function shouldUseBrowserBacked(): boolean {
+  const flag = process.env.WEB_COOKIE_USE_BROWSER;
+  if (flag === "1" || flag === "true" || flag === "on") return true;
+  const poolFlag = process.env.OMNIROUTE_BROWSER_POOL;
+  return poolFlag === "on" || poolFlag === "1" || poolFlag === "true";
+}
+
+function extractLastUserText(body: Record<string, unknown>): string {
+  const messages = Array.isArray(body.messages)
+    ? (body.messages as Array<Record<string, unknown>>)
+    : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") {
+      const content = messages[i].content;
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) {
+        return content
+          .map((c) => (typeof c === "object" && c && "text" in c ? String(c.text) : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+  return "Reply with OK";
+}
+
+/**
+ * Read Claude Web SSE chunks from an upstream response body and pipe them
+ * through transformFromClaude to produce OpenAI chat.completion.chunk SSE.
+ *
+ * The upstream body may arrive as a ReadableStream directly (tlsBody) or
+ * via upstreamResp.body (browser-backed path, where the Response type is
+ * accurate). tlsBody takes priority when non-null.
+ *
+ * Returns a Response whose body is the transformed SSE stream. The client
+ * receives standard OpenAI-format streaming chunks.
+ */
+async function buildClaudeStreamingResponse(
+  upstreamResp: Response,
+  model: string,
+  log:
+    | { warn?: (tag: string, msg: string) => void; error?: (tag: string, msg: string) => void }
+    | null
+    | undefined,
+  tlsBody: ReadableStream<Uint8Array> | null | undefined
+): Promise<Response> {
+  const src = tlsBody ?? upstreamResp.body;
+  if (!src) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: "No upstream response body available",
+          type: "upstream_error",
+        },
+      }),
+      { status: 502, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  let finished = false;
+
+  const transformed = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = src!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE lines are separated by \n or \r\n; Claude sends
+          // data: {...}\n\n (double newline separating events).
+          const lines = buffer.split("\n");
+          // Keep the last potentially-incomplete line in the buffer.
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+            const jsonStr = trimmed.slice(6); // strip "data: "
+            try {
+              const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+
+              // Content block delta — contains the actual text.
+              if (parsed.type === "content_block_delta") {
+                const delta = parsed.delta as Record<string, unknown> | undefined;
+                const text = delta?.text as string | undefined;
+                if (text) {
+                  const chunk = transformFromClaude(text, model);
+                  const out = `data: ${JSON.stringify(chunk)}\n\n`;
+                  controller.enqueue(new TextEncoder().encode(out));
+                }
+              }
+              // message_stop — final event from Claude.
+              else if (parsed.type === "message_stop") {
+                const chunk = transformFromClaude("", model, "end_turn");
+                const out = `data: ${JSON.stringify(chunk)}\n\n`;
+                controller.enqueue(new TextEncoder().encode(out));
+                finished = true;
+              }
+              // message_delta — may carry a stop_reason.
+              else if (parsed.type === "message_delta") {
+                const delta = parsed.delta as Record<string, unknown> | undefined;
+                const stopReason = delta?.stop_reason as string | undefined;
+                if (stopReason) {
+                  const chunk = transformFromClaude("", model, stopReason);
+                  const out = `data: ${JSON.stringify(chunk)}\n\n`;
+                  controller.enqueue(new TextEncoder().encode(out));
+                }
+              }
+            } catch {
+              // Skip lines that aren't valid JSON (metadata, ping, etc.)
+            }
+          }
+        }
+
+        // Flush remaining buffer.
+        if (buffer.trim()) {
+          const trimmed = buffer.trim();
+          if (trimmed.startsWith("data: ")) {
+            const jsonStr = trimmed.slice(6);
+            try {
+              const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+              if (parsed.type === "content_block_delta") {
+                const delta = parsed.delta as Record<string, unknown> | undefined;
+                const text = delta?.text as string | undefined;
+                if (text) {
+                  const chunk = transformFromClaude(text, model);
+                  controller.enqueue(
+                    new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`)
+                  );
+                }
+              }
+            } catch {
+              /* skip */
+            }
+          }
+        }
+
+        // Send terminal DONE marker if we haven't sent a message_stop.
+        if (!finished) {
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        }
+      } catch (err) {
+        log?.error?.("CLAUDE-WEB-STREAM", `Stream error: ${String(err)}`);
+      } finally {
+        try {
+          reader.releaseLock();
+        } catch {
+          /* ok */
+        }
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(transformed, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 // ─── Main Executor Class ────────────────────────────────────────────────────
 
 export class ClaudeWebExecutor extends BaseExecutor {
@@ -456,7 +647,9 @@ export class ClaudeWebExecutor extends BaseExecutor {
         return false;
       }
 
-      const cookieHeader = await normalizeClaudeSessionCookieWithAutoRefresh(rawCookie, { allowAutoSolve: false });
+      const cookieHeader = await normalizeClaudeSessionCookieWithAutoRefresh(rawCookie, {
+        allowAutoSolve: false,
+      });
       const deviceId = readClaudeWebDeviceId(credentials);
 
       return await verifyCookieValidity(cookieHeader, deviceId, signal);
@@ -569,14 +762,81 @@ export class ClaudeWebExecutor extends BaseExecutor {
         conversationId = randomUUID();
       }
 
+      // Prepare browser-emulated headers (used by both paths)
+      const headers = getBrowserHeaders(deviceId);
+
+      // Browser-backed path: opt-in via OMNIROUTE_BROWSER_POOL=on or
+      // WEB_COOKIE_USE_BROWSER=1. Routes the chat through a shared
+      // Playwright/Cloakbrowser page with the user's session cookies
+      // injected, so Claude's Cloudflare Turnstile / session fingerprint
+      // checks are satisfied by a real browser context. This is the
+      // only way to get HTTP 200 from a sandbox/VPS IP where the
+      // pasted cf_clearance is bound to a different fingerprint and
+      // Cloudflare refuses the request. The browser's fetch hits the
+      // /completion endpoint directly (the conversation id is created
+      // by the page itself), so the placeholder in the matcher is
+      // harmless.
+      if (shouldUseBrowserBacked()) {
+        const userText = extractLastUserText(bodyObj);
+        const completionUrl = orgId
+          ? `${CLAUDE_WEB_API_BASE}/organizations/${orgId}/chat_conversations/PLACEHOLDER/completion`
+          : `${CLAUDE_WEB_API_BASE}/chat_conversations/PLACEHOLDER/completion`;
+        const result = await tryBackedChat({
+          poolKey: "claude-web",
+          chatPageUrl: "https://claude.ai/new",
+          chatUrl: completionUrl,
+          chatUrlMatchDomain: "claude.ai",
+          cookieString: rawCookie,
+          cookieDomain: ".claude.ai",
+          userMessage: userText,
+          inputSelector: "div[contenteditable='true']",
+          postSubmitWaitMs: 15000,
+          signal: signal ?? null,
+        });
+        if (result.status > 0) {
+          // Wrap captured SSE body as a Response so the existing
+          // stream parser (transformFromClaude) can be reused.
+          const upstreamResp = new Response(result.body, {
+            status: result.status,
+            headers: {
+              "Content-Type": result.contentType || "text/event-stream",
+            },
+          });
+          // Reuse the streaming transformer from below.
+          return {
+            response: await buildClaudeStreamingResponse(upstreamResp, model, log, null),
+            url: completionUrl,
+            headers,
+            transformedBody: claudePayload,
+          };
+        }
+        const errorResp = new Response(
+          JSON.stringify({
+            error: {
+              message: `Claude Web browser-backed chat captured no upstream response (timing: ${JSON.stringify(
+                result.timing
+              )})`,
+              type: "upstream_error",
+            },
+          }),
+          {
+            status: 502,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+        return {
+          response: errorResp,
+          url: completionUrl,
+          headers,
+          transformedBody: claudePayload,
+        };
+      }
+
       // Build completion URL
       const completionUrl =
         orgId && conversationId
           ? `${CLAUDE_WEB_API_BASE}/organizations/${orgId}/chat_conversations/${conversationId}/completion`
           : `${CLAUDE_WEB_API_BASE}/chat_conversations/new/completion`;
-
-      // Prepare headers
-      const headers = getBrowserHeaders(deviceId);
 
       // Prepare request
       const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
@@ -683,9 +943,17 @@ export class ClaudeWebExecutor extends BaseExecutor {
             } catch {
               /* already released */
             }
-            errorText = decoder.decode(
-              chunks.length === 1 ? chunks[0] : await new Blob(chunks).arrayBuffer().then((b) => new Uint8Array(b))
-            );
+            if (chunks.length === 1) {
+              errorText = decoder.decode(chunks[0]);
+            } else {
+              const combined = new Uint8Array(total);
+              let offset = 0;
+              for (const chunk of chunks) {
+                combined.set(chunk, offset);
+                offset += chunk.byteLength;
+              }
+              errorText = decoder.decode(combined);
+            }
           } else if (fetchResponse.text) {
             errorText = fetchResponse.text;
           }
@@ -729,7 +997,9 @@ export class ClaudeWebExecutor extends BaseExecutor {
             error: {
               message: errorMessage,
               type: isCloudflareChallenge ? "cloudflare_challenge" : "api_error",
-              code: isCloudflareChallenge ? "cf_mitigated_challenge" : `HTTP_${fetchResponse.status}`,
+              code: isCloudflareChallenge
+                ? "cf_mitigated_challenge"
+                : `HTTP_${fetchResponse.status}`,
               ...(cfMitigated ? { cfMitigated } : {}),
             },
           }),
@@ -747,110 +1017,9 @@ export class ClaudeWebExecutor extends BaseExecutor {
         };
       }
 
-      // Stream the response
-      const responseStream = new ReadableStream(
-        {
-          async start(controller) {
-            try {
-              const reader = fetchResponse.body?.getReader();
-              if (!reader) {
-                controller.error(new Error("No response body"));
-                return;
-              }
-
-              const decoder = new TextDecoder();
-              let buffer = "";
-
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-
-                // Process complete lines
-                const lines = buffer.split("\n");
-                buffer = lines.pop() || ""; // Keep incomplete line in buffer
-
-                for (const line of lines) {
-                  const trimmed = line.trim();
-                  if (!trimmed || trimmed === "[DONE]") continue;
-
-                  if (trimmed.startsWith("data: ")) {
-                    const jsonStr = trimmed.slice(6); // Remove "data: " prefix
-                    try {
-                      const chunk = JSON.parse(jsonStr) as ClaudeWebStreamChunk;
-
-                      // Extract completion text from various possible formats
-                      let completionText = "";
-                      if (chunk.completion) {
-                        completionText = chunk.completion;
-                      } else if (chunk.delta?.text) {
-                        completionText = chunk.delta.text;
-                      }
-
-                      if (completionText) {
-                        const openaiChunk = transformFromClaude(
-                          completionText,
-                          model,
-                          chunk.stop_reason
-                        );
-                        const sseContent = `data: ${JSON.stringify(openaiChunk)}\n\n`;
-                        controller.enqueue(new TextEncoder().encode(sseContent));
-                      }
-                    } catch (parseError) {
-                      log?.warn?.(
-                        "CLAUDE-WEB",
-                        `Failed to parse stream chunk: ${JSON.stringify({ line: trimmed })}`
-                      );
-                    }
-                  }
-                }
-              }
-
-              // Finish the stream
-              const finalChunk = {
-                id: `chatcmpl-${Date.now()}`,
-                object: "chat.completion.chunk",
-                created: Math.floor(Date.now() / 1000),
-                model,
-                choices: [
-                  {
-                    index: 0,
-                    delta: {},
-                    finish_reason: "stop",
-                    logprobs: null,
-                  },
-                ],
-              };
-              controller.enqueue(
-                new TextEncoder().encode(`data: ${JSON.stringify(finalChunk)}\n\n`)
-              );
-              controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
-              controller.close();
-            } catch (error) {
-              log?.error?.(
-                "CLAUDE-WEB",
-                `Stream error: ${error instanceof Error ? error.message : String(error)}`
-              );
-              controller.error(error);
-            }
-          },
-        },
-        { highWaterMark: 16384 }
-      );
-
-      const finalResponse = new Response(responseStream, {
-        status: 200,
-        statusText: "OK",
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
-
+      // Stream the response (shared with the browser-backed path).
       return {
-        response: finalResponse,
+        response: await buildClaudeStreamingResponse(fetchResponse, model, log, fetchResponse.body),
         url: completionUrl,
         headers,
         transformedBody: claudePayload,

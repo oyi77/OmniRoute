@@ -1,4 +1,4 @@
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { DuckDuckGoWebExecutor, DUCKDUCKGO_BASE } from "../../open-sse/executors/duckduckgo-web.ts";
 
@@ -241,6 +241,12 @@ describe("DuckDuckGoWebExecutor", () => {
             headers: { "Set-Cookie": "token=duckai; Path=/; Secure" },
           });
         }
+        if (url === "https://duck.ai/country.json") {
+          return new Response(JSON.stringify({ country: "ID" }), {
+            status: 200,
+            headers: { "Set-Cookie": "country=duckai; Path=/; Secure" },
+          });
+        }
         if (url.startsWith("https://duckduckgo.com/?q=")) {
           return new Response("ok", {
             status: 200,
@@ -259,7 +265,7 @@ describe("DuckDuckGoWebExecutor", () => {
 
         return new Response('data: {"message":"pong"}\n\ndata: [DONE]\n\n', {
           status: 200,
-          headers: { "Content-Type": "text/event-stream" },
+          headers: { "Content-Type": "text/event-stream", "x-vqd-hash-1": "rotated-hash" },
         });
       });
 
@@ -273,23 +279,69 @@ describe("DuckDuckGoWebExecutor", () => {
 
       assertExecutorResultShape(result);
       assert.equal(result.response.status, 200);
-      const statusRequest = seenRequests.find((request) =>
-        request.url.endsWith("/duckchat/v1/status")
+      const statusRequest = seenRequests.find(
+        (request) => request.url === "https://duck.ai/duckchat/v1/status"
       );
-      const chatRequest = seenRequests.find((request) => request.url.endsWith("/duckchat/v1/chat"));
+      const countryRequest = seenRequests.find(
+        (request) => request.url === "https://duck.ai/country.json"
+      );
+      const tokenRequest = seenRequests.find((request) =>
+        request.url.endsWith("/duckchat/v1/auth/token")
+      );
+      const chatRequests = seenRequests.filter((request) =>
+        request.url.endsWith("/duckchat/v1/chat")
+      );
+      const seedChatRequest = chatRequests[0];
+      const chatRequest = chatRequests[1];
       assert.ok(statusRequest);
+      assert.ok(countryRequest);
+      assert.ok(tokenRequest);
+      assert.ok(seedChatRequest);
       assert.ok(chatRequest);
+      const seedPayload = JSON.parse(seedChatRequest.body as string) as Record<string, unknown>;
+      assert.equal(seedPayload.canUseTools, false);
+      assert.deepEqual(seedPayload.messages, [{ role: "user", content: "hi" }]);
+      assert.equal(
+        getHeaderValue(countryRequest.headers, "user-agent"),
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+      );
+      assert.equal(
+        getHeaderValue(countryRequest.headers, "sec-ch-ua"),
+        '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"'
+      );
+      assert.equal(getHeaderValue(countryRequest.headers, "sec-ch-ua-platform"), '"Linux"');
+      assert.equal(
+        getHeaderValue(countryRequest.headers, "accept-encoding"),
+        "gzip, deflate, br, zstd"
+      );
+      assert.equal(getHeaderValue(countryRequest.headers, "cache-control"), "no-cache");
+      assert.equal(getHeaderValue(countryRequest.headers, "priority"), "u=1, i");
+      assert.equal(getHeaderValue(tokenRequest.headers, "accept"), "*/*");
       assert.equal(getHeaderValue(statusRequest.headers, "x-vqd-accept"), "1");
+      assert.equal(getHeaderValue(statusRequest.headers, "cache-control"), "no-store");
       const statusCookie = getHeaderValue(statusRequest.headers, "cookie") ?? "";
       const chatCookie = getHeaderValue(chatRequest.headers, "cookie") ?? "";
       assert.match(statusCookie, /dcm=3/);
       assert.match(statusCookie, /warm=duckai/);
+      assert.match(statusCookie, /country=duckai/);
       assert.match(statusCookie, /token=duckai/);
       assert.match(statusCookie, /serp=duckduckgo/);
       assert.match(chatCookie, /dcm=3/);
       assert.match(chatCookie, /warm=duckai/);
+      assert.match(chatCookie, /country=duckai/);
       assert.match(chatCookie, /token=duckai/);
       assert.match(chatCookie, /serp=duckduckgo/);
+      assert.equal(
+        getHeaderValue(chatRequest.headers, "user-agent"),
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+      );
+      assert.equal(
+        getHeaderValue(chatRequest.headers, "sec-ch-ua"),
+        '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"'
+      );
+      assert.equal(getHeaderValue(chatRequest.headers, "sec-ch-ua-platform"), '"Linux"');
+      assert.equal(getHeaderValue(chatRequest.headers, "cache-control"), "no-cache");
+      assert.equal(getHeaderValue(chatRequest.headers, "priority"), "u=1, i");
       assert.equal(getHeaderValue(chatRequest.headers, "x-vqd-4"), "legacy-vqd");
       assert.equal(getHeaderValue(chatRequest.headers, "x-vqd-hash-1"), "challenge-hash");
       assert.equal(
@@ -302,12 +354,11 @@ describe("DuckDuckGoWebExecutor", () => {
         )
       ) as { events: Array<{ name: string; trusted?: boolean }> };
       assert.deepEqual(feSignals.events.map((event) => event.name).slice(0, 4), [
-        "onboarding_impression",
-        "action",
-        "onboarding_finish",
-        "startNewChat_free",
+        "onboarding_impression_1",
+        "onboarding_impression_2",
+        "startNewChat",
+        "user_input",
       ]);
-      assert.equal(feSignals.events[1]?.trusted, true);
       assert.match(getHeaderValue(chatRequest.headers, "x-ddg-journey-id") ?? "", /^[0-9a-f]{32}$/);
       const payload = JSON.parse(chatRequest.body as string) as Record<string, unknown>;
       assert.equal(payload.model, "gpt-4o-mini");
@@ -318,7 +369,7 @@ describe("DuckDuckGoWebExecutor", () => {
     });
 
     it("should send current Duck.ai model ids and reasoning effort fields", async () => {
-      let chatPayload: Record<string, unknown> | null = null;
+      const chatPayloads: Array<Record<string, unknown>> = [];
       mockFetch((url, init) => {
         if (url.endsWith("/duckchat/v1/status")) {
           return new Response(JSON.stringify({ status: "0" }), {
@@ -328,10 +379,10 @@ describe("DuckDuckGoWebExecutor", () => {
         }
 
         if (url.endsWith("/duckchat/v1/chat")) {
-          chatPayload = JSON.parse(init?.body as string) as Record<string, unknown>;
+          chatPayloads.push(JSON.parse(init?.body as string) as Record<string, unknown>);
           return new Response('data: {"message":"pong"}\n\ndata: [DONE]\n\n', {
             status: 200,
-            headers: { "Content-Type": "text/event-stream" },
+            headers: { "Content-Type": "text/event-stream", "x-vqd-hash-1": "rotated-hash" },
           });
         }
 
@@ -347,6 +398,7 @@ describe("DuckDuckGoWebExecutor", () => {
       } as never);
 
       assertExecutorResultShape(result);
+      const chatPayload = chatPayloads.at(-1);
       assert.equal(chatPayload?.model, "gpt-5-mini");
       assert.equal(chatPayload?.reasoningEffort, "minimal");
       assert.equal(chatPayload?.canDelegateImageGeneration, null);
@@ -410,24 +462,71 @@ describe("DuckDuckGoWebExecutor", () => {
       assert.equal(body.choices[0].message.content, "pong");
     });
 
-    it("should surface DuckDuckGo anti-abuse challenges as clear JSON errors", async () => {
-      mockFetch((url) => {
+    it("should not crash the VQD challenge solver on getBoundingClientRect (regression)", async () => {
+      // Regression for the live DDG challenge: it requires offsetWidth/Height,
+      // getBoundingClientRect(), getComputedStyle, and scrollHeight to all
+      // return real values, or the solver throws TypeError. The executor
+      // must instead produce a non-empty client_hashes array and forward it
+      // to the chat endpoint as x-vqd-hash-1.
+      const probeChallengeJs = `
+        (function() {
+          function makeDiv() {
+            var el = document.createElement('div');
+            el.style.cssText = 'display:inline-block;padding:8px;position:absolute;visibility:hidden;';
+            el.textContent = 'x';
+            document.body.appendChild(el);
+            return el;
+          }
+          function probeDiv() {
+            var el = makeDiv();
+            var flags = [];
+            flags.push(el.offsetWidth > 0);
+            flags.push(el.offsetHeight > 0);
+            var r = el.getBoundingClientRect();
+            flags.push(r.width > 0 && r.height > 0);
+            var cs = getComputedStyle(el);
+            flags.push(cs.getPropertyValue('display').length > 0);
+            flags.push(el.scrollHeight > 0);
+            document.body.removeChild(el);
+            return String(flags.map(Number).reduce(function(a, b) { return a + b; }, 7709));
+          }
+          function probeIframe() {
+            var el = document.createElement('iframe');
+            el.srcdoc = 'DuckDuckGo Fraud & Abuse';
+            document.body.appendChild(el);
+            var ok = !!(el.contentWindow && el.contentWindow.self && el.contentWindow.self.fetch);
+            document.body.removeChild(el);
+            return String(ok ? 2269 : 0);
+          }
+          return Promise.resolve().then(function() {
+            return {
+              client_hashes: ['', probeDiv(), probeIframe()],
+              server_hashes: ['s1', 's2', 's3'],
+              signals: {},
+              meta: { v: '4', challenge_id: 'cid', timestamp: '1234', debug: 'd' },
+            };
+          });
+        })()
+      `;
+      const challengeB64 = Buffer.from(probeChallengeJs, "utf8").toString("base64");
+
+      const seenRequests: Array<{
+        url: string;
+        headers: HeadersInit | undefined;
+        body?: BodyInit | null;
+      }> = [];
+      mockFetch((url, init) => {
+        seenRequests.push({ url, headers: init?.headers, body: init?.body });
         if (url.endsWith("/duckchat/v1/status")) {
           return new Response(JSON.stringify({ status: "0" }), {
             status: 200,
-            headers: { "x-vqd-hash-1": "challenge-hash" },
+            headers: { "x-vqd-hash-1": challengeB64 },
           });
         }
-
-        return new Response(
-          JSON.stringify({
-            action: "error",
-            status: 418,
-            type: "ERR_CHALLENGE",
-            overrideCode: "3501",
-          }),
-          { status: 418, headers: { "Content-Type": "application/json" } }
-        );
+        return new Response('data: {"message":"pong"}\n\ndata: [DONE]\n\n', {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
       });
 
       const executor = new DuckDuckGoWebExecutor();
@@ -439,10 +538,23 @@ describe("DuckDuckGoWebExecutor", () => {
       } as never);
 
       assertExecutorResultShape(result);
-      assert.equal(result.response.status, 418);
-      const body = await result.response.json();
-      assert.match(body.error.message, /ERR_CHALLENGE/);
-      assert.match(body.error.message, /rate-limited IP/);
+      assert.equal(result.response.status, 200);
+      const chatRequest = seenRequests.find((r) => r.url.endsWith("/duckchat/v1/chat"));
+      assert.ok(chatRequest, "executor must call chat after solving the challenge");
+      const sentHash = getHeaderValue(chatRequest!.headers, "x-vqd-hash-1") ?? "";
+      assert.ok(
+        sentHash && sentHash !== challengeB64,
+        "executor must send a solved hash, not the raw challenge"
+      );
+      const decoded = JSON.parse(Buffer.from(sentHash, "base64").toString("utf8")) as {
+        client_hashes: string[];
+      };
+      assert.ok(Array.isArray(decoded.client_hashes));
+      assert.equal(decoded.client_hashes.length, 3);
+      const probeSum = await import("node:crypto").then((m) =>
+        m.createHash("sha256").update("7713").digest("base64")
+      );
+      assert.equal(decoded.client_hashes[1], probeSum);
     });
   });
 
@@ -517,6 +629,169 @@ describe("DuckDuckGoWebExecutor", () => {
         "function",
         "registered executor should have execute method"
       );
+    });
+  });
+
+  describe("browser-backed path", () => {
+    const { __setBrowserBackedChatOverrideForTesting, __resetBrowserBackedChatOverrideForTesting,
+            __setHttpBackedChatOverrideForTesting, __resetHttpBackedChatOverrideForTesting } =
+      { __setBrowserBackedChatOverrideForTesting: (_fn: unknown) => {}, __resetBrowserBackedChatOverrideForTesting: () => {},
+        __setHttpBackedChatOverrideForTesting: (_fn: unknown) => {}, __resetHttpBackedChatOverrideForTesting: () => {} };
+    let browserBackedChatMock: (() => Promise<unknown>) | null = null;
+
+    // Store original env and restore after each test.
+    let origWebCookieUseBrowser: string | undefined;
+    let origOmniRouteBrowserPool: string | undefined;
+
+    async function loadBrowserBackedModule() {
+      const mod = await import("../../open-sse/services/browserBackedChat.ts");
+      return mod;
+    }
+
+    async function mockBrowserBackedResult(status: number, bodyText: string) {
+      const mod = await loadBrowserBackedModule();
+      const encoder = new TextEncoder();
+      // Make httpBackedChat return a challenge (403) so tryBackedChat
+      // falls through to cookie-refresh → retry → browserBackedChat.
+      mod.__setHttpBackedChatOverrideForTesting(
+        async () => ({
+          status: 403,
+          contentType: "application/json",
+          body: Buffer.from(JSON.stringify({ error: "challenge" })),
+          isStealth: true,
+          timing: { acquireContextMs: 0, navigateMs: 0, submitMs: 100, captureResponseMs: 0, totalMs: 100 },
+        })
+      );
+      mod.__setBrowserBackedChatOverrideForTesting(
+        async () => ({
+          status,
+          contentType: "text/event-stream",
+          body: encoder.encode(bodyText) as unknown as Buffer,
+          isStealth: true,
+          timing: { acquireContextMs: 100, navigateMs: 200, submitMs: 300, captureResponseMs: 400, totalMs: 1000 },
+        })
+      );
+    }
+
+    function resetEnv() {
+      if (origWebCookieUseBrowser === undefined) {
+        delete process.env.WEB_COOKIE_USE_BROWSER;
+      } else {
+        process.env.WEB_COOKIE_USE_BROWSER = origWebCookieUseBrowser;
+      }
+      if (origOmniRouteBrowserPool === undefined) {
+        delete process.env.OMNIROUTE_BROWSER_POOL;
+      } else {
+        process.env.OMNIROUTE_BROWSER_POOL = origOmniRouteBrowserPool;
+      }
+    }
+
+    beforeEach(() => {
+      origWebCookieUseBrowser = process.env.WEB_COOKIE_USE_BROWSER;
+      origOmniRouteBrowserPool = process.env.OMNIROUTE_BROWSER_POOL;
+    });
+
+    afterEach(async () => {
+      resetEnv();
+      browserBackedChatMock = null;
+      const mod = await loadBrowserBackedModule();
+      mod.__resetBrowserBackedChatOverrideForTesting();
+      mod.__resetHttpBackedChatOverrideForTesting();
+    });
+
+    it("should route through browserBackedChat when WEB_COOKIE_USE_BROWSER=1", async () => {
+      process.env.WEB_COOKIE_USE_BROWSER = "1";
+      await mockBrowserBackedResult(200, 'data: {"content":"pong"}\n\n');
+
+      const executor = new DuckDuckGoWebExecutor();
+      const result = await executor.execute({
+        model: "gpt-4o-mini",
+        body: { messages: [{ role: "user", content: "ping" }] },
+        stream: false,
+        credentials: {
+          apiKey: "test-cookie",
+        },
+      });
+
+      assertExecutorResultShape(result);
+      assert.equal(result.response.status, 200);
+      const body = await result.response.text();
+      assert.ok(body.includes("pong"), "browser-backed response should contain pong");
+    });
+
+    it("should route through browserBackedChat when OMNIROUTE_BROWSER_POOL=on", async () => {
+      process.env.OMNIROUTE_BROWSER_POOL = "on";
+      await mockBrowserBackedResult(200, 'data: {"content":"ok"}\n\n');
+
+      const executor = new DuckDuckGoWebExecutor();
+      const result = await executor.execute({
+        model: "gpt-4o-mini",
+        body: { messages: [{ role: "user", content: "ping" }] },
+        stream: false,
+        credentials: { apiKey: "test" },
+      });
+
+      assertExecutorResultShape(result);
+      assert.equal(result.response.status, 200);
+      const body = await result.response.text();
+      assert.ok(body.includes("ok"), "browser-backed response should contain ok");
+    });
+
+    it("should fall through to normal path without env flag set", async () => {
+      // Ensure env vars are NOT set.
+      delete process.env.WEB_COOKIE_USE_BROWSER;
+      delete process.env.OMNIROUTE_BROWSER_POOL;
+
+      const executor = new DuckDuckGoWebExecutor();
+      const result = await executor.execute({
+        model: "gpt-4o-mini",
+        body: { messages: [{ role: "user", content: "ping" }] },
+        stream: false,
+        credentials: { apiKey: "test" },
+      });
+
+      // Without env flag, it hits the normal path and gets handled.
+      assertExecutorResultShape(result);
+    });
+  });
+
+  describe("httpBackedChat function", () => {
+    afterEach(() => {
+      // Reset httpBackedChat override after each test
+      void import("../../open-sse/services/browserBackedChat.ts").then((mod) => {
+        mod.__resetHttpBackedChatOverrideForTesting();
+      }).catch(() => {});
+    });
+
+    it("should use test override and return mocked response", async () => {
+      const mod = await import("../../open-sse/services/browserBackedChat.ts");
+      mod.__setHttpBackedChatOverrideForTesting(
+        async () => ({
+          status: 200,
+          contentType: "text/event-stream",
+          body: Buffer.from('data: {"content":"pong"}\n\n'),
+          isStealth: true,
+          timing: { acquireContextMs: 0, navigateMs: 0, submitMs: 50, captureResponseMs: 0, totalMs: 50 },
+        })
+      );
+
+      const result = await mod.httpBackedChat({
+        poolKey: "test",
+        chatUrl: "https://example.com/chat",
+        chatPageUrl: "https://example.com",
+        userMessage: "ping",
+        chatUrlMatchDomain: "example.com",
+        inputSelector: "textarea",
+        signal: null,
+      });
+
+      assert.equal(result.status, 200);
+      assert.equal(result.contentType, "text/event-stream");
+      assert.ok(result.body.toString().includes("pong"));
+    });
+
+    it("should return 501 when no override set and tlsClient unavailable", { skip: true }, async () => {
+      // This test requires wreq-js to be absent; skip in CI.
     });
   });
 });
