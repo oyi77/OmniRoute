@@ -536,6 +536,21 @@ export const WEB_COOKIE_PROVIDERS = {
       "Open chat.qwen.ai, log in, then open DevTools → Application → Local Storage → " +
       'copy the "token" value (or use tongyi_sso_ticket cookie as Bearer token).',
   },
+  "theoldllm": {
+    id: "theoldllm",
+    alias: "tllm",
+    name: "The Old LLM (Free)",
+    icon: "auto_awesome",
+    color: "#8B5CF6",
+    textIcon: "TL",
+    website: "https://theoldllm.vercel.app",
+    hasFree: true,
+    freeNote: "Free — multi-provider access via theoldllm.vercel.app. GPT-5.4, Claude Opus, Gemini, DeepSeek. No API key needed — auto-generates tokens via built-in Playwright browser.",
+    authHint:
+      "No credentials required. The executor auto-generates access tokens via an embedded Playwright browser instance.",
+    riskNoticeVariant: "embedded-service",
+    isEmbeddedService: true,
+  },
 };
 
 // API Key Providers
