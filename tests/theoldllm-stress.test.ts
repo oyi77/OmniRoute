@@ -1,167 +1,246 @@
-/**
- * Stress test for theoldllm executor.
- * Tests sequential, concurrent, abort, and error recovery scenarios.
- *
- * Run: node --import tsx/esm --test tests/theoldllm-stress.test.ts
- */
-
-import { describe, it, before, after } from "node:test";
+import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert";
-import { TheOldLlmExecutor } from "../open-sse/executors/theoldllm.ts";
+import { TheOldLlmExecutor, tokenCache } from "../open-sse/executors/theoldllm.ts";
 
 const executor = new TheOldLlmExecutor();
 
-async function readStream(
-  response: Response,
-  timeoutMs = 30_000
-): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
+const MOCK_SSE = [
+  'data: {"choices":[{"delta":{"content":"hi"},"index":0,"finish_reason":null}]}',
+  "data: [DONE]",
+  "",
+].join("\n");
 
-  const result: string[] = [];
-  const timeout = setTimeout(() => reader.cancel(), timeoutMs);
+const MOCK_ERR = JSON.stringify({
+  error: { message: "auth", type: "access_denied" },
+});
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      result.push(new TextDecoder().decode(value));
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  return result.join("");
-}
-
-function makeInput(model = "gpt-5.4", stream = false) {
+function makeResponse(status: number, body = MOCK_SSE) {
   return {
-    model,
-    body: {
-      messages: [{ role: "user", content: "say hello in one word" }],
-      max_tokens: 20,
-      temperature: 0.7,
-      stream,
-    },
-    credentials: {},
-    signal: null,
-    log: {
-      debug: (_t: string, _m: string) => {},
-      info: (_t: string, _m: string) => {},
-      warn: (_t: string, _m: string) => {},
-      error: (_t: string, _m: string) => {},
-    },
-  };
+    status,
+    ok: status < 300,
+    statusText: status < 300 ? "OK" : "Error",
+    headers: new Map<string, string>([["content-type", "application/json"]]),
+    text: async () => body,
+  } as unknown as Response;
 }
 
-function hasResponse(text: string): boolean {
-  return (
-    text.includes("hello") ||
-    text.includes("Hello") ||
-    text.includes("hi") ||
-    text.includes("Hi")
-  );
+function warmTokenCache() {
+  tokenCache.value = "test-token-abc123";
+  tokenCache.expiresAt = Date.now() + 15 * 60 * 1000;
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────
+function clearTokenCache() {
+  tokenCache.value = "";
+  tokenCache.expiresAt = 0;
+}
 
-describe("theoldllm executor", { timeout: 300_000 }, () => {
-  it("Test 1: Basic non-streaming request", async () => {
-    const start = Date.now();
-    const result = await executor.execute(makeInput("gpt-5.4", false));
-    const text = await readStream(result.response, 60_000);
-    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    console.log(`  Duration: ${elapsed}s`);
-
-    if (!text.includes("error")) {
-      assert.ok(hasResponse(text), `Expected response content, got: ${text.slice(0, 80)}`);
-    } else {
-      console.log(`  Got error response: ${text.slice(0, 120)}`);
-      assert.ok(true, "Error response accepted — upstream may be unstable");
-    }
-  });
-
-  it("Test 2: Basic streaming request", async () => {
-    const start = Date.now();
-    const result = await executor.execute(makeInput("claude_opus_4", true));
-    const text = await readStream(result.response, 60_000);
-    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    console.log(`  Duration: ${elapsed}s`);
-
-    if (!text.includes("error")) {
-      assert.ok(hasResponse(text), `Expected response content, got: ${text.slice(0, 80)}`);
-    } else {
-      console.log(`  Got error response: ${text.slice(0, 120)}`);
-      assert.ok(true, "Error response accepted");
-    }
-  });
-
-  it("Test 3: Sequential requests (3x)", async () => {
-    let ok = 0;
-    for (let i = 0; i < 3; i++) {
-      const start = Date.now();
-      const result = await executor.execute(makeInput("deepseek", false));
-      const text = await readStream(result.response, 60_000);
-      const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-      console.log(`  Request ${i + 1}: ${elapsed}s`);
-
-      if (!text.includes("error")) {
-        (text.includes("hello") || text.includes("Hello")) ? ok++ : null;
-      }
-    }
-    assert.ok(ok >= 1, `Expected at least 1/3 successful, got ${ok}/3`);
-    console.log(`  ${ok}/3 sequential OK`);
-  });
-
-  it("Test 4: Concurrent requests (4x at once)", async () => {
-    const concurrency = 4;
-    const results = await Promise.allSettled(
-      Array.from({ length: concurrency }, (_, i) =>
-        executor.execute(makeInput("gpt-5.4", false)).then(async (r) => {
-          const text = await readStream(r.response, 60_000);
-          return { index: i, text, ok: !text.includes("error") && hasResponse(text) };
-        })
-      )
+describe("TheOldLlmExecutor", () => {
+  it("buildHeaders returns static upstream headers", () => {
+    const headers = (executor as any).buildHeaders({});
+    assert.strictEqual(headers["Content-Type"], "application/json");
+    assert.ok(
+      headers["User-Agent"].includes("Chrome/"),
+      `expected Chrome UA, got ${headers["User-Agent"]}`,
     );
-    let ok = 0;
-    for (const r of results) {
-      if (r.status === "fulfilled") {
-        if (r.value.ok) ok++;
-        else console.log(`  Request #${r.value.index}: ambiguous response`);
-      } else {
-        console.log(`  Request exception: ${r.reason?.message?.slice(0, 100)}`);
-      }
-    }
-    assert.ok(ok >= 1, `Expected at least 1/4 concurrent OK, got ${ok}/4`);
-    console.log(`  ${ok}/${concurrency} concurrent OK`);
+    assert.ok(
+      headers["User-Agent"].includes("Mozilla/5.0"),
+      `expected Mozilla UA, got ${headers["User-Agent"]}`,
+    );
   });
 
-  it("Test 5: Abort mid-request", async () => {
-    const abortController = new AbortController();
-    const input = makeInput("gpt-5.4", true);
-    input.signal = abortController.signal;
-    const resultPromise = executor.execute(input);
+  it("maps model aliases to upstream slugs", () => {
+    const cases: Record<string, string> = {
+      "gpt-5.4": "GPT_5_4",
+      "GPT_5_3": "GPT_5_3",
+      "gpt_5_2": "GPT_5_2",
+      "gpt-4o": "GPT_4O",
+      "claude-4.6-opus": "CLAUDE_4_6_OPUS",
+      "claude sonnet 4": "CLAUDE_4_6_SONNET",
+      "claude_haiku_3_5": "CLAUDE_4_5_HAIKU",
+      "weird-model": "GPT_5_4",
+    };
 
-    // Abort after 1 second
-    await new Promise((r) => setTimeout(r, 1000));
-    abortController.abort(new Error("Manual abort for testing"));
+    const transformRequest = (executor as any).transformRequest.bind(
+      executor,
+    ) as (
+      model: string,
+      body: Record<string, unknown>,
+      stream: boolean,
+    ) => Record<string, unknown>;
 
-    // Should not throw — abort should be handled gracefully
-    const result = await resultPromise;
-    const text = await readStream(result.response, 10_000);
-    console.log(`  Abort response length: ${text.length}`);
-    assert.ok(true, "Abort handled without exception");
+    for (const [model, expected] of Object.entries(cases)) {
+      const updated = transformRequest(model, { model, messages: [] }, true);
+      assert.strictEqual(
+        updated.model,
+        expected,
+        `model ${model} mapped to ${expected}, got ${updated.model}`,
+      );
+    }
   });
 
-  it("Test 6: Multiple model names", async () => {
-    const models = ["gpt-5.4", "claude-sonnet-4.6", "deepseek-v4", "gemini-3-flash"];
-    let ok = 0;
-    for (const model of models) {
-      const result = await executor.execute(makeInput(model, false));
-      const text = await readStream(result.response, 60_000);
-      if (!text.includes("error") && hasResponse(text)) ok++;
+  it("returns true on 200 and false on 401 for testConnection", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => makeResponse(200) as any;
+      assert.strictEqual(
+        await executor.testConnection({}, null, {
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+          debug: () => {},
+        }),
+        true,
+      );
+
+      globalThis.fetch = async () => makeResponse(401) as any;
+      assert.strictEqual(
+        await executor.testConnection({}, null, {
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+          debug: () => {},
+        }),
+        false,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
     }
-    assert.ok(ok >= 2, `Expected at least 2/4 models OK, got ${ok}/4`);
-    console.log(`  ${ok}/${models.length} models OK`);
+  });
+
+  it("retries once after 401 then succeeds", async () => {
+    const originalFetch = globalThis.fetch;
+    warmTokenCache();
+    try {
+      let calls = 0;
+      const responses = [
+        () => makeResponse(401, MOCK_ERR),
+        () => makeResponse(200, MOCK_SSE),
+      ];
+
+      globalThis.fetch = async () =>
+        responses[
+          calls++ < responses.length ? calls - 1 : responses.length - 1
+        ]() as any;
+
+      const result = await executor.execute({
+        model: "gpt-5.4",
+        body: { messages: [{ role: "user", content: "hai" }], stream: true },
+        stream: true,
+        signal: null,
+        credentials: {},
+        log: {
+          debug: () => {},
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+        },
+      });
+
+      assert.strictEqual((result as any).response.status, 200);
+      assert.ok(calls >= 2, `expected >=2 fetch calls, got ${calls}`);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearTokenCache();
+    }
+  });
+
+  it("lets cancellation abort before upstream work", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("cancelled"));
+    warmTokenCache();
+
+    let fetchCalls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      fetchCalls++;
+      return makeResponse(200) as any;
+    };
+
+    try {
+      await executor.execute({
+        model: "gpt-5.4",
+        body: { messages: [{ role: "user", content: "ping" }], stream: true },
+        stream: true,
+        signal: controller.signal,
+        credentials: {},
+        log: {
+          debug: () => {},
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+        },
+      });
+
+      assert.strictEqual(fetchCalls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearTokenCache();
+    }
+  });
+
+  it("handles concurrent calls with cached token", async () => {
+    const originalFetch = globalThis.fetch;
+    warmTokenCache();
+    try {
+      let fetchCalls = 0;
+
+      globalThis.fetch = async () => {
+        fetchCalls++;
+        return makeResponse(200) as any;
+      };
+
+      const requests = Array.from({ length: 4 }, () =>
+        executor.execute({
+          model: "gpt-5.4",
+          body: { messages: [{ role: "user", content: "ping" }], stream: true },
+          stream: true,
+          signal: null,
+          credentials: {},
+          log: {
+            debug: () => {},
+            info: () => {},
+            warn: () => {},
+            error: () => {},
+          },
+        }),
+      );
+
+      await Promise.all(requests);
+      assert.ok(fetchCalls >= 1, `expected >=1 fetch calls, got ${fetchCalls}`);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearTokenCache();
+    }
+  });
+
+  it("fast fails on network error", async () => {
+    const originalFetch = globalThis.fetch;
+    warmTokenCache();
+    try {
+      globalThis.fetch = async () => {
+        const error = new Error("ECONNREFUSED");
+        (error as any).cause = new Error("ECONNREFUSED");
+        throw error;
+      };
+
+      const result = await executor.execute({
+        model: "gpt-5.4",
+        body: { messages: [{ role: "user", content: "ping" }], stream: true },
+        stream: true,
+        signal: null,
+        credentials: {},
+        log: {
+          debug: () => {},
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+        },
+      });
+
+      assert.strictEqual((result as any).response.status, 502);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearTokenCache();
+    }
   });
 });
