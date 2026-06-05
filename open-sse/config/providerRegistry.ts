@@ -4238,7 +4238,7 @@ const _REGISTRY_EAGER: Record<string, RegistryEntry> = {
     baseUrl: "https://theoldllm.vercel.app/api/chatgpt",
     baseUrls: ["https://theoldllm.vercel.app/api/chatgpt"],
     authType: "none",
-    noBuiltinAuth: true,
+    authHeader: "none",
     models: [
       { id: "GPT_5_4", name: "GPT-5.4 (The Old LLM 🆓)" },
       { id: "GPT_4o", name: "GPT-4o (The Old LLM 🆓)" },
