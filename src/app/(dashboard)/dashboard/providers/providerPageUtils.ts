@@ -107,7 +107,9 @@ export function filterConfiguredProviderEntries<TProvider>(
   let filtered = entries;
 
   if (showConfiguredOnly) {
-    filtered = filtered.filter((entry) => Number(entry.stats?.total || 0) > 0);
+    filtered = filtered.filter(
+      (entry) => entry.toggleAuthType === "no-auth" || Number(entry.stats?.total || 0) > 0
+    );
   }
 
   if (showFreeOnly) {

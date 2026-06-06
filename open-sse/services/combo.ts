@@ -78,6 +78,7 @@ import type { RoutingHint } from "./manifestAdapter";
 import type { CompressionMode } from "./compression/types.ts";
 import { getModelContextLimit } from "../../src/lib/modelCapabilities";
 import { getProviderConnections } from "../../src/lib/db/providers";
+import { getProviderModels } from "../config/providerModels.ts";
 import {
   getComboModelString,
   getComboStepTarget,
@@ -2982,6 +2983,30 @@ export async function handleComboChat({
           `Auto strategy: all candidates filtered by context-window policy (est. ${estimatedInputTokens} tokens), falling back to full pool`
         );
         // eligibleTargets intentionally unchanged — same fallback contract as tool-calling filter
+      }
+
+      if (!Array.isArray(autoConfigSource?.candidatePool)) {
+        try {
+          const allConnections = await getProviderConnections({ isActive: true });
+          const providerIds = [...new Set(allConnections.map((c) => c.provider))];
+          for (const providerId of providerIds) {
+            const providerModels = getProviderModels(providerId);
+            for (const model of providerModels) {
+              const modelStr = `${providerId}/${model.id}`;
+              if (!eligibleTargets.some((t) => t.modelStr === modelStr)) {
+                eligibleTargets.push({
+                  provider: providerId,
+                  model: model.id,
+                  modelStr,
+                  weight: 1,
+                  connectionId: undefined,
+                  apiKeyId: undefined,
+                });
+              }
+            }
+          }
+        } catch {
+        }
       }
     }
 

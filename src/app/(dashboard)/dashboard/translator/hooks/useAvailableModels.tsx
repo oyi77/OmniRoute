@@ -25,9 +25,9 @@ const FORMAT_MODEL_PREFIXES = {
  *   pickModelForFormat: (format: string) => string
  * }}
  */
-export function useAvailableModels() {
+export function useAvailableModels(provider?: string) {
   const [model, setModel] = useState("");
-  const [availableModels, setAvailableModels] = useState([]);
+  const [allModels, setAllModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,15 +36,19 @@ export function useAvailableModels() {
         const res = await fetch("/api/v1/models");
         const data = await res.json();
         const models = (data.data || []).map((m) => m.id).sort((a, b) => compareTr(a, b));
-        setAvailableModels(models);
+        setAllModels(models);
       } catch {
-        setAvailableModels([]);
+        setAllModels([]);
       } finally {
         setLoading(false);
       }
     };
     fetchModels();
   }, []);
+
+  const availableModels = provider
+    ? allModels.filter((m) => m.startsWith(`${provider}/`) || m === provider)
+    : allModels;
 
   /**
    * Pick the best model for a given format from the available models.
