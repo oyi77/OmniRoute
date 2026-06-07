@@ -299,6 +299,31 @@ describe("getWebSessionPoolHealth", () => {
     assert.equal(report.providers[0].issues.length, 0);
   });
 
+  it('computes health: "healthy" for idle pool with zero requests', () => {
+    const deps = createMockDeps({
+      providers: ["idle"],
+      stats: {
+        idle: {
+          provider: "idle",
+          sessions: { total: 3, active: 3, cooldown: 0, dead: 0 },
+          requests: { total: 0, success: 0, rate429: 0, otherErrors: 0 },
+          throughput: "0.0 req/s",
+          successRate: "0.0%",
+          elapsed: "5m",
+          createdAt: Date.now() - 5 * 60 * 1000,
+        },
+      },
+      sessionDetails: { idle: [] },
+      breakerStates: {
+        idle: { state: "CLOSED", failureCount: 0, lastFailureTime: null, retryAfterMs: 0 },
+      },
+    });
+
+    const report = getWebSessionPoolHealth("idle", deps);
+    assert.equal(report.providers[0].health, "healthy");
+    assert.equal(report.providers[0].issues.length, 0);
+  });
+
   it("populates issues array with correct messages for down pool", () => {
     const deps = downDeps("pollinations");
     const report = getWebSessionPoolHealth("pollinations", deps);
