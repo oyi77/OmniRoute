@@ -140,10 +140,12 @@ function computeHealth(
       return { health: "down", issues };
     }
 
-    // Success rate < 80% → degraded
-    const successRate = parsePercentString(pool.successRate);
-    if (Number.isFinite(successRate) && successRate < 80) {
-      issues.push(`success rate ${pool.successRate} below 80% threshold`);
+    // Success rate < 80% → degraded (only when pool has handled requests)
+    if (pool.totalRequests > 0) {
+      const successRate = parsePercentString(pool.successRate);
+      if (Number.isFinite(successRate) && successRate < 80) {
+        issues.push(`success rate ${pool.successRate} below 80% threshold`);
+      }
     }
 
     // >50% sessions in cooldown/dead → degraded
