@@ -21,6 +21,7 @@ type NoAuthProviderDefinition = {
   id?: string;
   alias?: string;
   noAuth?: boolean;
+  serviceKinds?: string[];
 };
 
 export interface VirtualAutoComboCandidate {
@@ -89,7 +90,13 @@ function hasUsableOAuthToken(conn: VirtualFactoryConn): boolean {
 }
 
 const SYNTHETIC_NOAUTH_CONNECTION_ID = "noauth";
-const ZERO_CONFIG_NOAUTH_CHAT_PROVIDERS = new Set(["opencode"]);
+
+function isChatAutoComboNoAuthProvider(providerDef: NoAuthProviderDefinition): boolean {
+  if (providerDef.noAuth !== true) return false;
+  if (!Array.isArray(providerDef.serviceKinds) || providerDef.serviceKinds.length === 0)
+    return true;
+  return providerDef.serviceKinds.includes("llm");
+}
 
 function getFirstRegistryModelId(providerInfo: { models?: Array<{ id?: string }> } | undefined) {
   const firstModel = Array.isArray(providerInfo?.models) ? providerInfo.models[0] : undefined;
@@ -103,11 +110,10 @@ function getNoAuthCandidates(excludedProviders: Set<string>): VirtualAutoComboCa
   const candidates: VirtualAutoComboCandidate[] = [];
 
   for (const providerDef of Object.values(NOAUTH_PROVIDERS) as NoAuthProviderDefinition[]) {
-    if (providerDef?.noAuth !== true) continue;
+    if (!isChatAutoComboNoAuthProvider(providerDef)) continue;
 
     const providerId = providerDef.id;
     if (!providerId || excludedProviders.has(providerId)) continue;
-    if (!ZERO_CONFIG_NOAUTH_CHAT_PROVIDERS.has(providerId)) continue;
 
     const providerInfo = registry[providerId];
     const modelId = getFirstRegistryModelId(providerInfo);
@@ -116,8 +122,8 @@ function getNoAuthCandidates(excludedProviders: Set<string>): VirtualAutoComboCa
     // No-auth providers do not have provider_connections rows. Use the same
     // synthetic connection id returned by getProviderCredentials() so the
     // downstream combo path can still carry a stable target/account identity.
-    // For OpenCode Free specifically, route through its alias (oc/...) because
-    // opencode/... is a compatibility alias for the opencode-zen API-key tier.
+    // Prefer provider aliases because some canonical provider IDs are reserved
+    // for credentialed tiers with different routing semantics.
     const registryAlias =
       typeof providerInfo?.alias === "string" && providerInfo.alias.trim().length > 0
         ? providerInfo.alias

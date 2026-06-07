@@ -87,6 +87,24 @@ test("createVirtualAutoCombo includes no-auth OpenCode Free without provider_con
   assert.ok(combo.autoConfig.candidatePool.includes("opencode"));
 });
 
+test("createVirtualAutoCombo includes all chat-capable no-auth providers without connections", async () => {
+  const combo: VirtualComboResult = await virtualFactory.createVirtualAutoCombo("fast");
+
+  const byProvider = new Map(combo.models.map((model) => [model.providerId, model]));
+
+  assert.equal(byProvider.get("duckduckgo-web")?.connectionId, "noauth");
+  assert.equal(byProvider.get("duckduckgo-web")?.model, "ddgw/gpt-4o-mini");
+  assert.equal(byProvider.get("theoldllm")?.connectionId, "noauth");
+  assert.equal(byProvider.get("theoldllm")?.model, "tllm/GPT_5_4");
+  assert.equal(byProvider.get("chipotle")?.connectionId, "noauth");
+  assert.equal(byProvider.get("chipotle")?.model, "pepper/pepper-1");
+  assert.equal(
+    byProvider.has("veoaifree-web"),
+    false,
+    "video-only no-auth providers must not be inserted into chat auto-combos"
+  );
+});
+
 test("createVirtualAutoCombo keeps credential-required providers out when disconnected", async () => {
   const combo: VirtualComboResult = await virtualFactory.createVirtualAutoCombo("fast");
 
