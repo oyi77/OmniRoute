@@ -892,6 +892,27 @@ function getExecutorTimeoutMs(executor: unknown): number {
   }
 }
 
+function normalizeExecutorResult(
+  result:
+    | Response
+    | {
+        response: Response;
+        url?: string;
+        headers?: Record<string, string>;
+        transformedBody?: unknown;
+      }
+): { response: Response; url: string; headers: Record<string, string>; transformedBody: unknown } {
+  if (result instanceof Response) {
+    return { response: result, url: "", headers: {}, transformedBody: null };
+  }
+  return {
+    response: result.response,
+    url: result.url || "",
+    headers: result.headers || {},
+    transformedBody: result.transformedBody ?? null,
+  };
+}
+
 async function executeWithUpstreamStartTimeout<T>({
   executor,
   provider,
@@ -3985,15 +4006,7 @@ export async function handleChatCore({
                     skipUpstreamRetry,
                   }),
               });
-              const res =
-                rawExecutorResult instanceof Response
-                  ? {
-                      response: rawExecutorResult,
-                      url: "",
-                      headers: {},
-                      transformedBody: null,
-                    }
-                  : rawExecutorResult;
+              const res = normalizeExecutorResult(rawExecutorResult);
               trace("post_executor", { status: res?.response?.status });
               updatePendingRequest(model, provider, connectionId, {
                 stage: "provider_response_started",
