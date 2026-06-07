@@ -2205,12 +2205,13 @@ test("handleComboChat auto strategy preserves selected same-provider connection 
   });
 
   assert.equal(result.ok, true);
-  assert.equal(calls[0]?.modelStr, "openai/gpt-4o-mini");
-  assert.equal(
-    calls[0]?.connectionId,
-    connB.id,
-    "auto selection must dispatch the exact selected provider+model+connection target"
-  );
+  assert.equal(calls.length, 1, "successful auto dispatch should call exactly one selected target");
+  assert.deepEqual(calls, [
+    {
+      modelStr: "openai/gpt-4o-mini",
+      connectionId: connB.id,
+    },
+  ]);
 });
 
 test("handleComboChat standalone lkgp strategy prioritizes the last known good provider", async () => {

@@ -130,14 +130,14 @@ test("createVirtualAutoCombo excludes web-session providers with irrelevant prov
 });
 
 test("createVirtualAutoCombo preserves multiple same-provider web-session candidates", async () => {
-  await providersDb.createProviderConnection({
+  const connA = await providersDb.createProviderConnection({
     provider: "qwen-web",
     authType: "apikey",
     name: "Qwen Web Session A",
     providerSpecificData: { token: "qwen-web-session-token-a" },
     defaultModel: "qwen3-coder-plus",
   });
-  await providersDb.createProviderConnection({
+  const connB = await providersDb.createProviderConnection({
     provider: "qwen-web",
     authType: "apikey",
     name: "Qwen Web Session B",
@@ -153,7 +153,11 @@ test("createVirtualAutoCombo preserves multiple same-provider web-session candid
     2,
     "same-provider web sessions must not collapse to one target"
   );
-  assert.equal(new Set(qwenWebModels.map((model) => model.connectionId)).size, 2);
+  assert.deepEqual(
+    new Set(qwenWebModels.map((model) => model.connectionId)),
+    new Set([connA.id, connB.id]),
+    "same-provider web sessions should map back to their exact provider_connection rows"
+  );
   assert.ok(qwenWebModels.every((model) => model.model === "qwen-web/qwen3-coder-plus"));
   assert.equal(
     combo.autoConfig.candidatePool.filter((provider) => provider === "qwen-web").length,
