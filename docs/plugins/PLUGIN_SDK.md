@@ -1,5 +1,23 @@
 # OmniRoute Plugin SDK
 
+> **Related guides:**
+> - [Plugin Development Guide](./PLUGIN_DEVELOPMENT.md) — dev mode, testing, doctor, signing, lifecycle
+> - [Plugin Marketplace](./PLUGIN_MARKETPLACE.md) — discover, install, and publish plugins
+> - [CLI Plugin System](../dev/plugins.md) — extend the `omniroute` CLI
+
+## Two Plugin Systems
+
+OmniRoute has **two parallel plugin systems** that serve different purposes:
+
+| System | Where it runs | Purpose | Reference |
+|--------|---------------|---------|-----------|
+| **SDK plugins** (this doc) | In-process sandboxed VM inside the OmniRoute server | Hook-based request/response interception (onRequest, onResponse, onError) | Below |
+| **CLI plugins** | Separate Node.js process invoked by the `omniroute` binary | Add new subcommands to the CLI (like `gh extension` or `kubectl plugin`) | [CLI Plugin Reference](../dev/plugins.md) |
+
+You can use either or both. A typical setup might have:
+- An **SDK plugin** that adds rate limiting to incoming requests
+- A **CLI plugin** that exposes a `omniroute ratelimit status` command to inspect the rate limiter state
+
 ## Quick Start
 
 ```ts
@@ -179,6 +197,17 @@ Config values are persisted in the database and accessible via the dashboard con
 | `onProviderError` | Provider returned error | Error details |
 | `onStreamStart` | SSE stream started | Stream info |
 | `onStreamEnd` | SSE stream ended | Stream stats |
+
+## Lifecycle Hooks (v3.8.16+)
+
+In addition to per-request events, plugins can subscribe to **lifecycle events** that fire on install/activate/deactivate/uninstall transitions. See the [Plugin Development Guide](./PLUGIN_DEVELOPMENT.md#lifecycle-hooks-v3816) for full details, including the 5-stage lifecycle diagram and a complete example.
+
+| Lifecycle hook | When it fires | Typical use |
+|---|---|---|
+| `onInstall` | After files copied, before first activation | Initialize DB tables, register schema |
+| `onActivate` | When `activate()` is called | Connect to external service, warm caches |
+| `onDeactivate` | Before deactivation completes | Close connections, flush logs |
+| `onUninstall` | Before files are deleted | Final cleanup, send farewell webhook |
 
 ## Examples
 
