@@ -371,12 +371,313 @@ status events to the JSON-RPC 2.0 protocol. See [A2A-SERVER.md](./A2A-SERVER.md)
 No Cloud-Agent-specific env vars exist today — every secret lives in the
 `provider_connections` table.
 
+## Credential Setup Per Agent
+
+Each cloud agent has its own credential flow. Credentials are stored **encrypted at rest** in the `cloud_agent_credentials` table via `src/lib/cloudAgent/credentials.ts`.
+
+### Codex Cloud
+
+**Sign up:** https://openai.com/codex
+
+**Get credentials:**
+1. Sign in to https://platform.openai.com
+2. Go to **API Keys** → **Create new secret key**
+3. Copy the key (starts with `sk-...`)
+
+**Configure in OmniRoute:**
+
+```bash
+POST /api/cloud/credentials
+{
+  "providerId": "codex-cloud",
+  "apiKey": "sk-..."
+}
+```
+
+Or via dashboard: **Cloud Agents → Codex Cloud → Add Credential**
+
+### Devin
+
+**Sign up:** https://devin.ai
+
+**Get credentials:**
+1. Sign in to https://app.devin.ai
+2. Go to **Settings** → **API Keys** → **Generate new key**
+3. Copy the key
+
+**Configure:**
+
+```bash
+POST /api/cloud/credentials
+{
+  "providerId": "devin",
+  "apiKey": "devin-..."
+}
+```
+
+### Jules (Google)
+
+**Sign up:** https://jules.google.com
+
+**Get credentials:**
+1. Sign in with your Google account
+2. Go to **Settings** → **API Access** → **Generate token**
+3. Copy the token
+
+**Configure:**
+
+```bash
+POST /api/cloud/credentials
+{
+  "providerId": "jules",
+  "apiKey": "jules-..."
+}
+```
+
+### Verifying Credentials
+
+```bash
+# List all stored credentials (keys are masked)
+GET /api/cloud/credentials
+
+# Response:
+{
+  "credentials": [
+    {
+      "providerId": "codex-cloud",
+      "apiKey": "sk-****abcd",
+      "baseUrl": null,
+      "updatedAt": "2026-06-08T12:00:00Z"
+    }
+  ]
+}
+```
+
+To verify a credential actually works, create a test task and check it succeeds.
+
+## Plan Approval Workflows
+
+Some cloud agents (especially **Devin** and **Jules**) operate autonomously for extended periods. They may consume credits while doing so.
+
+### Setting a Plan Approval
+
+```bash
+POST /api/cloud/tasks
+{
+  "agent": "devin",
+  "prompt": "Migrate the auth module to OAuth 2.1",
+  "approvalRequired": true,
+  "maxCredits": 5.00
+}
+```
+
+When `approvalRequired: true`:
+
+1. The agent analyzes the prompt
+2. Generates a **plan** with estimated credits and time
+3. The plan is sent to the user for review (via web dashboard, email, or webhook)
+4. User approves/rejects the plan
+5. If approved, the agent executes
+
+### Approval via Webhook
+
+```bash
+POST /api/webhooks
+{
+  "url": "https://your-approval-server.com/devin",
+  "events": ["cloud.plan.ready"]
+}
+```
+
+Webhook payload:
+
+```json
+{
+  "type": "cloud.plan.ready",
+  "taskId": "task-abc123",
+  "agent": "devin",
+  "plan": "Migrate auth to OAuth 2.1...\n\nFiles to modify: 3\nEstimated time: 30min\nEstimated credits: $3.50",
+  "estimatedCost": 3.50,
+  "maxCost": 5.00,
+  "approvalUrl": "http://localhost:20128/dashboard/cloud-tasks/task-abc123",
+  "expiresAt": "2026-06-08T18:00:00Z"
+}
+```
+
+The user clicks the approval URL (or POSTs to `/api/cloud/tasks/{id}/approve`) to proceed.
+
+### Credit Limits
+
+```bash
+# Set per-task credit limit
+POST /api/cloud/tasks
+{ "agent": "devin", "prompt": "...", "maxCredits": 10.00 }
+
+# Set per-day credit limit (per API key)
+PATCH /api/keys/{keyId}
+{ "dailyCloudLimit": 50.00 }
+```
+
+The agent stops when it hits the limit.
+
+## Cost Tracking
+
+Cloud agent usage is tracked separately from API usage:
+
+```bash
+# Per-agent cost
+GET /api/usage?provider=codex-cloud&range=30d
+GET /api/usage?provider=devin&range=30d
+GET /api/usage?provider=jules&range=30d
+```
+
+The cost includes:
+- **Compute credits** consumed by the agent
+- **API costs** for underlying LLM calls
+- **Storage** for files created during the task
+
+Cost forecasts:
+
+```bash
+GET /api/analytics/cost/forecast?provider=devin
+```
+
+Returns projected next-30-day cost based on historical patterns.
+
+### Setting Budget Alerts
+
+```bash
+# Alert at 80% of budget
+POST /api/webhooks
+{
+  "events": ["cloud.budget.warning"],
+  "url": "https://your-server/budget-alert"
+}
+```
+
+Triggers when cumulative cloud spend for the current month exceeds 80% of `cloudBudget`.
+
+## Common Workflows
+
+### Workflow 1: Code Refactoring
+
+```bash
+# Create a refactoring task
+POST /api/cloud/tasks
+{
+  "agent": "codex-cloud",
+  "prompt": "Refactor src/auth.ts to use async/await instead of promises.then()",
+  "approvalRequired": true,
+  "context": {
+    "files": ["src/auth.ts"],
+    "tests": ["src/auth.test.ts"]
+  }
+}
+
+# Poll for status
+GET /api/cloud/tasks/{taskId}
+# Status: "planning" -> "awaiting_approval" -> "approved" -> "running" -> "completed"
+
+# Download the PR
+GET /api/cloud/tasks/{taskId}/artifacts
+```
+
+### Workflow 2: Bug Investigation
+
+```bash
+POST /api/cloud/tasks
+{
+  "agent": "devin",
+  "prompt": "Investigate why requests to /api/users are returning 500 in production",
+  "approvalRequired": true,
+  "maxCredits": 3.00,
+  "context": {
+    "logs": "https://your-log-server/recent",
+    "reproSteps": "1. Login as user 2. Visit /api/users 3. See 500"
+  }
+}
+```
+
+### Workflow 3: Multi-File Feature Implementation
+
+```bash
+POST /api/cloud/tasks
+{
+  "agent": "jules",
+  "prompt": "Add OAuth 2.1 support to the auth module. Include tests.",
+  "approvalRequired": true,
+  "maxCredits": 15.00,
+  "context": {
+    "spec": "https://your-spec-server/oauth-2.1.md",
+    "files": ["src/auth/", "src/middleware/"]
+  }
+}
+```
+
+## Best Practices
+
+1. **Always use `approvalRequired: true`** for non-trivial tasks
+2. **Set `maxCredits`** to prevent runaway costs
+3. **Use webhooks** for plan approvals (don't poll)
+4. **Review plans** before approving — agents can misunderstand prompts
+5. **Tag tasks** with metadata for cost tracking
+6. **Test agents** on small tasks before giving them large codebases
+7. **Keep task prompts focused** — multi-task prompts often fail
+
+## Troubleshooting
+
+### "Agent not available"
+
+```bash
+GET /api/cloud/agents
+# Check status field
+```
+
+| Status | Cause | Action |
+|--------|-------|--------|
+| `not_installed` | CLI not installed | Install (for ACP-based agents) |
+| `no_credentials` | No API key stored | Add credentials |
+| `invalid_credentials` | API key rejected | Re-authenticate |
+| `quota_exhausted` | Subscription/hard limit hit | Wait for reset |
+| `disabled` | Agent disabled in settings | Enable |
+
+### "Task stuck in planning"
+
+The agent is taking too long to generate a plan. Possible causes:
+- Prompt is too vague
+- Context is too large
+- Service is degraded
+
+Mitigation:
+- Cancel the task and re-submit with clearer prompt
+- Add `timeout: 300` (5 min) to limit planning time
+
+### "Task failed with insufficient_credits"
+
+The task exceeded `maxCredits`. To continue:
+1. Increase `maxCredits` and re-submit
+2. Split the task into smaller pieces
+3. Use a different agent (e.g., swap Devin for Codex)
+
+### "Plan rejected but I want to override"
+
+You can override the plan with custom instructions:
+
+```bash
+POST /api/cloud/tasks/{taskId}/approve
+{
+  "approve": true,
+  "modifications": "Skip step 3, do it manually later"
+}
+```
+
 ## See Also
 
 - [A2A-SERVER.md](./A2A-SERVER.md)
 - [API_REFERENCE.md](../reference/API_REFERENCE.md)
 - [SKILLS.md](./SKILLS.md)
 - [MEMORY.md](./MEMORY.md)
+- [INTERNAL_API_ROUTES.md](../reference/INTERNAL_API_ROUTES.md) — full cloud agent API
 - Source: `src/lib/cloudAgent/`
 - Routes: `src/app/api/v1/agents/tasks/`, `src/app/api/cloud/`
 - Dashboard: `src/app/(dashboard)/dashboard/cloud-agents/page.tsx`

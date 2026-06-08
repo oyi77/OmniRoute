@@ -985,3 +985,91 @@ is developer tooling only.
 | `OMNIROUTE_URL`     | `http://localhost:20128`  | `scripts/ad-hoc/regen-opencode-config.ts` | Base URL of the OmniRoute instance to query for `/v1/models`.                                                          |
 | `OMNIROUTE_KEY`     | _(unset)_                 | `scripts/ad-hoc/regen-opencode-config.ts` | API key to authenticate against the OmniRoute `/v1/models` endpoint. Falls back to `OPENCODE_API_KEY` when unset.        |
 | `OPENCODE_API_KEY`  | _(unset)_                 | `scripts/ad-hoc/regen-opencode-config.ts` | OpenCode-style API key (`sk-...`) written into the regenerated `opencode.json`. Falls back to `OMNIROUTE_KEY` when unset. |
+
+## Recent Additions (v3.8.16+)
+
+The following variables were added in v3.8.16 (alongside the new plugin, memory, and operational features):
+
+### Plugin System
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `PLUGIN_DEV_MODE` | `false` | `src/lib/plugins/devMode.ts` | Enable hot-reload watch mode for plugin development |
+| `OMNIROUTE_PLUGIN_PATH` | _(unset)_ | `bin/cli/plugins.mjs` | Custom directory to discover CLI plugins |
+
+### Memory System
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `MEMORY_RRF_K` | `60` | `src/lib/memory/vectorStore.ts` | Reciprocal Rank Fusion k constant (higher = flatter ranking) |
+| `MEMORY_VEC_TOP_K` | `20` | `src/lib/memory/vectorStore.ts` | Default top-K for vector search |
+| `MEMORY_SUMMARIZE_THRESHOLD` | `1000` | `src/lib/memory/summarization.ts` | Trigger summarization above this many memories per key |
+| `MEMORY_SUMMARIZE_AGE_DAYS` | `90` | `src/lib/memory/summarization.ts` | Auto-summarize memories older than N days |
+| `MEMORY_KEEP_RECENT` | `50` | `src/lib/memory/summarization.ts` | Always preserve the N most recent memories verbatim |
+
+### Proxy Health
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `PROXY_FAST_FAIL_TIMEOUT_MS` | `2000` | `src/lib/proxyHealth.ts` | TCP timeout for proxy health check |
+| `PROXY_HEALTH_CACHE_TTL_MS` | `30000` | `src/lib/proxyHealth.ts` | How long to cache proxy health result |
+
+### Database Backups
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `DB_BACKUP_MAX_FILES` | `20` | `src/lib/db/backup.ts` | Max number of auto-backup files to retain |
+| `DB_BACKUP_RETENTION_DAYS` | `0` (disabled) | `src/lib/db/backup.ts` | Delete backups older than N days; 0 = no time-based retention |
+
+### ACP (Agent Client Protocol)
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `ACP_MAX_CONCURRENT_SESSIONS` | `5` | `src/lib/acp/manager.ts` | Max concurrent ACP subprocess sessions |
+| `ACP_SESSION_TIMEOUT` | `300` | `src/lib/acp/manager.ts` | Per-session idle timeout (seconds) |
+| `ACP_HEALTH_CHECK_INTERVAL` | `60` | `src/lib/acp/manager.ts` | Health check interval (seconds) |
+| `ACP_KEEP_ALIVE_SECONDS` | `300` | `src/lib/acp/manager.ts` | How long to keep child processes alive (seconds) |
+| `ACP_MAX_OUTPUT_BYTES` | `10485760` | `src/lib/acp/manager.ts` | Max output bytes per session (10MB default) |
+
+### Token Health
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `TOKEN_HEALTH_CHECK_INTERVAL_MS` | `21600000` | `src/lib/tokenHealthCheck.ts` | OAuth token check interval (6h default) |
+| `TOKEN_PREEMPTIVE_REFRESH_MINUTES` | `30` | `src/lib/tokenHealthCheck.ts` | Pre-emptive refresh window |
+| `TOKEN_MAX_FAILURES` | `3` | `src/lib/tokenHealthCheck.ts` | Alert after N consecutive failures |
+
+### Usage Tracking
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `USAGE_RETENTION_DAYS` | `90` | `src/lib/db/cleanup.ts` | Auto-delete usage records older than N days |
+| `MEMORY_MAX_EXTRACTIONS_PER_MESSAGE` | `10` | `src/lib/memory/extraction.ts` | Max memories extracted per message |
+| `MEMORY_EXTRACTION_MIN_CONFIDENCE` | `0.5` | `src/lib/memory/extraction.ts` | Min pattern confidence for extraction |
+
+### Compression
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `RTK_INTENSITY` | `standard` | `open-sse/services/compression/engines/rtk/index.ts` | Default RTK intensity: `minimal` / `standard` / `aggressive` |
+| `RTK_RAW_OUTPUT_ENABLED` | `false` | `open-sse/services/compression/engines/rtk/rawOutput.ts` | Persist raw output for recovery |
+| `RTK_RAW_OUTPUT_MAX_BYTES` | `1048576` | `open-sse/services/compression/engines/rtk/rawOutput.ts` | Max bytes per raw output (1MB) |
+
+### Embedding Cache
+
+| Variable | Default | Source | Purpose |
+|----------|---------|--------|---------|
+| `MEMORY_EMBEDDING_CACHE_SIZE` | `10000` | `src/lib/memory/embedding/cache.ts` | LRU cache size for embeddings |
+| `MEMORY_EMBEDDING_CACHE_TTL_MS` | `3600000` | `src/lib/memory/embedding/cache.ts` | Cache TTL (1h default) |
+| `MEMORY_VEC_TOP_K` | `20` | (see above) | Vector search top-K |
+
+### Validation
+
+Run `npm run check:env-doc-sync` to validate that all environment variables referenced in code are documented here. This script auto-detects missing entries and reports them as errors.
+
+### See Also
+
+- [API_REFERENCE.md](./API_REFERENCE.md)
+- [DATABASE_GUIDE.md](../ops/DATABASE_GUIDE.md)
+- [MONITORING_GUIDE.md](../ops/MONITORING_GUIDE.md)
+- [ACP_INTEGRATION.md](../frameworks/ACP_INTEGRATION.md)
