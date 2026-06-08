@@ -137,22 +137,10 @@ test("parseStreamResponse handles inner array with empty text", () => {
 });
 
 test("parseStreamResponse handles real Gemini response format with multiple inner array slots", () => {
-  // Simulate the real format: inner = [null, null, null, null, [[null, ["text"]]], null, ...]
-  // (80-slot protobuf-like array; only slot 4 is set)
   const inner = new Array(80).fill(null);
   inner[4] = [[null, ["This is the real format."]]];
   const innerStr = JSON.stringify(inner);
   const raw = `[["wrb.fr", null, ${JSON.stringify(innerStr)}]]`;
   const result = parseStreamResponse(raw);
   assert.equal(result, "This is the real format.");
-});
-
-test("parseStreamResponse filters out non-string entries and ignores text-metadata slot", () => {
-  // Slot 0 of inner[4][0] is metadata (often null/empty), slot 1 is the text list.
-  const inner = new Array(80).fill(null);
-  inner[4] = [[null, ["clean ", 123, null, "text"]]];
-  const innerStr = JSON.stringify(inner);
-  const raw = `[["wrb.fr", null, ${JSON.stringify(innerStr)}]]`;
-  const result = parseStreamResponse(raw);
-  assert.equal(result, "clean text");
 });

@@ -27,9 +27,11 @@
  * Reference: https://github.com/Sophomoresty/gemini-web2api (gemini_web2api.py)
  * Reference: https://github.com/yukkcat/gemini-business2api
  */
-import { randomUUID } from "node:crypto";
-import { BaseExecutor, type ExecuteInput } from "./base.ts";
+import { createHash, randomUUID } from "node:crypto";
+import { BaseExecutor, mergeAbortSignals, type ExecuteInput } from "./base.ts";
 import { makeExecutorErrorResult as makeErrorResult } from "../utils/error.ts";
+
+const GEMINI_BUSINESS_FETCH_TIMEOUT_MS = 60_000;
 
 const GEMINI_BUSINESS_USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
@@ -75,15 +77,17 @@ export class GeminiBusinessExecutor extends BaseExecutor {
     const { model, body, stream: wantStream, credentials, signal } = input;
     const requestBody = body as Record<string, unknown>;
 
-    // Extract cookies from credentials (apiKey, cookie, or providerSpecificData)
-    const cookie =
-      readCredentialString(credentials?.apiKey) ||
-      readCredentialString(credentials?.cookie) ||
-      readProviderSpecificString(credentials?.providerSpecificData, [
-        "cookie",
-        "__Secure-1PSID",
-        "__Secure-1PSIDTS",
-      ]);
+    // Extract cookies from credentials — check apiKey/cookie first, then
+    // try each __Secure-1PSID* key in providerSpecificData individually.
+    // A user with only __Secure-1PSID (no PSIDTS) is still valid.
+    const directCookie =
+      readCredentialString(credentials?.apiKey) || readCredentialString(credentials?.cookie);
+    const psid =
+      readProviderSpecificString(credentials?.providerSpecificData, ["__Secure-1PSID", "cookie"]);
+    const psidts = readProviderSpecificString(credentials?.providerSpecificData, [
+      "__Secure-1PSIDTS",
+    ]);
+    const cookie = directCookie || [psid, psidts].filter(Boolean).join("; ");
 
     if (!cookie) {
       return makeErrorResult(
@@ -144,11 +148,17 @@ export class GeminiBusinessExecutor extends BaseExecutor {
         method: "POST",
         headers,
         body: formBody.toString(),
-        signal,
+        signal: combineAbortSignals(signal, AbortSignal.timeout(GEMINI_BUSINESS_FETCH_TIMEOUT_MS)),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "fetch failed";
-      return makeErrorResult(502, `Gemini Business network error: ${message}`, body, streamUrl);
+      const isTimeout = err instanceof Error && err.name === "TimeoutError";
+      return makeErrorResult(
+        isTimeout ? 504 : 502,
+        `Gemini Business ${isTimeout ? "request timed out" : "network error"}: ${message}`,
+        body,
+        streamUrl
+      );
     }
 
     if (!response.ok) {
@@ -395,13 +405,27 @@ function extractCookieValue(cookie: string, name: string): string | null {
  *   entryUrl = "https://business.gemini.google/home/cid/8888a888-b6e0-..."
  *   baseOrigin = "https://business.gemini.google"
  *   pathPrefix = "/home/cid/8888a888-b6e0-..."
+ *
+ * Also accepts protocol-less URLs like "business.gemini.google/home/cid/...",
+ * which users commonly paste from the browser address bar.
  */
 function parseEntryUrl(entryUrl: string): { baseOrigin: string; pathPrefix: string } {
+  const fallback = { baseOrigin: "https://business.gemini.google", pathPrefix: "/home" };
+  const trimmed = entryUrl.trim();
+  if (!trimmed) return fallback;
+
+  // Prepend https:// if the user pasted a protocol-less URL
+  const normalized = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
   try {
-    const u = new URL(entryUrl);
-    return { baseOrigin: `${u.protocol}//${u.host}`, pathPrefix: u.pathname.replace(/\/$/, "") };
+    const u = new URL(normalized);
+    if (!u.host) return fallback;
+    return {
+      baseOrigin: `${u.protocol}//${u.host}`,
+      pathPrefix: u.pathname.replace(/\/$/, "") || "/",
+    };
   } catch {
-    return { baseOrigin: "https://business.gemini.google", pathPrefix: "/home" };
+    return fallback;
   }
 }
 
@@ -413,9 +437,6 @@ function parseEntryUrl(entryUrl: string): { baseOrigin: string; pathPrefix: stri
  */
 function computeSapisidHash(sapisid: string, origin: string): string {
   const epoch = Math.floor(Date.now() / 1000);
-  // Dynamic import to avoid loading node:crypto unless needed
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createHash } = require("node:crypto") as typeof import("node:crypto");
   const hashInput = `${epoch} ${sapisid} ${origin}`;
   const hash = createHash("sha1").update(hashInput).digest("hex");
   return `SAPISIDHASH ${epoch}_${hash}`;
