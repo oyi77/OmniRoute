@@ -174,7 +174,7 @@ To gain isolation, delete the old connection from Dashboard → Providers and re
 via any of the three import flows.
 
 For full details and step-by-step instructions for adding two Kiro accounts side by side,
-see [`docs/guides/KIRO_SETUP.md`](./KIRO_SETUP.md).
+see [`docs/guides/KIRO_SETUP.md`](../guides/KIRO_SETUP.md).
 
 ---
 

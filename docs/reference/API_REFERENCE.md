@@ -1287,7 +1287,7 @@ Manage OmniRoute plugins (third-party extensions).
 
 **Auth:** Requires management session.
 
-See [Plugins Framework](../frameworks/PLUGINS.md) for full details.
+See [Plugins Framework](../plugins/PLUGIN_SDK.md) for full details.
 
 ---
 
