@@ -180,6 +180,6 @@ async function syncToCloudIfEnabled() {
     const machineId = await getConsistentMachineId();
     await syncToCloud(machineId);
   } catch (error) {
-    console.log("Error syncing providers to cloud:", error);
+    // cloud sync is best-effort — ignore errors
   }
 }
