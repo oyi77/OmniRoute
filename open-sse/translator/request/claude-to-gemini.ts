@@ -109,7 +109,6 @@ export function claudeToGeminiRequest(model, body, stream, credentials = null) {
 
             case "tool_use":
               parts.push({
-                thoughtSignature: "skip_thought_signature_validator",
                 functionCall: {
                   ...(stripFunctionCallId ? {} : { id: block.id }),
                   name: sanitizeToolName(block.name),
