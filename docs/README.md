@@ -26,6 +26,15 @@ How the system is put together — read these to understand the runtime, code la
 
 Task-focused walkthroughs for operators and end users.
 
+### User-Friendly Guides (New!)
+
+- [QUICK-START.md](guides/QUICK-START.md) — install and run OmniRoute in 3 minutes.
+- [AUTO-COMBO-GUIDE.md](guides/AUTO-COMBO-GUIDE.md) — let OmniRoute pick the best AI for you.
+- [PROVIDERS-GUIDE.md](guides/PROVIDERS-GUIDE.md) — how to connect AI providers.
+- [FREE-TIERS-GUIDE.md](guides/FREE-TIERS-GUIDE.md) — get free AI with no credit card.
+
+### Technical Guides
+
 - [SETUP_GUIDE.md](guides/SETUP_GUIDE.md) — first-time setup of OmniRoute.
 - [USER_GUIDE.md](guides/USER_GUIDE.md) — daily usage of the dashboard and API.
 - [DOCKER_GUIDE.md](guides/DOCKER_GUIDE.md) — running OmniRoute under Docker.
