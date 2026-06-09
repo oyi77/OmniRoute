@@ -125,7 +125,7 @@ export function startDevMode(pluginDir: string, reloadFn: ReloadFn): void {
   
   watcher = watch(pluginDir, { recursive: true }, (_eventType, filename) => {
     if (!filename) return;
-    const pluginName = filename.split("/")[0];
+    const pluginName = filename.replace(/\\/g, "/").split("/")[0];
     if (!pluginName || pluginName.startsWith(".")) return;
     
     // Debounce rapid changes
@@ -489,7 +489,7 @@ Request **only the permissions you need**:
 ```json
 {
   "requires": {
-    "permissions": ["network"]  // only if you call external APIs
+    "permissions": ["network"]
   }
 }
 ```
