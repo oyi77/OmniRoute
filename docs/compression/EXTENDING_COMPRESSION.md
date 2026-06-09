@@ -28,31 +28,29 @@ The compression system has **3 extension points**:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Compression Pipeline                      │
+│                    Compression Strategy                      │
 │                                                              │
-│   Input messages ──▶ strategySelector ──▶ engines[]         │
-│                                              │              │
-│                                              ▼              │
-│                                      ┌──────────────┐       │
-│                                      │   engine 1   │       │
-│                                      └──────┬───────┘       │
-│                                             ▼              │
-│                                      ┌──────────────┐       │
-│                                      │   engine 2   │       │
-│                                      └──────┬───────┘       │
-│                                             ▼              │
-│                                      ┌──────────────┐       │
-│                                      │   engine N   │       │
-│                                      └──────┬───────┘       │
-│                                             ▼              │
-│                                     Compressed output      │
+│   Input messages ──▶ getEffectiveMode() ──▶ mode            │
+│                                              │               │
+│                      ┌───────────────────────┼──────────┐    │
+│                      │         │         │         │    │    │
+│                      ▼         ▼         ▼         ▼    │    │
+│                   "rtk"    "lite"   "standard" "stacked"    │
+│                      │         │         │         │    │    │
+│                      ▼         ▼         ▼         ▼    │    │
+│                   RTK       Lite     Caveman   engines[]   │
+│                   engine    engine   engine    chained     │
+│                      │         │         │         │    │    │
+│                      └─────────┴─────────┴─────────┘    │    │
+│                                      │                    │
+│                                      ▼                    │
+│                             Compressed output              │
 └─────────────────────────────────────────────────────────────┘
 
-You can extend at:   ▲               ▲                  ▲
-                     │               │                  │
-              strategySelector   engine slot 1      engine slot N
-              (compose)         (add custom)      (add custom)
-                                OR language pack  (any language)
+The strategy selector is MODE-BASED: each request selects ONE mode
+(rtk / lite / standard / aggressive / ultra / stacked / off).
+Only mode "stacked" chains multiple engines in sequence.
+Default auto-trigger mode is "lite" (not a 3-tier priority chain).
 ```
 
 ---
@@ -116,25 +114,34 @@ const whitespaceEngine: CompressionEngine = {
     let originalLength = 0;
     let compressedLength = 0;
 
-    // Traverse message array and process text blocks directly
+    // Traverse message array — handle both string and multipart content
     const compressedBody = (body.messages || []).map((msg) => {
-      let msgText = msg.content || "";
-      originalLength += msgText.length;
-
-      // Apply whitespace compression to text only (not JSON-stringified)
-      let compressed = msgText
-        .replace(/[ \t]+/g, " ")      // collapse runs of spaces/tabs
-        .replace(/\n{3,}/g, "\n\n")   // collapse 3+ consecutive newlines to 2
-        .replace(/^\s+|\s+$/gm, "");  // trim each line
-
-      compressedLength += compressed.length;
-
-      return {
-        ...msg,
-        content: config.preserveCodeBlocks
-          ? this.preserveCodeBlocks(compressed)
-          : compressed,
-      };
+      if (typeof msg.content === "string") {
+        originalLength += msg.content.length;
+        let compressed = msg.content
+          .replace(/[ \t]+/g, " ")
+          .replace(/\n{3,}/g, "\n\n")
+          .replace(/^\s+|\s+$/gm, "");
+        compressedLength += compressed.length;
+        return { ...msg, content: compressed };
+      }
+      // Multipart content: traverse parts, compress text parts only
+      if (Array.isArray(msg.content)) {
+        const newParts = msg.content.map((part) => {
+          if (part.type === "text" && typeof part.text === "string") {
+            originalLength += part.text.length;
+            let compressed = part.text
+              .replace(/[ \t]+/g, " ")
+              .replace(/\n{3,}/g, "\n\n")
+              .replace(/^\s+|\s+$/gm, "");
+            compressedLength += compressed.length;
+            return { ...part, text: compressed };
+          }
+          return part; // preserve image_url, tool_use, etc.
+        });
+        return { ...msg, content: newParts };
+      }
+      return msg;
     });
 
     return {
@@ -142,7 +149,7 @@ const whitespaceEngine: CompressionEngine = {
       stats: {
         originalTokens: Math.ceil(originalLength / 4),
         compressedTokens: Math.ceil(compressedLength / 4),
-        savingsPercent: 100 * (1 - compressedLength / originalLength),
+        savingsPercent: originalLength > 0 ? 100 * (1 - compressedLength / originalLength) : 0,
         techniques: ["whitespace-collapse"],
         engineId: "whitespace",
       },

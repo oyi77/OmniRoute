@@ -333,12 +333,14 @@ rtkEngine.updateConfig({ intensity: "aggressive" });
 ```
 
 ### Verifying the Effect
-
 Use the **Verify Gate** (see below) to confirm your filter is safe at your chosen intensity:
+```ts
+import { runRtkFilterTests } from "omniroute/compression/engines/rtk/verify";
 
-```bash
-# Will fail if your filters cut important context
-npm run check:rtk -- --intensity=aggressive
+const result = runRtkFilterTests({ intensity: "aggressive" });
+if (!result.passed) {
+  console.error("Filters failed at aggressive intensity");
+}
 ```
 
 ---
@@ -349,53 +351,51 @@ The `engines/rtk/filters/` directory contains **49+ built-in filter JSON files**
 
 ### Filter Schema (Zod)
 
-From `open-sse/services/compression/engines/rtk/filterSchema.ts`:
-
 ```ts
 {
-  "id": "string",                      // Filter identifier (kebab-case, e.g., "python-traceback")
-  "label": "string",                   // Human-readable filter name
-  "description": "string",             // Short description of what filter does
+  "id": "string",                      // Required. Filter identifier (kebab-case, e.g., "python-traceback")
+  "label": "string",                   // Required. Human-readable filter name
+  "description": "string",             // Optional (default: ""). Short description of what filter does
   "category": "git|test|build|shell|docker|package|infra|cloud|generic",
-  "priority": number,                  // Execution order (higher = first)
+  "priority": number,                  // Optional (0-100, default: 50). Execution order (higher = first)
   "match": {
     "commands": ["string"],            // Command names to match (e.g., "python", "pytest")
     "patterns": ["string"],            // Regex patterns to match output
     "outputTypes": ["string"]          // Detected output classes (e.g., "test-failure")
   },
   "rules": {
-    "stripAnsi": boolean,              // Strip ANSI color codes
-    "replace": [                       // Find-and-replace rules
+    "stripAnsi": boolean,              // Optional (default: false). Strip ANSI color codes
+    "replace": [                       // Find-and-replace rules (default: [])
       { "pattern": "regex", "replacement": "..." }
     ],
-    "matchOutput": [                   // Short-circuit on pattern match
+    "matchOutput": [                   // Short-circuit on pattern match (default: [])
       {
         "pattern": "regex",
         "message": "short summary",
         "unless": "regex"              // Skip if this pattern matches
       }
     ],
-    "includePatterns": ["string"],     // Lines to keep (regex patterns)
-    "dropPatterns": ["string"],        // Lines to drop (regex patterns)
-    "collapsePatterns": ["string"],    // Lines to collapse to single occurrence
-    "deduplicate": boolean,            // Remove duplicate lines
-    "truncateLineAt": number,          // Truncate lines to max chars
-    "maxLines": number,                // Hard cap on total lines
-    "headLines": number,               // Keep first N lines of matched output
-    "tailLines": number,               // Keep last N lines of matched output
-    "onEmpty": "string",               // Fallback message if all lines filtered
-    "filterStderr": boolean            // Also filter stderr output
+    "includePatterns": ["string"],     // Lines to keep (regex patterns, default: [])
+    "dropPatterns": ["string"],        // Lines to drop (regex patterns, default: [])
+    "collapsePatterns": ["string"],    // Lines to collapse to single occurrence (default: [])
+    "deduplicate": boolean,            // Optional (default: false). Remove duplicate lines
+    "truncateLineAt": number,          // Optional (default: 0). Truncate lines to max chars
+    "maxLines": number,                // Optional (default: 0). Hard cap on total lines
+    "headLines": number,               // Optional (default: 20). Keep first N lines of matched output
+    "tailLines": number,               // Optional (default: 20). Keep last N lines of matched output
+    "onEmpty": "string",               // Optional (default: ""). Fallback message if all lines filtered
+    "filterStderr": boolean            // Optional (default: false). Also filter stderr output
   },
   "preserve": {
-    "errorPatterns": ["string"],       // Patterns that must always be preserved
-    "summaryPatterns": ["string"]      // Patterns for final summary line
+    "errorPatterns": ["string"],       // Patterns that must always be preserved (default: [])
+    "summaryPatterns": ["string"]      // Patterns for final summary line (default: [])
   },
-  "inlineTests": [                     // Inline tests for verification
+  "tests": [                           // Inline tests for verification (default: [])
     {
-      "name": "string",
-      "input": "sample output",
-      "expected": "expected compressed output",
-      "command": "optional command context"
+      "name": "string",               // Required. Test name
+      "input": "sample output",        // Required. Sample input text
+      "expected": "expected output",   // Required. Expected compressed output
+      "command": "optional command"    // Optional. Command context
     }
   ]
 }
@@ -442,8 +442,7 @@ From `open-sse/services/compression/engines/rtk/filterSchema.ts`:
       "^[A-Z][a-zA-Z]+(?:Error|Exception):"
     ]
   },
-  "inlineTests": [
-    {
+  "tests": [
       "name": "preserves-error-type-and-location",
       "input": "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n    do_thing()\n  File \"lib/utils.py\", line 17, in helper\n    return 1 / 0\nZeroDivisionError: division by zero",
       "expected": "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n  File \"lib/utils.py\", line 17, in helper\nZeroDivisionError: division by zero",
