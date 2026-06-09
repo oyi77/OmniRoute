@@ -53,17 +53,17 @@ Every plugin goes through a **5-stage lifecycle** managed by `PluginManager` (`s
 
 ### Built-in Events
 
-Plugins can register handlers for the following built-in events that cover the full request lifecycle, routing, rate limiting, and error handling. See [PLUGIN_SDK.md](./PLUGIN_SDK.md#built-in-events) for the complete list of events and their payloads.
+Plugins can register handlers for the following built-in events via `definePlugin()`. See [PLUGIN_SDK.md](./PLUGIN_SDK.md#built-in-events) for the complete list of events and their payloads.
 
-The core request-handling events are:
+The only events currently available to plugin developers are the three request-handling hooks on the `Plugin` interface (`src/lib/plugins/hooks.ts:249`):
 
 ```ts
 import { definePlugin } from "omniroute/plugins/sdk";
 
 export default definePlugin({
   name: "my-plugin",
-  
-  // Core request-handling events (always available)
+
+  // Core request-handling events (available now)
   onRequest: async (ctx) => {
     console.log(`Request: ${ctx.requestId}`);
   },
@@ -76,47 +76,29 @@ export default definePlugin({
   onError: async (ctx, error) => {
     console.error(`Error: ${error.message}`);
   },
-
-  // Optional routing events
-  onModelSelect: async (ctx) => { /* ... */ },
-  onComboResolve: async (ctx) => { /* ... */ },
-  onRateLimit: async (ctx) => { /* ... */ },
-  onQuotaExhaust: async (ctx) => { /* ... */ },
-  onProviderError: async (ctx) => { /* ... */ },
-
-  // Stream events
-  onStreamStart: async (ctx) => { /* ... */ },
-  onStreamEnd: async (ctx) => { /* ... */ },
 });
 ```
 
-For the complete list of built-in events and their signatures, refer to `src/lib/plugins/hooks.ts` (BUILTIN_EVENTS constant).
-
-> **Note:** The `BUILTIN_EVENTS` list also includes **lifecycle events** (`onInstall`, `onActivate`, `onDeactivate`, `onUninstall`). These are fired internally by `PluginManager` during state transitions and are declared in the manifest's `hooks` field — they are not registerable via `definePlugin()`.
-
+> **Note:** `BUILTIN_EVENTS` (`src/lib/plugins/hooks.ts:35`) also lists routing events (`onModelSelect`, `onComboResolve`, etc.), stream events (`onStreamStart`, `onStreamEnd`), and lifecycle events (`onInstall`, `onActivate`, `onDeactivate`, `onUninstall`). None of these are currently exposed on the `Plugin` interface or `definePlugin()`. Plugin developers should use `onRequest`/`onResponse`/`onError` for now. See the [Built-in Events](./PLUGIN_SDK.md#built-in-events) section in the SDK reference for details on which events are available vs. planned.
 ---
 
-## Dev Mode: Hot Reload on File Changes
+## Dev Mode: Hot Reload on File Changes (Not Yet Wired)
 
-**`src/lib/plugins/devMode.ts`** watches the plugin directory for file changes and automatically reloads affected plugins. This is the fastest way to iterate on a plugin during development.
+> **⚠️ Not yet wired up.** `src/lib/plugins/devMode.ts` exports `startDevMode()` and `stopDevMode()`, but no caller invokes them. The environment variables `PLUGIN_DEV_MODE` and `OMNIROUTE_PLUGIN_DEV` are not read anywhere — `PLUGIN_DEV_MODE` is only used as a logger name (`src/lib/plugins/devMode.ts:12`). Dev mode is planned but not currently functional.
 
-### Starting Dev Mode
+**`src/lib/plugins/devMode.ts`** is designed to watch the plugin directory for file changes and automatically reload affected plugins. Once wired up, it will be the fastest way to iterate on a plugin during development.
 
-```bash
-# In the OmniRoute server, set the dev mode flag in your config
-PLUGIN_DEV_MODE=true
+### Planned Behavior
 
-# Or via environment variable
-OMNIROUTE_PLUGIN_DEV=1 omniroute
-```
+When implemented, dev mode would work as follows:
 
-When enabled, the server:
-1. Watches `~/.omniroute/plugins/*` recursively
-2. On any file change inside a plugin directory, waits 500ms (debounce)
-3. Calls `deactivate(pluginName)` then `activate(pluginName)` to reload
-4. Logs the result to the `PLUGIN_DEV_MODE` logger
+1. A caller (e.g. server startup or CLI command) invokes `startDevMode(pluginDir, reloadFn)`
+2. The watcher monitors `~/.omniroute/plugins/*` recursively
+3. On any file change inside a plugin directory, it waits 500ms (debounce)
+4. It calls `reloadFn(pluginName)` — typically `deactivate(pluginName)` then `activate(pluginName)`
+5. Results are logged to the `PLUGIN_DEV_MODE` logger
 
-### How It Works
+### How It Works (source code)
 
 ```ts
 // src/lib/plugins/devMode.ts
@@ -127,6 +109,7 @@ export function startDevMode(pluginDir: string, reloadFn: ReloadFn): void {
   
   watcher = watch(pluginDir, { recursive: true }, (_eventType, filename) => {
     if (!filename) return;
+    // Cross-platform: normalize backslashes before splitting
     const pluginName = filename.replace(/\\/g, "/").split("/")[0];
     if (!pluginName || pluginName.startsWith(".")) return;
     
@@ -139,18 +122,14 @@ export function startDevMode(pluginDir: string, reloadFn: ReloadFn): void {
 }
 ```
 
-### Dev Mode Tips
+### What Needs to Happen for Dev Mode to Work
 
-- **Edit `plugin.json`**: changes are picked up on the next reload cycle. The manifest is re-validated each time.
-- **Edit `index.js`**: same — the plugin is unloaded and re-loaded.
-- **Multiple rapid saves**: the 500ms debounce means OmniRoute won't thrash during a flurry of saves.
-- **Errors during reload**: the old version remains active. Check the server log (`PLUGIN_DEV_MODE` and `PLUGIN_MANAGER` loggers) for the error.
+To make dev mode functional, the following would need to be implemented:
+- A config flag or environment variable that triggers `startDevMode()` on server startup
+- Integration with `PluginManager.deactivate()` + `PluginManager.activate()` as the reload function
+- A `stopDevMode()` call on server shutdown
 
-### When NOT to Use Dev Mode
-
-- **Production**: never set `PLUGIN_DEV_MODE=true` in production. The watcher adds CPU overhead and may briefly disable plugins during reloads.
-- **Plugin uses native modules**: native bindings can't be re-initialized safely. Restart the server.
-
+Until then, plugin developers should restart the OmniRoute server manually after editing plugin files.
 ---
 
 ## Testing Plugins
@@ -529,9 +508,9 @@ You tried to use a global that requires a permission you didn't request. Add it 
 }
 ```
 
-### "Plugin reloaded but my changes don't show"
+### "My plugin changes don't take effect"
 
-Dev mode has a 500ms debounce. Wait a moment, then check the server log for `PLUGIN_DEV_MODE` events.
+Dev mode is not yet wired up (see [Dev Mode section](#dev-mode-hot-reload-on-file-changes-not-yet-wired) above). Restart the OmniRoute server manually after editing plugin files.
 
 ---
 

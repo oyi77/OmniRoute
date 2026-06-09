@@ -108,9 +108,7 @@ onRequest: (ctx) => {
   "hooks": {
     "onRequest": { "enabled": true, "priority": 50 },
     "onResponse": true,
-    "onError": false,
-    "onActivate": true,
-    "onDeactivate": true
+    "onError": false
   },
   "requires": {
     "permissions": ["network", "file-read"]
@@ -186,11 +184,22 @@ Config values are persisted in the database and accessible via the dashboard con
 
 ## Built-in Events
 
+### Available to plugin developers
+
+These are the events plugin developers can handle via `definePlugin()`. They correspond to the `onRequest`, `onResponse`, and `onError` fields on the [`Plugin` interface](./PLUGIN_DEVELOPMENT.md#built-in-events) (`src/lib/plugins/hooks.ts:249`).
+
 | Event | When | Payload |
 |---|---|---|
 | `onRequest` | Before chat handler | Request context |
 | `onResponse` | After chat handler | Response data |
 | `onError` | On handler error | Error object |
+
+### Server-internal events (not registerable by plugins)
+
+The following events are declared in `BUILTIN_EVENTS` (`src/lib/plugins/hooks.ts:35`) and are emitted by the server internally. Plugin developers **cannot** register handlers for these via `definePlugin()` — the `Plugin` interface does not expose them. They may become available in a future release.
+
+| Event | When | Payload |
+|---|---|---|
 | `onModelSelect` | Model selected for routing | Model info |
 | `onComboResolve` | Combo routing resolved | Combo targets |
 | `onRateLimit` | Rate limit hit | Limit info |
@@ -198,13 +207,19 @@ Config values are persisted in the database and accessible via the dashboard con
 | `onProviderError` | Provider returned error | Error details |
 | `onStreamStart` | SSE stream started | Stream info |
 | `onStreamEnd` | SSE stream ended | Stream stats |
+
+### Lifecycle events (planned — not yet available to plugin developers)
+
+The following lifecycle events are declared in `BUILTIN_EVENTS` and `PluginManager` (`src/lib/plugins/manager.ts`) emits them during state transitions, but the typed `Plugin` interface and `definePlugin()` do **not** expose them. Plugin developers cannot currently handle these events. Use `onRequest`/`onResponse`/`onError` for now.
+
+| Event | When | Payload |
+|---|---|---|
 | `onInstall` | Plugin installed | `{ name, version, manifest }` |
 | `onActivate` | Plugin activated | `{ name, version, manifest }` |
 | `onDeactivate` | Plugin deactivated | `{ name, version, manifest }` |
 | `onUninstall` | Plugin uninstalled | `{ name, version, manifest }` |
-> **Note:** Lifecycle events (`onInstall`, `onActivate`, `onDeactivate`, `onUninstall`) are **fired internally by PluginManager** during state transitions. They are declared in the manifest's `hooks` field (e.g. `"onInstall": true`) and cannot be registered via `definePlugin()`.
 
-## Examples
+> **Note:** The manifest schema (`plugin.json`) accepts `onInstall`, `onActivate`, `onDeactivate`, and `onUninstall` in the `hooks` field, and `PluginManager` reads these to decide whether to emit the corresponding events. However, `definePlugin()` does not pass lifecycle handlers through to the `Plugin` object, so plugin code cannot currently respond to these events.
 
 ### Request Logger
 

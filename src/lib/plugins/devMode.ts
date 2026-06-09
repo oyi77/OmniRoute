@@ -27,7 +27,7 @@ export function startDevMode(pluginDir: string, reloadFn: ReloadFn): void {
     if (!filename) return;
 
     // Extract plugin name from path (first segment)
-    const pluginName = filename.split("/")[0];
+    const pluginName = filename.replace(/\\/g, "/").split("/")[0];
     if (!pluginName || pluginName.startsWith(".")) return;
 
     // Debounce rapid changes
