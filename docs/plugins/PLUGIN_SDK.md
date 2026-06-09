@@ -41,7 +41,7 @@ Block the request and optionally return a custom response.
 
 ```ts
 onRequest: (ctx) => {
-  if (!ctx.apiKeyInfo) {
+  if (!ctx.headers["authorization"]) {
     return blockRequest({ error: "Unauthorized", status: 401 });
   }
 };
@@ -75,8 +75,9 @@ onRequest: (ctx) => {
 | `model` | `string` | Requested model name |
 | `provider` | `string` | Target provider ID |
 | `body` | `Record<string, unknown>` | Request body |
-| `apiKeyInfo` | `unknown` | API key info (if authenticated) |
+| `headers` | `Record<string, string>` | Request headers |
 | `metadata` | `Record<string, unknown>` | Mutable metadata |
+| `timestamp` | `number` | Request timestamp |
 
 ## Manifest (`plugin.json`)
 
@@ -189,7 +190,7 @@ import { definePlugin } from "omniroute/plugins/sdk";
 export default definePlugin({
   name: "request-logger",
   onRequest: async (ctx) => {
-    console.log(`[${new Date().toISOString()}] ${ctx.model} -> ${ctx.provider || "unknown"}`);
+    console.log(`[${new Date().toISOString()}] ${ctx.method} ${ctx.model} -> ${ctx.provider}`);
   },
 });
 ```
@@ -205,7 +206,7 @@ export default definePlugin({
   name: "rate-limiter",
   priority: 10,
   onRequest: async (ctx) => {
-    const key = ctx.requestId || "anonymous";
+    const key = ctx.headers["x-api-key"] || "anonymous";
     const now = Date.now();
     const window = 60000; // 1 minute
     const maxRequests = 100;
