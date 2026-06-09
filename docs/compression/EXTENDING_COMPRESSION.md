@@ -213,22 +213,8 @@ export default definePlugin({
 
 ### Testing Your Engine
 
-The engine registry provides a verification function:
-
-```ts
-import { verifyEngine } from "omniroute/compression/engines/registry";
-
-const result = verifyEngine("whitespace");
-if (!result.valid) {
-  console.error("Engine failed verification:", result.errors);
-}
-```
-
-Or via the CLI:
-
-```bash
-omniroute compression verify my-engine
-```
+Register your engine in a plugin or startup function. Once registered, the engine will be available
+in the strategy selector via its `id`. Test integration by composing it in a stacked pipeline:
 
 ---
 
@@ -386,15 +372,38 @@ Input (10,000 tokens)
 Final output (1,200 tokens, ~88% savings combined)
 ```
 
-The engines are sorted by **`stackPriority`** (lower runs first). The output of engine N becomes the input of engine N+1.
+When `mode: "stacked"` is selected, engines execute sequentially in the order specified in the `pipeline` array.
+The output of engine N becomes the input of engine N+1.
+
+### Compression Modes
+
+OmniRoute selects **ONE mode per request** based on configuration, auto-trigger thresholds, and combo overrides.
+The available modes are defined in `open-sse/services/compression/types.ts` (type `CompressionMode`):
+
+| Mode | Engines | Use case |
+|------|---------|----------|
+| `off` | None | Disable all compression |
+| `rtk` | RTK only | Command-output heavy sessions (80%+ savings) |
+| `lite` | Lite only | Conservative compression (fast, safe) |
+| `standard` | Caveman | Prose compression with language packs |
+| `aggressive` | Caveman + Aggressive | Aggressive prose + aggressive final pass |
+| `ultra` | Ultra | Maximum compression (lossy, last resort) |
+| `stacked` | Custom pipeline | Compose engines in any order (see below) |
+
+Mode selection is determined by `getEffectiveMode()` in `open-sse/services/compression/strategySelector.ts`:
+
+1. If compression is disabled: `"off"`
+2. If a combo override exists: use the override
+3. If auto-trigger threshold is exceeded: use `autoTriggerMode` (default: `"lite"`)
+4. Otherwise: use `defaultMode`
 
 ### The Default Stacked Pipeline
 
-The default `stacked` mode runs:
+When `mode: "stacked"` is explicitly configured, the default pipeline composes:
 
-1. **RTK** (priority 10) — strip command output noise
-2. **Caveman** (priority 50) — remove fillers, terse-ify
-3. **Lite** (priority 100) — final whitespace + dedup pass
+1. **RTK** — strip command output noise (~80% savings on terminal output)
+2. **Caveman** — remove fillers, terse-ify prose (~46% on remaining text)
+3. **Lite** — final whitespace + dedup pass
 
 This composition achieves **78-95% savings** on tool-heavy sessions.
 

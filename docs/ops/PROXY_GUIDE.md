@@ -687,14 +687,15 @@ For every request through a configured proxy, OmniRoute records:
 ```bash
 # Recent proxy events
 curl -H "Authorization: Bearer $OMNIROUTE_KEY" \
-  "http://localhost:20128/api/proxy-logs?limit=100"
-
-# Aggregate stats by proxy
-curl -H "Authorization: Bearer $OMNIROUTE_KEY" \
-  "http://localhost:20128/api/proxy-stats?groupBy=proxy&window=24h"
+  "http://localhost:20128/api/usage/proxy-logs?limit=100"
 ```
 
-The dashboard at `/dashboard/proxy-stats` visualizes the same data with charts.
+The real endpoint is `/api/usage/proxy-logs` (see `src/app/api/usage/proxy-logs/route.ts`). This endpoint supports:
+
+- `GET /api/usage/proxy-logs` — retrieve proxy logs
+- `DELETE /api/usage/proxy-logs` — clear all proxy logs
+
+Aggregate stats can be queried directly from the `proxy_logs` table via SQL if needed. The dashboard UI may offer aggregate views.
 
 ### Common Patterns
 

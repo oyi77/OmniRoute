@@ -462,12 +462,18 @@ Place the file in a recognized location:
 <project>/.rtk/filters/my-filter.json      # Project-level
 ```
 
-Or load programmatically:
+Filters are loaded automatically on startup via `loadRtkFilters()` in `open-sse/services/compression/engines/rtk/filterLoader.ts`. The loader discovers filters from:
+
+- Built-in catalog: `open-sse/services/compression/engines/rtk/filters/`
+- User directory: `~/.omniroute/rtk/filters/`
+- Project directory: `<project>/.rtk/filters/`
+
+To load filters programmatically:
 
 ```ts
-import { loadFilter } from "omniroute/compression/engines/rtk/filterLoader";
+import { loadRtkFilters } from "omniroute/compression/engines/rtk/filterLoader";
 
-await loadFilter("./my-custom-filter.json");
+const filters = loadRtkFilters({ includeUserFilters: true });
 ```
 
 ### Validation
@@ -480,7 +486,7 @@ RTK_FILTER_LOADER: filter "my-filter" failed validation:
   - match.commands: must not be empty
 ```
 
-Run `npm run check:rtk` to validate all installed filters at once.
+To validate all installed filters, call `runRtkFilterTests()` which is exported from `open-sse/services/compression/engines/rtk/verify.ts`.
 
 ### Best Practices
 
@@ -549,48 +555,50 @@ RTK_RAW_OUTPUT_MAX_BYTES=1048576
 ### Recovering the Original
 
 ```ts
-import { getRawOutput } from "omniroute/compression/engines/rtk/rawOutput";
+import { readRtkRawOutput } from "omniroute/compression/engines/rtk/rawOutput";
 
-const raw = await getRawOutput(requestId);
+const raw = readRtkRawOutput(pointerId);  // pointerId from compression stats
 if (raw) {
-  console.log("Original output:", raw.content);
-  console.log("Compressed at:", raw.compressedAt);
-  console.log("Filter used:", raw.filterName);
+  console.log("Original output:", raw);
 }
 ```
 
+The `pointerId` is returned in `CompressionStats.rtkRawOutputPointers[]` after compression.
+See `open-sse/services/compression/engines/rtk/rawOutput.ts:102` for the function signature.
+
 ### The Verify Gate
 
-The **Verify Gate** (`open-sse/services/compression/engines/rtk/verify.ts`) is a CI check that runs all your filters against their `tests[]` and validates behavior at all 3 intensity levels.
+The **RTK Filter Verification** (`open-sse/services/compression/engines/rtk/verify.ts`) validates all filters against their `tests[]` and ensures behavior is correct at all 3 intensity levels.
 
-**Run locally**:
+**Call `runRtkFilterTests()`** to run verification:
 
-```bash
-npm run check:rtk
+```ts
+import { runRtkFilterTests } from "open-sse/services/compression/engines/rtk/verify";
+
+const result = runRtkFilterTests();
+console.log(`Passed: ${result.outcomes.filter(o => o.passed).length}`);
+console.log(`Failed: ${result.outcomes.filter(o => !o.passed).length}`);
+if (!result.passed) {
+  console.error("Filters failed verification");
+  result.outcomes.filter(o => !o.passed).forEach(o => {
+    console.error(`  - ${o.filterId} / ${o.testName}: expected "${o.expected}", got "${o.actual}"`);
+  });
+}
 ```
 
-**What it checks**:
+**What it validates**:
 
-1. Every filter loads (schema valid)
-2. Every `tests[]` entry passes
-3. `minimal` intensity is a no-op (preserves original)
+1. Every filter loads and passes schema validation
+2. Every `tests[]` entry produces expected output
+3. `minimal` intensity is a no-op (preserves original, only applies structural filters)
 4. `aggressive` intensity preserves errors, test failures, and stack traces
-5. Compressed output is never larger than input
-
-**CI integration**:
-
-```yaml
-# .github/workflows/rtk-verify.yml
-- name: RTK verify gate
-  run: npm run check:rtk
-  # Fails the build if any filter regression is detected
-```
+5. Compressed output is never larger than original input
 
 ### When to Run Verify
 
-- **Before merging a filter change** — always
+- **Before merging a filter change** — always ensure tests pass
 - **After upgrading RTK engine** — schema may have changed
-- **Periodically in CI** — protects against drift in test fixtures
+- **Periodically in monitoring** — protects against drift in test fixtures
 - **When adding a new tool/command family** — proves the new filter works
 
 ---
