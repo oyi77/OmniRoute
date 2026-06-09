@@ -32,7 +32,9 @@ export function onRequest(ctx) {
   const config = ctx?.config || {};
   const level = config.logLevel || "info";
 
-  ctx.metadata.__requestStart = Date.now();
+  if (ctx?.metadata) {
+    ctx.metadata.__requestStart = Date.now();
+  }
 
   if (shouldLog(level, "info")) {
     const logEntry = {

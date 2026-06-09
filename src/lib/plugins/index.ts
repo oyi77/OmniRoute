@@ -37,5 +37,8 @@ export {
   getHooks as listPlugins,
 } from "./hooks.ts";
 
+// Backward compat: old code may import unregisterPlugin (singular)
+export { unregisterHooks as unregisterPlugin } from "./hooks.ts";
+
 // Re-export SDK utilities
 export { definePlugin, blockRequest, modifyBody, addMetadata } from "./sdk.ts";

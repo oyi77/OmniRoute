@@ -385,8 +385,15 @@ class PluginManager {
     try {
       const loaded = await loadPlugin(entryPoint, manifest);
 
-      // Register hooks individually via registerHook
-      const hookNames = ["onRequest", "onResponse", "onError"] as const;
+      const hookNames = [
+        "onRequest",
+        "onResponse",
+        "onError",
+        "onInstall",
+        "onActivate",
+        "onDeactivate",
+        "onUninstall",
+      ];
       for (const hookName of hookNames) {
         const handler = loaded.plugin[hookName];
         if (typeof handler === "function") {
@@ -411,11 +418,21 @@ class PluginManager {
   }
 
   /**
-   * Deactivate a plugin — unregister hooks, update DB.
+   * Deactivate a plugin — fire onDeactivate, unregister hooks, update DB.
+   *
+   * IMPORTANT: onDeactivate MUST fire BEFORE unregisterHooks(name) so the
+   * plugin's own onDeactivate handler is still registered and can execute
+   * cleanup logic. See PR #3473 review finding.
    */
   async deactivate(name: string): Promise<void> {
     const row = getPluginByName(name);
     const manifest = row ? (JSON.parse(row.manifest) as PluginManifestWithDefaults) : null;
+
+    // Fire onDeactivate lifecycle hook BEFORE unregistering — plugin's handlers
+    // are still registered at this point so its own onDeactivate can run.
+    if (manifest?.hooks.onDeactivate) {
+      await emitHook("onDeactivate", { name, version: manifest.version, manifest });
+    }
 
     const loaded = this.loadedPlugins.get(name);
     if (loaded) {
@@ -425,11 +442,6 @@ class PluginManager {
     }
 
     updatePluginStatus(name, "inactive");
-
-    // Fire onDeactivate lifecycle hook
-    if (manifest?.hooks.onDeactivate) {
-      await emitHook("onDeactivate", { name, version: manifest.version, manifest });
-    }
 
     log.info("manager.deactivated", { name });
   }
