@@ -40,5 +40,33 @@ export {
 // Backward compat: old code may import unregisterPlugin (singular)
 export { unregisterHooks as unregisterPlugin } from "./hooks.ts";
 
+import { getActiveEvents, getHooks, unregisterHooks } from "./hooks.ts";
+
+/**
+ * Backward-compat shim for the legacy `setPluginEnabled(name, enabled)` export.
+ *
+ * The hook registry has no per-plugin "enabled" flag anymore — a plugin is
+ * active iff its hooks are registered, and disabling one means unregistering
+ * its hooks. This preserves the old export so external callers don't crash:
+ *   - enabled=false → unregister the plugin's hooks (returns true if any existed)
+ *   - enabled=true  → reports current registration state; it cannot re-register
+ *     a handler without the definition. Use `pluginManager.activate(name)` for
+ *     the DB-backed lifecycle re-activation instead.
+ *
+ * @deprecated Prefer `pluginManager.activate/deactivate` or `unregisterHooks`.
+ */
+export function setPluginEnabled(name: string, enabled: boolean): boolean {
+  const hasHooks = (): boolean =>
+    getActiveEvents().some((event) =>
+      getHooks(event).some((h) => h.pluginName === name)
+    );
+  if (!enabled) {
+    const existed = hasHooks();
+    unregisterHooks(name);
+    return existed;
+  }
+  return hasHooks();
+}
+
 // Re-export SDK utilities
 export { definePlugin, blockRequest, modifyBody, addMetadata } from "./sdk.ts";
