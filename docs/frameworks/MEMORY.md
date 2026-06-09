@@ -648,41 +648,45 @@ The `extraction.ts` module (`src/lib/memory/extraction.ts`) uses **regex pattern
 
 | Category | Example pattern | Captures |
 |----------|-----------------|----------|
-| PREFERENCE_PATTERNS | `"I (like\|love\|prefer\|hate) <X>"` | User preferences and constraints |
-| DECISION_PATTERNS | `"I decided to <X>"`, `"We chose <X>"` | Decisions and rationale |
-| PATTERN_PATTERNS | `"Every time <X>, then <Y>"` | Recurring behavioral patterns |
+| PREFERENCE_PATTERNS | `"I prefer <X>"`, `"I like <X>"`, `"I hate <X>"` | User preferences |
+| DECISION_PATTERNS | `"I'll use <X>"`, `"I decided to <X>"`, `"I went with <X>"` | User decisions (episodic) |
+| PATTERN_PATTERNS | `"I usually <X>"`, `"I always <X>"`, `"I never <X>"` | Persistent behavioral patterns |
 
 ### Example Patterns (Simplified)
-
 ```ts
 // From src/lib/memory/extraction.ts
-const PREFERENCE_PATTERNS = /\b(?:i (?:like|love|prefer|enjoy)|i hate|i (?:don't|do not) (?:like|love|prefer))\s+([^.!?]{3,80})/gi;
-const DECISION_PATTERNS = /\b(?:(?:we|i) (?:decided|chose|agreed) (?:to|on))\s+([^.!?]{3,80})/gi;
-const PATTERN_PATTERNS = /\b(?:whenever|every time|each time)\s+(.+?)\s+(?:then|we|i)\s+(.+?)(?:\.|$)/gi;
+const PREFERENCE_PATTERNS = [
+  /\bI\s+(?:really\s+)?prefer\s+([^.,\n]+)/gi,
+  /\bI\s+(?:really\s+)?like\s+([^.,\n]+)/gi,
+  /\bI\s+(?:hate|dislike|avoid)\s+([^.,\n]+)/gi
+];
+const DECISION_PATTERNS = [
+  /\bI'?(?:ll|will)\s+use\s+([^.,\n]+)/gi,
+  /\bI\s+(?:have\s+)?decided\s+(?:to\s+)?([^.,\n]+)/gi
+];
+const PATTERN_PATTERNS = [
+  /\bI\s+usually\s+([^.,\n]+)/gi,
+  /\bI\s+always\s+([^.,\n]+)/gi
+];
 ```
 
 ### What Gets Extracted
 
 When a user says:
-> "I prefer TypeScript. My name is Paijo. I'm working on a router project and I don't like Python."
-
+> "I prefer TypeScript. I'll use Postgres for this project. I always commit before pushing. I don't like Python."
 Extraction produces 4 memories:
-
-| Key | Type | Content |
-|-----|------|---------|
-| `pref_typescript` | preference | "TypeScript" |
-| `name` | identity | "Paijo" |
-| `project_router` | project | "a router project" |
-| `dislike_python` | preference | "Python" |
+| Key | Category | Type | Content |
+|-----|----------|------|---------|
+| `preference:typescript` | preference | factual | "TypeScript" |
+| `decision:postgres_for_this_project` | decision | episodic | "Postgres for this project" |
+| `pattern:commit_before_pushing` | pattern | factual | "commit before pushing" |
+| `preference:python` | preference | factual | "Python" |
 
 ### Extraction Limits
-
 To prevent runaway extraction, the following limits apply:
 
-| Limit | Default |
-|-------|---------|
 | Min content length | 3 chars |
-| Max content length | 200 chars |
+| Max content length | 500 chars |
 
 ### When to Disable Extraction
 
