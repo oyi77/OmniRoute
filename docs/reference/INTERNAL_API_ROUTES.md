@@ -265,12 +265,6 @@ See [MEMORY.md](../frameworks/MEMORY.md).
 
 ---
 
-## Webhooks Routes (`/api/webhooks/*`)
-
-See "Webhook Routes" above.
-
----
-
 ## Plugins Routes (`/api/plugins/*`)
 
 | Method | Path | Description |

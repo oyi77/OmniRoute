@@ -175,6 +175,8 @@ OmniRoute will:
 
 ## ACP Protocol
 
+> **Important:** All communication with ACP CLI agents must use JSON-RPC 2.0 format. Sending raw text directly (e.g., `echo 'hello world'` piped to the CLI) will fail because the agent expects valid JSON-RPC 2.0 payloads on stdin. Always structure requests as shown below.
+
 ### Request Format (OmniRoute → CLI)
 
 Sent as one JSON object per line to the CLI's stdin:

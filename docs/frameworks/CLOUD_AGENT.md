@@ -519,13 +519,12 @@ Triggers when cumulative cloud spend for the current month exceeds 80% of `cloud
 
 ## Best Practices
 
-1. **Always use `approvalRequired: true`** for non-trivial tasks
-2. **Set `maxCredits`** to prevent runaway costs
-3. **Use webhooks** for plan approvals (don't poll)
-4. **Review plans** before approving — agents can misunderstand prompts
-5. **Tag tasks** with metadata for cost tracking
-6. **Test agents** on small tasks before giving them large codebases
-7. **Keep task prompts focused** — multi-task prompts often fail
+1. **Always use `options.planApprovalRequired: true`** for non-trivial tasks
+2. **Use webhooks** for plan approvals (don't poll)
+3. **Review plans** before approving — agents can misunderstand prompts
+4. **Use webhooks** for cost tracking and alerts
+5. **Test agents** on small tasks before giving them large codebases
+6. **Keep task prompts focused** — multi-task prompts often fail
 
 ## Troubleshooting
 

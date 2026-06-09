@@ -89,7 +89,7 @@ db_backups/
 ...
 ```
 
-The timestamp uses ISO 8601 with `T` replaced by `T` (colons removed for filesystem compatibility).
+The timestamp uses ISO 8601 with colons and periods replaced by hyphens (for filesystem compatibility).
 
 ### Cleanup Algorithm
 
@@ -447,6 +447,7 @@ omniroute backup export > /backups/pre-upgrade.json
 
 # 4. Compress and archive
 gzip /backups/pre-upgrade.json
+gzip /backups/pre-upgrade.db
 mv /backups/pre-upgrade.db.gz /backups/pre-upgrade-$(date +%Y%m%d).db.gz
 
 # 5. Now safe to upgrade
@@ -516,8 +517,7 @@ omniroute status
 #!/bin/bash
 LATEST=$(aws s3 ls s3://my-backups/omniroute/hourly/ | sort | tail -1 | awk '{print $4}')
 aws s3 cp "s3://my-backups/omniroute/hourly/$LATEST" /tmp/latest-backup.json.gz
-gunzip -c /tmp/latest-backup.json.gz | omniroute backup import --dry-run
-# If dry run OK, repeat without --dry-run
+gunzip -c /tmp/latest-backup.json.gz | omniroute backup import
 ```
 
 ---

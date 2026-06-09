@@ -995,7 +995,6 @@ The following variables were added in v3.8.16 (alongside the new plugin, memory,
 | Variable | Default | Source | Purpose |
 |----------|---------|--------|---------|
 | `PLUGIN_DEV_MODE` | `false` | `src/lib/plugins/devMode.ts` | Enable hot-reload watch mode for plugin development |
-| `OMNIROUTE_PLUGIN_PATH` | _(unset)_ | `bin/cli/plugins.mjs` | Custom directory to discover CLI plugins |
 
 ### Memory System
 
@@ -1010,13 +1009,6 @@ The following variables were added in v3.8.16 (alongside the new plugin, memory,
 |----------|---------|--------|---------|
 | `PROXY_FAST_FAIL_TIMEOUT_MS` | `2000` | `src/lib/proxyHealth.ts` | TCP timeout for proxy health check |
 | `PROXY_HEALTH_CACHE_TTL_MS` | `30000` | `src/lib/proxyHealth.ts` | How long to cache proxy health result |
-
-### Database Backups
-
-| Variable | Default | Source | Purpose |
-|----------|---------|--------|---------|
-| `DB_BACKUP_MAX_FILES` | `20` | `src/lib/db/backup.ts` | Max number of auto-backup files to retain |
-| `DB_BACKUP_RETENTION_DAYS` | `0` (disabled) | `src/lib/db/backup.ts` | Delete backups older than N days; 0 = no time-based retention |
 
 ### ACP (Agent Client Protocol)
 

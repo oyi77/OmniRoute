@@ -141,12 +141,12 @@ When `status` is `completed`, the response includes `outputFileId` and `errorFil
 
 ```bash
 # Successful results
-curl -X GET "http://localhost:20128/api/files/file_results/content" \
+curl -X GET "http://localhost:20128/api/files/[outputFileId]/content" \
   -H "Authorization: Bearer $OMNIROUTE_KEY" \
   --output results.jsonl
 
 # Failed requests
-curl -X GET "http://localhost:20128/api/files/file_errors/content" \
+curl -X GET "http://localhost:20128/api/files/[errorFileId]/content" \
   -H "Authorization: Bearer $OMNIROUTE_KEY" \
   --output errors.jsonl
 ```
