@@ -51,18 +51,11 @@ Every plugin goes through a **5-stage lifecycle** managed by `PluginManager` (`s
                     └─────────────┘
 ```
 
-### Lifecycle Hooks (v3.8.16+)
+### Built-in Events
 
-In addition to the per-request hooks, plugins can opt into **lifecycle hooks** that fire on transitions:
+Plugins can register handlers for the following built-in events that cover the full request lifecycle, routing, rate limiting, and error handling. See [PLUGIN_SDK.md](./PLUGIN_SDK.md#built-in-events) for the complete list of events and their payloads.
 
-| Hook | When | Use case |
-|------|------|----------|
-| `onInstall` | After files copied, before first activation | Initialize database tables, register schema |
-| `onActivate` | When `activate()` is called | Connect to external service, warm caches |
-| `onDeactivate` | Before deactivation completes | Close connections, flush logs |
-| `onUninstall` | Before files are deleted | Final cleanup, send farewell webhook |
-
-These hooks are **opt-in** — define them on the plugin object and they will be called automatically:
+The core request-handling events are:
 
 ```ts
 import { definePlugin } from "omniroute/plugins/sdk";
@@ -70,33 +63,34 @@ import { definePlugin } from "omniroute/plugins/sdk";
 export default definePlugin({
   name: "my-plugin",
   
-  onInstall: async (ctx) => {
-    console.log("Plugin installed, version:", ctx.version);
-    // e.g. create a database table
+  // Core lifecycle events (always available)
+  onRequest: async (ctx) => {
+    console.log(`Request: ${ctx.requestId}`);
   },
-  
-  onActivate: async (ctx) => {
-    // e.g. open a connection pool
-    await connectToExternalService();
+
+  onResponse: async (ctx, response) => {
+    console.log(`Response for: ${ctx.requestId}`);
+    return response; // optionally transform
   },
-  
-  onDeactivate: async (ctx) => {
-    // e.g. close connections cleanly
-    await closeConnections();
+
+  onError: async (ctx, error) => {
+    console.error(`Error: ${error.message}`);
   },
-  
-  onUninstall: async (ctx) => {
-    // e.g. delete plugin's database tables
-    await cleanup();
-  },
-  
-  // Per-request hooks (unchanged)
-  onRequest: async (ctx) => { /* ... */ },
-  onResponse: async (ctx, res) => { /* ... */ },
+
+  // Optional routing events
+  onModelSelect: async (ctx) => { /* ... */ },
+  onComboResolve: async (ctx) => { /* ... */ },
+  onRateLimit: async (ctx) => { /* ... */ },
+  onQuotaExhaust: async (ctx) => { /* ... */ },
+  onProviderError: async (ctx) => { /* ... */ },
+
+  // Stream events
+  onStreamStart: async (ctx) => { /* ... */ },
+  onStreamEnd: async (ctx) => { /* ... */ },
 });
 ```
 
-> **Breaking change policy**: The lifecycle hook contract is stable within a major version. New lifecycle hooks may be added in minor versions, but existing ones will not be removed or renamed.
+For the complete list of built-in events and their signatures, refer to `src/lib/plugins/hooks.ts` (BUILTIN_EVENTS constant).
 
 ---
 
@@ -225,16 +219,17 @@ For full integration testing, use the [OmniRoute test harness](#integration-test
 
 ### Running the Doctor
 
-```bash
-# Via the CLI (if available in your build)
-omniroute plugin doctor <name>
+The plugin doctor is available as a programmatic API only:
 
-# Programmatically
+```ts
+// Programmatic API
 import { runPluginDoctor } from "omniroute/plugins/doctor";
 
 const result = await runPluginDoctor("~/.omniroute/plugins/my-plugin", "my-plugin");
 console.log(result);
 ```
+
+Note: There is no CLI command for the doctor. To diagnose plugins, integrate `runPluginDoctor` into your plugin management tooling.
 
 ### The 5 Checks
 
@@ -507,9 +502,12 @@ Plugins without `network` permission cannot call `fetch` — the global is simpl
 
 ### "Plugin not loading"
 
-Run the doctor:
-```bash
-omniroute plugin doctor <name>
+Use the plugin doctor (programmatically) to diagnose:
+```ts
+import { runPluginDoctor } from "omniroute/plugins/doctor";
+
+const result = await runPluginDoctor("~/.omniroute/plugins/my-plugin", "my-plugin");
+console.log(result);
 ```
 
 Check the 5 checks. The most common cause is `manifest_valid: fail` — usually a missing required field.
