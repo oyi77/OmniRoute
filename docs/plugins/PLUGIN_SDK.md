@@ -1,6 +1,7 @@
 # OmniRoute Plugin SDK
 
 > **Related guides:**
+>
 > - [Plugin Development Guide](./PLUGIN_DEVELOPMENT.md) — dev mode, testing, doctor, signing, lifecycle
 > - [Plugin Marketplace](./PLUGIN_MARKETPLACE.md) — discover, install, and publish plugins
 > - [CLI Plugin System](../dev/plugins.md) — extend the `omniroute` CLI
@@ -9,12 +10,13 @@
 
 OmniRoute has **two parallel plugin systems** that serve different purposes:
 
-| System | Where it runs | Purpose | Reference |
-|--------|---------------|---------|-----------|
-| **SDK plugins** (this doc) | In-process sandboxed VM inside the OmniRoute server | Hook-based request/response interception (onRequest, onResponse, onError) | Below |
-| **CLI plugins** | Separate Node.js process invoked by the `omniroute` binary | Add new subcommands to the CLI (like `gh extension` or `kubectl plugin`) | [CLI Plugin Reference](../dev/plugins.md) |
+| System                     | Where it runs                                              | Purpose                                                                   | Reference                                 |
+| -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------- |
+| **SDK plugins** (this doc) | In-process sandboxed VM inside the OmniRoute server        | Hook-based request/response interception (onRequest, onResponse, onError) | Below                                     |
+| **CLI plugins**            | Separate Node.js process invoked by the `omniroute` binary | Add new subcommands to the CLI (like `gh extension` or `kubectl plugin`)  | [CLI Plugin Reference](../dev/plugins.md) |
 
 You can use either or both. A typical setup might have:
+
 - An **SDK plugin** that adds rate limiting to incoming requests
 - A **CLI plugin** that exposes a `omniroute ratelimit status` command to inspect the rate limiter state
 
@@ -46,6 +48,7 @@ export default definePlugin({
 Factory function that creates a Plugin object with defaults.
 
 **Parameters:**
+
 - `name` (string, required) — Plugin name in kebab-case
 - `priority` (number, optional, default: 100) — Lower runs first
 - `enabled` (boolean, optional, default: true) — Start enabled?
@@ -87,14 +90,14 @@ onRequest: (ctx) => {
 
 ## Plugin Context (`PluginContext`)
 
-| Field | Type | Description |
-|---|---|---|
-| `requestId` | `string` | Unique request identifier |
-| `model` | `string` | Requested model name |
-| `provider` | `string` | Target provider ID |
-| `body` | `Record<string, unknown>` | Request body |
-| `apiKeyInfo` | `unknown` | API key info (if authenticated) |
-| `metadata` | `Record<string, unknown>` | Mutable metadata |
+| Field        | Type                      | Description                     |
+| ------------ | ------------------------- | ------------------------------- |
+| `requestId`  | `string`                  | Unique request identifier       |
+| `model`      | `string`                  | Requested model name            |
+| `provider`   | `string`                  | Target provider ID              |
+| `body`       | `Record<string, unknown>` | Request body                    |
+| `apiKeyInfo` | `unknown`                 | API key info (if authenticated) |
+| `metadata`   | `Record<string, unknown>` | Mutable metadata                |
 
 ## Manifest (`plugin.json`)
 
@@ -108,7 +111,9 @@ onRequest: (ctx) => {
   "hooks": {
     "onRequest": { "enabled": true, "priority": 50 },
     "onResponse": true,
-    "onError": false
+    "onError": false,
+    "onActivate": true,
+    "onDeactivate": true
   },
   "requires": {
     "permissions": ["network", "file-read"]
@@ -151,13 +156,13 @@ Or as simple booleans (default priority 100):
 
 Plugins run in a sandboxed VM context. Access to external resources requires explicit permissions:
 
-| Permission | Grants |
-|---|---|
-| `network` | `fetch`, `AbortController`, `Headers`, `Request`, `Response` |
-| `file-read` | `fs.readFile`, `fs.readdir`, `fs.stat` |
-| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm` |
-| `env` | Read-only `process.env` proxy |
-| `exec` | `child_process.exec`, `child_process.execSync` |
+| Permission   | Grants                                                       |
+| ------------ | ------------------------------------------------------------ |
+| `network`    | `fetch`, `AbortController`, `Headers`, `Request`, `Response` |
+| `file-read`  | `fs.readFile`, `fs.readdir`, `fs.stat`                       |
+| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm`                          |
+| `env`        | Read-only `process.env` proxy                                |
+| `exec`       | `child_process.exec`, `child_process.execSync`               |
 
 Without a permission, the corresponding globals are simply not available in the sandbox.
 
@@ -184,22 +189,24 @@ Config values are persisted in the database and accessible via the dashboard con
 
 ## Built-in Events
 
-| Event | When | Payload |
-|---|---|---|
-| `onRequest` | Before chat handler | Request context |
-| `onResponse` | After chat handler | Response data |
-| `onError` | On handler error | Error object |
-| `onModelSelect` | Model selected for routing | Model info |
-| `onComboResolve` | Combo routing resolved | Combo targets |
-| `onRateLimit` | Rate limit hit | Limit info |
-| `onQuotaExhaust` | Quota exhausted | Quota info |
-| `onProviderError` | Provider returned error | Error details |
-| `onStreamStart` | SSE stream started | Stream info |
-| `onStreamEnd` | SSE stream ended | Stream stats |
-| `onInstall` | Plugin installed | `{ name, version, manifest }` |
-| `onActivate` | Plugin activated | `{ name, version, manifest }` |
-| `onDeactivate` | Plugin deactivated | `{ name, version, manifest }` |
-| `onUninstall` | Plugin uninstalled (before files deleted) | `{ name, version, manifest }` |
+| Event             | When                       | Payload                       |
+| ----------------- | -------------------------- | ----------------------------- |
+| `onRequest`       | Before chat handler        | Request context               |
+| `onResponse`      | After chat handler         | Response data                 |
+| `onError`         | On handler error           | Error object                  |
+| `onModelSelect`   | Model selected for routing | Model info                    |
+| `onComboResolve`  | Combo routing resolved     | Combo targets                 |
+| `onRateLimit`     | Rate limit hit             | Limit info                    |
+| `onQuotaExhaust`  | Quota exhausted            | Quota info                    |
+| `onProviderError` | Provider returned error    | Error details                 |
+| `onStreamStart`   | SSE stream started         | Stream info                   |
+| `onStreamEnd`     | SSE stream ended           | Stream stats                  |
+| `onInstall`       | Plugin installed           | `{ name, version, manifest }` |
+| `onActivate`      | Plugin activated           | `{ name, version, manifest }` |
+| `onDeactivate`    | Plugin deactivated         | `{ name, version, manifest }` |
+| `onUninstall`     | Plugin uninstalled         | `{ name, version, manifest }` |
+
+> **Note:** Lifecycle events (`onInstall`, `onActivate`, `onDeactivate`, `onUninstall`) are **fired internally by PluginManager** during state transitions. They are declared in the manifest's `hooks` field (e.g. `"onInstall": true`) and cannot be registered via `definePlugin()`.
 
 ## Examples
 
@@ -232,7 +239,7 @@ export default definePlugin({
     const window = 60000; // 1 minute
     const maxRequests = 100;
 
-    const timestamps = (requests.get(key) || []).filter(t => t > now - window);
+    const timestamps = (requests.get(key) || []).filter((t) => t > now - window);
     timestamps.push(now);
     requests.set(key, timestamps);
 

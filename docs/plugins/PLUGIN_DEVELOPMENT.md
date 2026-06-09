@@ -14,10 +14,10 @@ lastUpdated: 2026-06-08
 
 OmniRoute's plugin system has **two layers** that work together:
 
-| Layer | Purpose | Where it runs |
-|-------|---------|---------------|
+| Layer           | Purpose                                  | Where it runs                                  |
+| --------------- | ---------------------------------------- | ---------------------------------------------- |
 | **SDK plugins** | Hook-based request/response interception | In-process sandboxed VM (the OmniRoute server) |
-| **CLI plugins** | Command-based CLI extensions | Separate Node.js process (the `omniroute` CLI) |
+| **CLI plugins** | Command-based CLI extensions             | Separate Node.js process (the `omniroute` CLI) |
 
 This guide is about **SDK plugins** — the in-process kind that hook into every request. For CLI plugins, see [CLI Plugin System](#cli-plugin-system) below or [`docs/dev/plugins.md`](../dev/plugins.md).
 
@@ -62,8 +62,8 @@ import { definePlugin } from "omniroute/plugins/sdk";
 
 export default definePlugin({
   name: "my-plugin",
-  
-  // Core lifecycle events (always available)
+
+  // Core request-handling events (always available)
   onRequest: async (ctx) => {
     console.log(`Request: ${ctx.requestId}`);
   },
@@ -78,19 +78,35 @@ export default definePlugin({
   },
 
   // Optional routing events
-  onModelSelect: async (ctx) => { /* ... */ },
-  onComboResolve: async (ctx) => { /* ... */ },
-  onRateLimit: async (ctx) => { /* ... */ },
-  onQuotaExhaust: async (ctx) => { /* ... */ },
-  onProviderError: async (ctx) => { /* ... */ },
+  onModelSelect: async (ctx) => {
+    /* ... */
+  },
+  onComboResolve: async (ctx) => {
+    /* ... */
+  },
+  onRateLimit: async (ctx) => {
+    /* ... */
+  },
+  onQuotaExhaust: async (ctx) => {
+    /* ... */
+  },
+  onProviderError: async (ctx) => {
+    /* ... */
+  },
 
   // Stream events
-  onStreamStart: async (ctx) => { /* ... */ },
-  onStreamEnd: async (ctx) => { /* ... */ },
+  onStreamStart: async (ctx) => {
+    /* ... */
+  },
+  onStreamEnd: async (ctx) => {
+    /* ... */
+  },
 });
 ```
 
 For the complete list of built-in events and their signatures, refer to `src/lib/plugins/hooks.ts` (BUILTIN_EVENTS constant).
+
+> **Note:** The `BUILTIN_EVENTS` list also includes **lifecycle events** (`onInstall`, `onActivate`, `onDeactivate`, `onUninstall`). These are fired internally by `PluginManager` during state transitions and are declared in the manifest's `hooks` field — they are not registerable via `definePlugin()`.
 
 ---
 
@@ -109,6 +125,7 @@ OMNIROUTE_PLUGIN_DEV=1 omniroute
 ```
 
 When enabled, the server:
+
 1. Watches `~/.omniroute/plugins/*` recursively
 2. On any file change inside a plugin directory, waits 500ms (debounce)
 3. Calls `deactivate(pluginName)` then `activate(pluginName)` to reload
@@ -122,16 +139,16 @@ const DEBOUNCE_MS = 500;
 
 export function startDevMode(pluginDir: string, reloadFn: ReloadFn): void {
   if (watcher) return;
-  
+
   watcher = watch(pluginDir, { recursive: true }, (_eventType, filename) => {
     if (!filename) return;
     const pluginName = filename.replace(/\\/g, "/").split("/")[0];
     if (!pluginName || pluginName.startsWith(".")) return;
-    
+
     // Debounce rapid changes
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
-      await reloadFn(pluginName);  // deactivate + activate
+      await reloadFn(pluginName); // deactivate + activate
     }, DEBOUNCE_MS);
   });
 }
@@ -186,6 +203,7 @@ const MOCK_CONTEXT: PluginContext = {
 ```
 
 For each hook, the runner records:
+
 - `passed` (boolean): did the hook complete without throwing?
 - `durationMs` (number): how long the hook took
 - `output` (unknown): the hook's return value
@@ -204,6 +222,7 @@ For each hook, the runner records:
 ### Limitations
 
 The test runner uses a **fixed mock context** — it cannot simulate:
+
 - Streaming responses
 - Multi-turn conversations
 - Specific provider error formats
@@ -233,13 +252,13 @@ Note: There is no CLI command for the doctor. To diagnose plugins, integrate `ru
 
 ### The 5 Checks
 
-| # | Check name | What it verifies | Status values |
-|---|------------|------------------|---------------|
-| 1 | `directory_exists` | Plugin directory is on disk | `pass` / `fail` |
-| 2 | `manifest_valid` | `plugin.json` parses and matches schema | `pass` / `fail` |
-| 3 | `entry_point_exists` | `manifest.main` file is on disk | `pass` / `fail` / `warn` |
-| 4 | `can_spawn` | Entry point has `.js` or `.mjs` extension | `pass` / `warn` |
-| 5 | `db_status_correct` | Plugin row in DB matches filesystem state | `pass` / `warn` |
+| #   | Check name           | What it verifies                          | Status values            |
+| --- | -------------------- | ----------------------------------------- | ------------------------ |
+| 1   | `directory_exists`   | Plugin directory is on disk               | `pass` / `fail`          |
+| 2   | `manifest_valid`     | `plugin.json` parses and matches schema   | `pass` / `fail`          |
+| 3   | `entry_point_exists` | `manifest.main` file is on disk           | `pass` / `fail` / `warn` |
+| 4   | `can_spawn`          | Entry point has `.js` or `.mjs` extension | `pass` / `warn`          |
+| 5   | `db_status_correct`  | Plugin row in DB matches filesystem state | `pass` / `warn`          |
 
 ### Interpreting Results
 
@@ -257,13 +276,13 @@ interface DoctorResult {
 
 ### Common Issues and Fixes
 
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| `directory_exists: fail` | Plugin was deleted from disk but still in DB | Run `omniroute plugin uninstall <name>` |
-| `manifest_valid: fail` | `plugin.json` doesn't match the schema | Check the [manifest schema](./PLUGIN_SDK.md#manifest-pluginjson) |
-| `entry_point_exists: fail` | `manifest.main` points to a non-existent file | Fix the `main` field in `plugin.json` |
-| `can_spawn: warn` | Entry point has `.ts` or other extension | Compile to `.js` or `.mjs` first |
-| `db_status_correct: warn` | Plugin not in DB (was just installed) | Re-run `omniroute plugin install <path>` |
+| Symptom                    | Likely cause                                  | Fix                                                              |
+| -------------------------- | --------------------------------------------- | ---------------------------------------------------------------- |
+| `directory_exists: fail`   | Plugin was deleted from disk but still in DB  | Run `omniroute plugin uninstall <name>`                          |
+| `manifest_valid: fail`     | `plugin.json` doesn't match the schema        | Check the [manifest schema](./PLUGIN_SDK.md#manifest-pluginjson) |
+| `entry_point_exists: fail` | `manifest.main` points to a non-existent file | Fix the `main` field in `plugin.json`                            |
+| `can_spawn: warn`          | Entry point has `.ts` or other extension      | Compile to `.js` or `.mjs` first                                 |
+| `db_status_correct: warn`  | Plugin not in DB (was just installed)         | Re-run `omniroute plugin install <path>`                         |
 
 ---
 
@@ -402,18 +421,19 @@ export function register(program, ctx) {
 
 ### CLI Plugin Context API
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `ctx.apiFetch(path, opts)` | `async function` | Authenticated fetch to the OmniRoute server |
-| `ctx.emit(data, opts)` | `function` | Output in `table`/`json`/`jsonl`/`csv` per `--output` flag |
-| `ctx.t(key)` | `async function` | i18n translation lookup |
-| `ctx.withSpinner(label, fn)` | `async function` | Wraps async fn with ora spinner |
-| `ctx.baseUrl` | `string` | Resolved base URL |
-| `ctx.apiKey` | `string \| null` | API key if provided |
+| Property                     | Type             | Description                                                |
+| ---------------------------- | ---------------- | ---------------------------------------------------------- |
+| `ctx.apiFetch(path, opts)`   | `async function` | Authenticated fetch to the OmniRoute server                |
+| `ctx.emit(data, opts)`       | `function`       | Output in `table`/`json`/`jsonl`/`csv` per `--output` flag |
+| `ctx.t(key)`                 | `async function` | i18n translation lookup                                    |
+| `ctx.withSpinner(label, fn)` | `async function` | Wraps async fn with ora spinner                            |
+| `ctx.baseUrl`                | `string`         | Resolved base URL                                          |
+| `ctx.apiKey`                 | `string \| null` | API key if provided                                        |
 
 ### CLI Plugin Discovery
 
 Plugins are discovered from:
+
 1. `~/.omniroute/plugins/<name>/` — user-local installs
 2. `OMNIROUTE_PLUGIN_PATH` env var — custom directory
 
@@ -503,6 +523,7 @@ Plugins without `network` permission cannot call `fetch` — the global is simpl
 ### "Plugin not loading"
 
 Use the plugin doctor (programmatically) to diagnose:
+
 ```ts
 import { runPluginDoctor } from "omniroute/plugins/doctor";
 
@@ -521,6 +542,7 @@ Check the 5 checks. The most common cause is `manifest_valid: fail` — usually 
 ### "Permission denied" inside a hook
 
 You tried to use a global that requires a permission you didn't request. Add it to `plugin.json`:
+
 ```json
 {
   "requires": { "permissions": ["network", "file-read"] }
