@@ -163,50 +163,33 @@ interface MarketplaceEntry {
 
 ---
 
-## CLI Commands
+## Accessing the Marketplace
 
-The marketplace is exposed through the `omniroute plugin` command group:
+The SDK marketplace is accessible **programmatically** via the marketplace API (`src/lib/plugins/marketplace.ts`), not through the CLI.
 
-```bash
-# List all available plugins in the marketplace
-omniroute plugin search
+### Programmatic Access
 
-# Search by query
-omniroute plugin search logging
-omniroute plugin search security
-omniroute plugin search analytics
+```ts
+import { listMarketplacePlugins, searchMarketplace } from "omniroute/plugins/marketplace";
 
-# Show details for a specific plugin
-omniroute plugin info request-logger
+// List all seed plugins
+const allPlugins = await listMarketplacePlugins();
+console.log(allPlugins); // [request-logger, rate-limiter, cost-tracker]
 
-# Install a plugin from the marketplace
-omniroute plugin install request-logger
+// Search by tag
+const loggingPlugins = await searchMarketplace({ tags: ["logging"] });
+console.log(loggingPlugins); // [request-logger]
+
+// Search by name
+const tracker = await searchMarketplace({ query: "cost" });
+console.log(tracker); // [cost-tracker]
 ```
 
-### Example Workflow
+### Note: CLI Plugin System is Separate
 
-```bash
-$ omniroute plugin search logging
-NAME                VERSION  RATING  TAGS              VERIFIED
-request-logger      1.0.0    5.0★    logging,debug     yes
-
-$ omniroute plugin info request-logger
-Name:        request-logger
-Version:     1.0.0
-Author:      omniroute
-License:     MIT
-Description: Logs all requests and responses with timing
-Tags:        logging, debugging
-Downloads:   1,234
-Rating:      5.0 / 5
-Verified:    yes
-Last update: 2026-05-29
-Repository:  https://github.com/diegosouzapw/OmniRoute-plugins
-
-$ omniroute plugin install request-logger
-Installing request-logger@1.0.0... done.
-Plugin activated. Hooks: onRequest, onResponse
-```
+The CLI command `omniroute plugin search` searches npm for **CLI plugins** (packages named `omniroute-cmd-*`), not the SDK marketplace. These are two separate plugin systems:
+- **SDK plugins** (this doc): Hook-based request/response interception. Managed via the marketplace API.
+- **CLI plugins** (separate system): Command-line extensions. Searched and installed via npm.
 
 ---
 
@@ -306,7 +289,7 @@ When the remote registry launches, third-party authors can apply for verificatio
 
 ### Current State (Phase 1)
 
-- All 3 seed plugins have `rating: 5` (set by the OmniRoute team)
+- Seed plugins have initial ratings set by the OmniRoute team: `request-logger: 5`, `rate-limiter: 5`, `cost-tracker: 4`
 - No user ratings yet
 - All plugins are `verified: true` by definition
 
