@@ -147,7 +147,9 @@ export async function emitHookBlocking(
 
   for (const reg of list) {
     try {
-      const result = await reg.handler(payload);
+      // Chain: each handler sees the accumulated body/metadata from previous handlers
+      const currentPayload = { ...ctx, body: mergedBody, metadata: mergedMetadata };
+      const result = await reg.handler(currentPayload);
       if (result && typeof result === "object") {
         if ("body" in result) mergedBody = (result as Record<string, unknown>).body;
         if ("metadata" in result)

@@ -82,6 +82,15 @@ export async function scanPluginDir(
       const manifest = result.data;
       const entryPoint = join(pluginDir, manifest.main);
 
+      // Path traversal guard: entryPoint must resolve inside pluginDir
+      if (!entryPoint.startsWith(pluginDir + "/") && entryPoint !== pluginDir) {
+        errors.push({
+          name: entry,
+          error: `entry point must be within the plugin directory`,
+        });
+        continue;
+      }
+
       // Verify entry point exists
       try {
         await stat(entryPoint);

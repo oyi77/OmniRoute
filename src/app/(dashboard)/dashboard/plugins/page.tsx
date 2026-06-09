@@ -62,6 +62,8 @@ export default function PluginsPage() {
       if (res.ok) {
         addNotification({ type: "success", message: enable ? t("activated", { name }) : t("deactivated", { name }) });
         await fetchPlugins();
+      } else {
+        addNotification({ type: "error", message: enable ? t("activateFailed", { name }) : t("deactivateFailed", { name }) });
       }
     } catch {
       addNotification({ type: "error", message: enable ? t("activateFailed", { name }) : t("deactivateFailed", { name }) });

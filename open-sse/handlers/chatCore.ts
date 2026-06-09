@@ -225,6 +225,7 @@ import {
   getModelScopeRetryDelayMs,
   isModelScopeProvider,
 } from "../services/modelscopePolicy.ts";
+import { runOnRequest, runOnError } from "@/lib/plugins/index";
 
 const MEMORY_EXTRACTION_TEXT_LIMIT = 64 * 1024;
 
@@ -1526,9 +1527,7 @@ export async function handleChatCore({
   let tokensCompressed: number | null = null;
   body = injectSystemPrompt(body);
   // ── Plugin onRequest hook ──
-  // Dynamic import cached by Node.js after first call — minimal overhead
   try {
-    const { runOnRequest } = await import("@/lib/plugins/index");
     const pluginCtx = {
       requestId: traceId,
       body,
@@ -3246,7 +3245,6 @@ export async function handleChatCore({
   } catch (error) {
     // ── Plugin onError hook ──
     try {
-      const { runOnError } = await import("@/lib/plugins/index");
       await runOnError(
         { requestId: traceId, body, model, provider, apiKeyInfo, metadata: {} },
         error instanceof Error ? error : new Error(String(error))
