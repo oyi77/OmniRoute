@@ -63,7 +63,7 @@ import { definePlugin } from "omniroute/plugins/sdk";
 export default definePlugin({
   name: "my-plugin",
   
-  // Core lifecycle events (always available)
+  // Core request-handling events (always available)
   onRequest: async (ctx) => {
     console.log(`Request: ${ctx.requestId}`);
   },
@@ -91,6 +91,8 @@ export default definePlugin({
 ```
 
 For the complete list of built-in events and their signatures, refer to `src/lib/plugins/hooks.ts` (BUILTIN_EVENTS constant).
+
+> **Note:** The `BUILTIN_EVENTS` list also includes **lifecycle events** (`onInstall`, `onActivate`, `onDeactivate`, `onUninstall`). These are fired internally by `PluginManager` during state transitions and are declared in the manifest's `hooks` field — they are not registerable via `definePlugin()`.
 
 ---
 
