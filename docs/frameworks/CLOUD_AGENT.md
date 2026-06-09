@@ -386,15 +386,7 @@ Each cloud agent has its own credential flow. Credentials are stored **encrypted
 
 **Configure in OmniRoute:**
 
-```bash
-POST /api/cloud/credentials
-{
-  "providerId": "codex-cloud",
-  "apiKey": "sk-..."
-}
-```
-
-Or via dashboard: **Cloud Agents → Codex Cloud → Add Credential**
+> **Note:** Cloud agent credentials are configured via the dashboard **Cloud Agents** page or via the `/api/cloud/credentials/update` endpoint (PUT method). See the [Cloud Agent Base](src/lib/cloudAgent/CloudAgentBase.ts) implementation for credential storage details.
 
 ### Devin
 
@@ -426,13 +418,11 @@ POST /api/cloud/credentials
 
 **Configure:**
 
-```bash
-POST /api/cloud/credentials
-{
-  "providerId": "jules",
-  "apiKey": "jules-..."
-}
-```
+> **Note:** Cloud agent credentials are configured via the dashboard **Cloud Agents** page or via the `/api/cloud/credentials/update` endpoint (PUT method). See the [Cloud Agent Base](src/lib/cloudAgent/CloudAgentBase.ts) implementation for credential storage details.
+
+### Verifying Credentials
+
+> **Note:** Cloud agent credential management is handled internally by `src/lib/cloudAgent/`. There is no dedicated REST endpoint for listing or verifying credentials — use the dashboard **Cloud Agents** page to view connection status.
 
 ### Verifying Credentials
 
@@ -459,25 +449,7 @@ To verify a credential actually works, create a test task and check it succeeds.
 
 Some cloud agents (especially **Devin** and **Jules**) operate autonomously for extended periods. They may consume credits while doing so.
 
-### Setting a Plan Approval
-
-```bash
-POST /api/cloud/tasks
-{
-  "agent": "devin",
-  "prompt": "Migrate the auth module to OAuth 2.1",
-  "approvalRequired": true,
-  "maxCredits": 5.00
-}
-```
-
-When `approvalRequired: true`:
-
-1. The agent analyzes the prompt
-2. Generates a **plan** with estimated credits and time
-3. The plan is sent to the user for review (via web dashboard, email, or webhook)
-4. User approves/rejects the plan
-5. If approved, the agent executes
+> **Note:** Task management for cloud agents is handled internally by `src/lib/cloudAgent/`. Tasks are created and managed via the `/api/v1/agents/tasks` endpoint. There is no dedicated `/api/cloud/tasks` REST endpoint — cloud agent task management is integrated into the standard task pipeline.
 
 ### Approval via Webhook
 
@@ -508,17 +480,7 @@ The user clicks the approval URL (or POSTs to `/api/cloud/tasks/{id}/approve`) t
 
 ### Credit Limits
 
-```bash
-# Set per-task credit limit
-POST /api/cloud/tasks
-{ "agent": "devin", "prompt": "...", "maxCredits": 10.00 }
-
-# Set per-day credit limit (per API key)
-PATCH /api/keys/{keyId}
-{ "dailyCloudLimit": 50.00 }
-```
-
-The agent stops when it hits the limit.
+> **Note:** Credit limits for cloud agents are managed internally by `src/lib/cloudAgent/CloudAgentBase.ts`. Task-level `maxCredits` can be set when creating tasks via `/api/v1/agents/tasks`. Per-key daily limits are configured via the dashboard Settings page.
 
 ## Cost Tracking
 
@@ -536,13 +498,7 @@ The cost includes:
 - **API costs** for underlying LLM calls
 - **Storage** for files created during the task
 
-Cost forecasts:
-
-```bash
-GET /api/analytics/cost/forecast?provider=devin
-```
-
-Returns projected next-30-day cost based on historical patterns.
+> **Note:** Cost forecasts are available via the dashboard Analytics page. There is no dedicated `/api/analytics/cost/forecast` REST endpoint.
 
 ### Setting Budget Alerts
 
@@ -559,60 +515,7 @@ Triggers when cumulative cloud spend for the current month exceeds 80% of `cloud
 
 ## Common Workflows
 
-### Workflow 1: Code Refactoring
-
-```bash
-# Create a refactoring task
-POST /api/cloud/tasks
-{
-  "agent": "codex-cloud",
-  "prompt": "Refactor src/auth.ts to use async/await instead of promises.then()",
-  "approvalRequired": true,
-  "context": {
-    "files": ["src/auth.ts"],
-    "tests": ["src/auth.test.ts"]
-  }
-}
-
-# Poll for status
-GET /api/cloud/tasks/{taskId}
-# Status: "planning" -> "awaiting_approval" -> "approved" -> "running" -> "completed"
-
-# Download the PR
-GET /api/cloud/tasks/{taskId}/artifacts
-```
-
-### Workflow 2: Bug Investigation
-
-```bash
-POST /api/cloud/tasks
-{
-  "agent": "devin",
-  "prompt": "Investigate why requests to /api/users are returning 500 in production",
-  "approvalRequired": true,
-  "maxCredits": 3.00,
-  "context": {
-    "logs": "https://your-log-server/recent",
-    "reproSteps": "1. Login as user 2. Visit /api/users 3. See 500"
-  }
-}
-```
-
-### Workflow 3: Multi-File Feature Implementation
-
-```bash
-POST /api/cloud/tasks
-{
-  "agent": "jules",
-  "prompt": "Add OAuth 2.1 support to the auth module. Include tests.",
-  "approvalRequired": true,
-  "maxCredits": 15.00,
-  "context": {
-    "spec": "https://your-spec-server/oauth-2.1.md",
-    "files": ["src/auth/", "src/middleware/"]
-  }
-}
-```
+> **Note:** Cloud agent task management is handled via the standard `/api/v1/agents/tasks` endpoint. There is no dedicated `/api/cloud/tasks` endpoint. Create tasks via `POST /api/v1/agents/tasks` and poll status via `GET /api/v1/agents/tasks/[id]`.
 
 ## Best Practices
 
@@ -628,15 +531,12 @@ POST /api/cloud/tasks
 
 ### "Agent not available"
 
-```bash
-GET /api/cloud/agents
-# Check status field
-```
+> **Note:** Agent status is displayed on the dashboard **Cloud Agents** page. There is no dedicated `/api/cloud/agents` REST endpoint — agent availability is determined by the underlying ACP or cloud agent connection configured in `src/lib/cloudAgent/`.
 
 | Status | Cause | Action |
 |--------|-------|--------|
 | `not_installed` | CLI not installed | Install (for ACP-based agents) |
-| `no_credentials` | No API key stored | Add credentials |
+| `no_credentials` | No API key stored | Add credentials via dashboard or PUT `/api/cloud/credentials/update` |
 | `invalid_credentials` | API key rejected | Re-authenticate |
 | `quota_exhausted` | Subscription/hard limit hit | Wait for reset |
 | `disabled` | Agent disabled in settings | Enable |
@@ -661,15 +561,7 @@ The task exceeded `maxCredits`. To continue:
 
 ### "Plan rejected but I want to override"
 
-You can override the plan with custom instructions:
-
-```bash
-POST /api/cloud/tasks/{taskId}/approve
-{
-  "approve": true,
-  "modifications": "Skip step 3, do it manually later"
-}
-```
+> **Note:** Plan approval and override is managed via the dashboard **Cloud Agents** page or via the standard `/api/v1/agents/tasks/[id]` endpoint with an `approve` action.
 
 ## See Also
 

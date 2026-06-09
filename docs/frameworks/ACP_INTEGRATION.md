@@ -275,48 +275,7 @@ Streamed as one JSON object per line on stdout:
 
 ## Session Lifecycle
 
-### Spawn a Session
-
-```bash
-POST /api/acp/spawn
-{
-  "agent": "claude-code",
-  "sessionId": "optional-uuid"
-}
-```
-
-Returns:
-
-```json
-{
-  "sessionId": "sess-abc123",
-  "agent": "claude-code",
-  "pid": 12345,
-  "startedAt": "2026-06-08T12:00:00Z"
-}
-```
-
-### Send Input
-
-```bash
-POST /api/acp/sessions/sess-abc123/send
-{
-  "input": "Refactor the auth module to use async/await"
-}
-```
-
-### Read Output
-
-Output is streamed via Server-Sent Events (SSE) at:
-
-```
-GET /api/acp/sessions/sess-abc123/stream
-```
-
-### Terminate
-
-```bash
-DELETE /api/acp/sessions/sess-abc123
+> **Note:** ACP session management is handled internally by `src/lib/acp/manager.ts`. Sessions are spawned automatically when a request is routed through an ACP agent (e.g., `model: "claude-code/default"`). There are no dedicated REST endpoints for spawning, sending to, or terminating ACP sessions — the session lifecycle is managed transparently by the request pipeline.
 ```
 
 Forces the child process to terminate.
@@ -392,12 +351,7 @@ ACP_HEALTH_CHECK_INTERVAL=60
 
 ### Output Limits
 
-```bash
-# Max output size per session (bytes)
-ACP_MAX_OUTPUT_BYTES=10485760  # 10MB
-```
-
-Larger outputs are truncated with a notice.
+> ACP output limits are managed internally by `src/lib/acp/manager.ts`. Output truncation is handled automatically.
 
 ---
 
@@ -431,8 +385,8 @@ GET /api/usage?provider=claude-code
 | `auth_failed` | Invalid/expired subscription | Re-authenticate |
 | `quota_exhausted` | Subscription limit hit | Wait for reset or upgrade plan |
 | `spawn_failed` | Process couldn't start | Check `cliPath` and permissions |
-| `timeout` | Session exceeded timeout | Increase `ACP_SESSION_TIMEOUT` |
-| `output_truncated` | Output > limit | Increase `ACP_MAX_OUTPUT_BYTES` |
+| `timeout` | Session exceeded timeout | ACP session timeouts are managed internally |
+| `output_truncated` | Output too large | Output is truncated automatically |
 
 ### Retry Strategy
 
@@ -564,56 +518,13 @@ With `ACP_MAX_CONCURRENT_SESSIONS=5`, expect ~500 MB RAM overhead.
 ```bash
 # .env
 LOG_LEVEL=debug
-ACP_DEBUG=true
 ```
 
-Logs go to `${DATA_DIR}/logs/acp.log`.
+ACP debug output is integrated into the standard OmniRoute logging pipeline.
 
 ### Inspect a Live Session
 
-```bash
-# List active sessions
-GET /api/acp/sessions
-
-# Get session detail
-GET /api/acp/sessions/sess-abc123
-```
-
-Returns:
-
-```json
-{
-  "sessionId": "sess-abc123",
-  "agent": "claude-code",
-  "pid": 12345,
-  "startedAt": "2026-06-08T12:00:00Z",
-  "lastActivityAt": "2026-06-08T12:04:30Z",
-  "bytesIn": 12345,
-  "bytesOut": 67890,
-  "toolCalls": 5,
-  "status": "running"
-}
-```
-
-### Manual Session
-
-For one-off debugging, spawn a session manually:
-
-```bash
-# Spawn
-POST /api/acp/spawn
-{ "agent": "claude-code" }
-
-# Send input
-POST /api/acp/sessions/sess-abc123/send
-{ "input": "echo 'hello world'" }
-
-# Watch the output stream
-curl -N http://localhost:20128/api/acp/sessions/sess-abc123/stream
-
-# Clean up
-DELETE /api/acp/sessions/sess-abc123
-```
+> **Note:** ACP session state is managed internally. There are no dedicated REST endpoints for listing or inspecting sessions. Session information is tracked in memory by `src/lib/acp/manager.ts`.
 
 ---
 

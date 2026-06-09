@@ -45,9 +45,6 @@ The Batches API enables **asynchronous bulk processing** of chat completion requ
 | POST | `/api/batches` | Create batch |
 | GET | `/api/batches` | List batches |
 | GET | `/api/batches/[id]` | Get batch detail |
-| POST | `/api/batches/[id]/cancel` | Cancel |
-| GET | `/api/batches/[id]/results` | Get results (download JSONL) |
-| GET | `/api/batches/[id]/errors` | Get failed requests (download JSONL) |
 
 ### Create a Batch
 
