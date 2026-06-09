@@ -113,22 +113,53 @@ const whitespaceEngine: CompressionEngine = {
   },
   
   compress(body, config = {}) {
-    const text = JSON.stringify(body);
-    const compressed = text
-      .replace(/[ \t]+/g, " ")      // collapse runs of spaces/tabs
-      .replace(/\n{3,}/g, "\n\n")   // collapse 3+ newlines to 2
-      .replace(/^\s+|\s+$/gm, "");  // trim each line
-    
+    let originalLength = 0;
+    let compressedLength = 0;
+
+    // Traverse message array and process text blocks directly
+    const compressedBody = (body.messages || []).map((msg) => {
+      let msgText = msg.content || "";
+      originalLength += msgText.length;
+
+      // Apply whitespace compression to text only (not JSON-stringified)
+      let compressed = msgText
+        .replace(/[ \t]+/g, " ")      // collapse runs of spaces/tabs
+        .replace(/\n{3,}/g, "\n\n")   // collapse 3+ consecutive newlines to 2
+        .replace(/^\s+|\s+$/gm, "");  // trim each line
+
+      compressedLength += compressed.length;
+
+      return {
+        ...msg,
+        content: config.preserveCodeBlocks
+          ? this.preserveCodeBlocks(compressed)
+          : compressed,
+      };
+    });
+
     return {
-      body: JSON.parse(compressed),
+      body: { ...body, messages: compressedBody },
       stats: {
-        originalTokens: Math.ceil(text.length / 4),
-        compressedTokens: Math.ceil(compressed.length / 4),
-        savingsPercent: 100 * (1 - compressed.length / text.length),
+        originalTokens: Math.ceil(originalLength / 4),
+        compressedTokens: Math.ceil(compressedLength / 4),
+        savingsPercent: 100 * (1 - compressedLength / originalLength),
         techniques: ["whitespace-collapse"],
         engineId: "whitespace",
       },
     };
+  },
+
+  preserveCodeBlocks(text) {
+    // Split by code block markers and preserve whitespace inside them
+    const parts = text.split(/(```[\s\S]*?```)/);
+    return parts
+      .map((part) => {
+        if (part.startsWith("```")) {
+          return part; // Don't modify code blocks
+        }
+        return part.replace(/\n{3,}/g, "\n\n"); // Only apply to prose
+      })
+      .join("");
   },
   
   getConfigSchema() {

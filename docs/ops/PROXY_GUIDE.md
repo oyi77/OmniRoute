@@ -637,7 +637,7 @@ Without this, a dead proxy would block every request for the full `PROXY_TIMEOUT
 ### Inspecting Proxy Health
 
 ```ts
-import { getAllProxyHealthStatuses, invalidateProxyHealth } from "omniroute/proxy/health";
+import { getAllProxyHealthStatuses, invalidateProxyHealth } from "omniroute/proxyHealth";
 
 const statuses = getAllProxyHealthStatuses();
 for (const s of statuses) {
@@ -774,7 +774,7 @@ evenly)
 ### Configuring Rotation Strategy
 
 ```ts
-import { rotateOneproxyProxy } from "omniroute/oneproxy/rotator";
+import { rotateOneproxyProxy } from "omniroute/oneproxyRotator";
 
 // In a one-off script
 const proxy = await rotateOneproxyProxy({ strategy: "quality" });
@@ -788,7 +788,7 @@ if (proxy) {
 When using `sequential` strategy, the internal index accumulates. To reset:
 
 ```ts
-import { resetSequentialIndex } from "omniroute/oneproxy/rotator";
+import { resetSequentialIndex } from "omniroute/oneproxyRotator";
 
 resetSequentialIndex();
 ```
@@ -803,7 +803,7 @@ Useful when:
 When a proxy consistently fails, mark it manually so the rotator will skip it:
 
 ```ts
-import { failOneproxyProxy } from "omniroute/oneproxy/rotator";
+import { failOneproxyProxy } from "omniroute/oneproxyRotator";
 
 const removed = await failOneproxyProxy("1.2.3.4", 8080);
 if (removed) {

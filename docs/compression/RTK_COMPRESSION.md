@@ -353,16 +353,18 @@ From `open-sse/services/compression/engines/rtk/filterSchema.ts`:
 
 ```ts
 {
-  "name": "string",                    // Filter name (kebab-case)
-  "version": "string",                 // SemVer
+  "id": "string",                      // Filter identifier (kebab-case, e.g., "python-traceback")
+  "label": "string",                   // Human-readable filter name
+  "description": "string",             // Short description of what filter does
   "category": "git|test|build|shell|docker|package|infra|cloud|generic",
+  "priority": number,                  // Execution order (higher = first)
   "match": {
-    "commands": ["string"],            // Command names to match (e.g., "kubectl get")
+    "commands": ["string"],            // Command names to match (e.g., "python", "pytest")
     "patterns": ["string"],            // Regex patterns to match output
     "outputTypes": ["string"]          // Detected output classes (e.g., "test-failure")
   },
   "rules": {
-    "stripAnsi": true,                 // Strip ANSI color codes
+    "stripAnsi": boolean,              // Strip ANSI color codes
     "replace": [                       // Find-and-replace rules
       { "pattern": "regex", "replacement": "..." }
     ],
@@ -373,20 +375,22 @@ From `open-sse/services/compression/engines/rtk/filterSchema.ts`:
         "unless": "regex"              // Skip if this pattern matches
       }
     ],
-    "strip": [                         // Lines to remove entirely
-      { "pattern": "regex" }
-    ],
-    "keep": [                          // Lines to always keep
-      { "pattern": "regex" }
-    ],
-    "truncate": [                      // Per-line truncation
-      { "pattern": "regex", "maxLength": 200 }
-    ],
-    "head": 5,                         // Keep first N lines of matched output
-    "tail": 5,                         // Keep last N lines of matched output
-    "maxLines": 100                    // Hard cap on total lines
+    "includePatterns": ["string"],     // Lines to keep (regex patterns)
+    "dropPatterns": ["string"],        // Lines to drop (regex patterns)
+    "collapsePatterns": ["string"],    // Lines to collapse to single occurrence
+    "deduplicate": boolean,            // Remove duplicate lines
+    "truncateLineAt": number,          // Truncate lines to max chars
+    "maxLines": number,                // Hard cap on total lines
+    "headLines": number,               // Keep first N lines of matched output
+    "tailLines": number,               // Keep last N lines of matched output
+    "onEmpty": "string",               // Fallback message if all lines filtered
+    "filterStderr": boolean            // Also filter stderr output
   },
-  "tests": [                           // Inline tests for verification
+  "preserve": {
+    "errorPatterns": ["string"],       // Patterns that must always be preserved
+    "summaryPatterns": ["string"]      // Patterns for final summary line
+  },
+  "inlineTests": [                     // Inline tests for verification
     {
       "name": "string",
       "input": "sample output",
@@ -401,29 +405,48 @@ From `open-sse/services/compression/engines/rtk/filterSchema.ts`:
 
 ```json
 {
-  "name": "python-traceback",
-  "version": "1.0.0",
-  "category": "generic",
+  "id": "python-traceback",
+  "label": "Python Traceback Filter",
+  "description": "Compresses Python tracebacks to essential file/line locations and error type",
+  "category": "test",
+  "priority": 60,
   "match": {
     "commands": ["python", "python3", "pytest", "uv", "poetry"],
-    "patterns": ["Traceback \\(most recent call last\\)"],
+    "patterns": ["Traceback \\(most recent call last\\)", "Error", "Exception"],
     "outputTypes": ["error-traceback"]
   },
   "rules": {
     "stripAnsi": true,
-    "keep": [
-      { "pattern": "^\\s*File \".+\", line \\d+" },
-      { "pattern": "^\\s*[A-Z][a-zA-Z]+Error|^\\s*[A-Z][a-zA-Z]+Exception" }
+    "includePatterns": [
+      "Traceback \\(most recent call last\\)",
+      "^\\s*File \".+\", line \\d+",
+      "^\\s*[A-Z][a-zA-Z]+Error:",
+      "^\\s*[A-Z][a-zA-Z]+Exception"
     ],
-    "head": 3,
-    "tail": 8,
-    "maxLines": 25
+    "dropPatterns": [
+      "site-packages/",
+      "^\\s+[a-z_]+\\([^)]*\\)$"
+    ],
+    "headLines": 5,
+    "tailLines": 3,
+    "maxLines": 25,
+    "filterStderr": true
   },
-  "tests": [
+  "preserve": {
+    "errorPatterns": [
+      "Error:",
+      "Exception:",
+      "Traceback"
+    ],
+    "summaryPatterns": [
+      "^[A-Z][a-zA-Z]+(?:Error|Exception):"
+    ]
+  },
+  "inlineTests": [
     {
       "name": "preserves-error-type-and-location",
       "input": "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n    do_thing()\n  File \"lib/utils.py\", line 17, in helper\n    return 1 / 0\nZeroDivisionError: division by zero",
-      "expected": "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n    do_thing()\n  File \"lib/utils.py\", line 17, in helper\n    return 1 / 0\nZeroDivisionError: division by zero",
+      "expected": "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n  File \"lib/utils.py\", line 17, in helper\nZeroDivisionError: division by zero",
       "command": "python app.py"
     }
   ]

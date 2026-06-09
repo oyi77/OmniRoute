@@ -648,21 +648,17 @@ The `extraction.ts` module (`src/lib/memory/extraction.ts`) uses **regex pattern
 
 | Category | Example pattern | Captures |
 |----------|-----------------|----------|
-| Preferences | `"I (like\|love\|prefer\|hate) <X>"` | User preferences |
-| Identity | `"My name is <X>"`, `"I work at <X>"` | Personal facts |
-| Skills | `"I (know\|can use) <X>"` | User capabilities |
-| Tasks | `"I need to <X>"` | Current goals |
-| Project context | `"We're building <X>"` | Project metadata |
-| Constraints | `"I don't (like\|want) <X>"` | Negative constraints |
+| PREFERENCE_PATTERNS | `"I (like\|love\|prefer\|hate) <X>"` | User preferences and constraints |
+| DECISION_PATTERNS | `"I decided to <X>"`, `"We chose <X>"` | Decisions and rationale |
+| PATTERN_PATTERNS | `"Every time <X>, then <Y>"` | Recurring behavioral patterns |
 
 ### Example Patterns (Simplified)
 
 ```ts
 // From src/lib/memory/extraction.ts
-const PREFERENCES = /\b(?:i (?:like|love|prefer|enjoy)|i hate|i (?:don't|do not) (?:like|love|prefer))\s+([^.!?]{3,80})/gi;
-const IDENTITY = /\b(?:my name is|i'?m called|i work (?:at|for))\s+([^.!?]{2,60})/gi;
-const TASKS = /\b(?:i (?:need to|have to|am trying to|want to))\s+([^.!?]{3,100})/gi;
-const PROJECTS = /\b(?:we(?:'re| are) (?:building|working on|developing))\s+([^.!?]{3,100})/gi;
+const PREFERENCE_PATTERNS = /\b(?:i (?:like|love|prefer|enjoy)|i hate|i (?:don't|do not) (?:like|love|prefer))\s+([^.!?]{3,80})/gi;
+const DECISION_PATTERNS = /\b(?:(?:we|i) (?:decided|chose|agreed) (?:to|on))\s+([^.!?]{3,80})/gi;
+const PATTERN_PATTERNS = /\b(?:whenever|every time|each time)\s+(.+?)\s+(?:then|we|i)\s+(.+?)(?:\.|$)/gi;
 ```
 
 ### What Gets Extracted
