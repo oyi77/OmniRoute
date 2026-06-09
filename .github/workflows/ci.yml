@@ -58,7 +58,6 @@ jobs:
       - run: npm run check:docs-all
       - name: Fabricated docs gate (strict — fail on drift)
         run: node scripts/check/check-fabricated-docs.mjs --strict
-        continue-on-error: true
       - name: i18n translation drift (warn)
         run: node scripts/i18n/check-translation-drift.mjs --warn
 
