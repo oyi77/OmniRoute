@@ -1003,9 +1003,6 @@ The following variables were added in v3.8.16 (alongside the new plugin, memory,
 |----------|---------|--------|---------|
 | `MEMORY_RRF_K` | `60` | `src/lib/memory/vectorStore.ts` | Reciprocal Rank Fusion k constant (higher = flatter ranking) |
 | `MEMORY_VEC_TOP_K` | `20` | `src/lib/memory/vectorStore.ts` | Default top-K for vector search |
-| `MEMORY_SUMMARIZE_THRESHOLD` | `1000` | `src/lib/memory/summarization.ts` | Trigger summarization above this many memories per key |
-| `MEMORY_SUMMARIZE_AGE_DAYS` | `90` | `src/lib/memory/summarization.ts` | Auto-summarize memories older than N days |
-| `MEMORY_KEEP_RECENT` | `50` | `src/lib/memory/summarization.ts` | Always preserve the N most recent memories verbatim |
 
 ### Proxy Health
 
@@ -1023,37 +1020,21 @@ The following variables were added in v3.8.16 (alongside the new plugin, memory,
 
 ### ACP (Agent Client Protocol)
 
-| Variable | Default | Source | Purpose |
-|----------|---------|--------|---------|
-| `ACP_MAX_CONCURRENT_SESSIONS` | `5` | `src/lib/acp/manager.ts` | Max concurrent ACP subprocess sessions |
-| `ACP_SESSION_TIMEOUT` | `300` | `src/lib/acp/manager.ts` | Per-session idle timeout (seconds) |
-| `ACP_HEALTH_CHECK_INTERVAL` | `60` | `src/lib/acp/manager.ts` | Health check interval (seconds) |
-| `ACP_KEEP_ALIVE_SECONDS` | `300` | `src/lib/acp/manager.ts` | How long to keep child processes alive (seconds) |
-| `ACP_MAX_OUTPUT_BYTES` | `10485760` | `src/lib/acp/manager.ts` | Max output bytes per session (10MB default) |
+> ACP session management uses hardcoded defaults in `src/lib/acp/manager.ts`. No environment variable overrides are currently supported.
 
 ### Token Health
 
-| Variable | Default | Source | Purpose |
-|----------|---------|--------|---------|
-| `TOKEN_HEALTH_CHECK_INTERVAL_MS` | `21600000` | `src/lib/tokenHealthCheck.ts` | OAuth token check interval (6h default) |
-| `TOKEN_PREEMPTIVE_REFRESH_MINUTES` | `30` | `src/lib/tokenHealthCheck.ts` | Pre-emptive refresh window |
-| `TOKEN_MAX_FAILURES` | `3` | `src/lib/tokenHealthCheck.ts` | Alert after N consecutive failures |
+> Token health check timing is hardcoded in `src/lib/tokenHealthCheck.ts`. No environment variable overrides are currently supported.
 
 ### Usage Tracking
 
 | Variable | Default | Source | Purpose |
 |----------|---------|--------|---------|
 | `USAGE_RETENTION_DAYS` | `90` | `src/lib/db/cleanup.ts` | Auto-delete usage records older than N days |
-| `MEMORY_MAX_EXTRACTIONS_PER_MESSAGE` | `10` | `src/lib/memory/extraction.ts` | Max memories extracted per message |
-| `MEMORY_EXTRACTION_MIN_CONFIDENCE` | `0.5` | `src/lib/memory/extraction.ts` | Min pattern confidence for extraction |
 
 ### Compression
 
-| Variable | Default | Source | Purpose |
-|----------|---------|--------|---------|
-| `RTK_INTENSITY` | `standard` | `open-sse/services/compression/engines/rtk/index.ts` | Default RTK intensity: `minimal` / `standard` / `aggressive` |
-| `RTK_RAW_OUTPUT_ENABLED` | `false` | `open-sse/services/compression/engines/rtk/rawOutput.ts` | Persist raw output for recovery |
-| `RTK_RAW_OUTPUT_MAX_BYTES` | `1048576` | `open-sse/services/compression/engines/rtk/rawOutput.ts` | Max bytes per raw output (1MB) |
+> RTK compression settings are configured via the dashboard Settings page or MCP tools (`compression_configure`). No environment variable overrides are currently supported.
 
 ### Embedding Cache
 
