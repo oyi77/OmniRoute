@@ -464,12 +464,11 @@ const config: SkillConfig = {
 
 | Category | Skills | Mode |
 |----------|--------|------|
-| File I/O | `read-file`, `write-file`, `list-dir` | AUTO |
-| HTTP | `http-get`, `http-post` | AUTO |
-| System | `exec-command` (sandboxed) | MANUAL |
-| Code | `run-typescript`, `run-python` (sandboxed) | HYBRID |
-| Data | `parse-json`, `parse-csv` | AUTO |
-
+| File I/O | `file_read`, `file_write` | AUTO |
+| HTTP | `http_request` | AUTO |
+| Search | `web_search` | AUTO |
+| Code Exec | `eval_code` (sandboxed JavaScript/Python) | HYBRID |
+| System | `execute_command` (sandboxed CLI execution) | MANUAL |
 ### Adding a Custom Skill
 
 See the [Plugin SDK & Skills Integration](../plugins/PLUGIN_SDK.md) for how to add a custom skill via the plugin system.

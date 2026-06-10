@@ -517,14 +517,13 @@ Then in combo config:
 
 ## Reference: Built-in Engines
 
-| Engine ID | Stackable | Default priority | Targets |
-|-----------|-----------|------------------|---------|
-| `lite` | Yes | 100 | messages, tool_results |
-| `caveman` | Yes | 50 | messages, tool_results, code_blocks |
+| Engine ID | Stackable | Default stackPriority | Targets |
+|-----------|-----------|-----------------------|---------|
+| `lite` | Yes | 5 | messages, tool_results |
 | `rtk` | Yes | 10 | tool_results |
-| `mcp-accessibility` | No | n/a | tool_results (MCP descriptions only) |
-| `ultra` | Yes | 25 | messages, code_blocks |
-
+| `standard` (caveman) | Yes | 20 | messages, tool_results, code_blocks |
+| `aggressive` | Yes | 30 | messages |
+| `ultra` | Yes | 40 | messages, code_blocks |
 ### See Also
 
 - [COMPRESSION_GUIDE.md](./COMPRESSION_GUIDE.md) — Pipeline overview

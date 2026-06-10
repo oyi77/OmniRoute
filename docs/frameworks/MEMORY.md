@@ -577,56 +577,35 @@ OmniRoute's memory engine supports **four embedding sources** (`src/lib/memory/e
             (LruCache wraps any provider)
 ```
 
-### Provider-Specific Configuration
+### Database & API Configuration
 
-**`transformers`** — Local model via `@xenova/transformers`:
+Memory embedding options are configured via the Settings API/UI, not environment variables. The relevant settings database keys under Settings (`normalizeMemorySettings` in `src/lib/memory/settings.ts`) are:
 
-```bash
-# .env
-MEMORY_EMBEDDING_SOURCE=transformers
-MEMORY_EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
-```
+- `memoryEmbeddingSource`: `"transformers"` (local), `"remote"` (API-based, e.g. OpenAI), `"static"` (external store), or `"auto"`
+- `memoryEmbeddingProviderModel`: Model identifier for remote/static sources (e.g., `"text-embedding-3-small"`)
+- `memoryTransformersEnabled`: `true` | `false`
+- `memoryStaticEnabled`: `true` | `false`
+- `memoryVectorStore`: `"sqlite-vec"`, `"qdrant"`, or `"auto"`
 
-- **Pros**: No API costs, works offline, GDPR-friendly (data never leaves the host)
-- **Cons**: ~50MB ONNX model download on first run; CPU-bound (~150ms per text)
-- **Best for**: dev environments, self-hosted deployments, latency-sensitive use cases
+#### Local Model (`transformers`)
 
-**`remote`** — OpenAI-compatible API:
+Uses transformers.js internally to run local models:
 
 ```bash
-MEMORY_EMBEDDING_SOURCE=remote
-MEMORY_EMBEDDING_MODEL=text-embedding-3-small
-MEMORY_EMBEDDING_API_KEY=sk-...
-MEMORY_EMBEDDING_BASE_URL=https://api.openai.com/v1
+# Env vars read in code (src/lib/memory/embedding/index.ts):
+MEMORY_TRANSFORMERS_MODEL=Xenova/all-MiniLM-L6-v2  # HF model repo
+MEMORY_STATIC_MODEL=minishlab/potion-base-8M       # HF static potion model
+MEMORY_STATIC_CACHE_DIR=<DATA_DIR>/embeddings      # Cache directory
 ```
 
-- **Pros**: Highest quality, fast (parallel), no local compute
-- **Cons**: Per-token costs, data leaves host, requires API key
-- **Best for**: production deployments, large memory corpora, quality-critical recall
+#### LRU Embedding Cache
 
-**`static`** — Use a pre-computed vector store (Qdrant, Pinecone):
+The cache is always on by default and configured via env vars:
 
 ```bash
-MEMORY_EMBEDDING_SOURCE=static
-MEMORY_STATIC_URL=qdrant://localhost:6333
-MEMORY_STATIC_COLLECTION=omniroute_memories
+MEMORY_EMBEDDING_CACHE_MAX=1000                    # Max cached items
+MEMORY_EMBEDDING_CACHE_TTL_MS=300000               # TTL (5 min)
 ```
-
-- **Pros**: Decouples embedding cost from runtime; can use specialized models
-- **Cons**: Requires Qdrant infrastructure; operational overhead
-- **Best for**: enterprise deployments, when you already run Qdrant/Pinecone
-
-**`cache`** — LRU layer in front of any provider (always-on by default):
-
-```bash
-MEMORY_EMBEDDING_CACHE_SIZE=10000
-MEMORY_EMBEDDING_CACHE_TTL_MS=3600000  # 1 hour
-```
-
-- **Pros**: Eliminates repeat embedding calls (common for similar queries)
-- **Cons**: Memory footprint (~30KB per 1k cached entries with MiniLM)
-- **Best for**: every deployment — there's no downside
-
 ### Performance Numbers
 
 Benchmark on a typical 4-core x86 server (texts ~100 tokens each):
@@ -759,29 +738,15 @@ With higher `k`, the **relative difference** between top-1 and rank-10 is smalle
 | Recall is high but precision is low | **Lower** k — sharpen the ranking |
 | Recall is low (missing relevant docs) | **Higher** k — give lower-ranked docs a chance |
 
-### RRF + Embedding Weight
+### RRF Weighting
 
-Beyond `k`, you can adjust the **relative weight** of FTS vs vector contribution:
-
-```bash
-# Default (1.0 = equal weight)
-MEMORY_RRF_VECTOR_WEIGHT=1.0
-MEMORY_RRF_FTS_WEIGHT=1.0
-
-# Heavily favor semantic (for long, varied queries)
-MEMORY_RRF_VECTOR_WEIGHT=2.0
-MEMORY_RRF_FTS_WEIGHT=0.5
-
-# Heavily favor keyword (for technical terms, IDs)
-MEMORY_RRF_VECTOR_WEIGHT=0.5
-MEMORY_RRF_FTS_WEIGHT=2.0
-```
-
-The weighted RRF becomes:
+The reciprocal rank fusion uses equal weights for semantic vector rank and full-text search rank:
 
 ```
-RRF(d) = (vector_weight * 1/(k + rank_vector)) + (fts_weight * 1/(k + rank_fts))
+RRF(d) = 1/(k + rank_vector) + 1/(k + rank_fts)
 ```
+
+There are no environment variables to adjust individual weights (`MEMORY_RRF_VECTOR_WEIGHT`/`MEMORY_RRF_FTS_WEIGHT` do not exist).
 
 ---
 
