@@ -33,15 +33,16 @@ lastUpdated: 2026-06-08
 
 ### Phase 1: Local Seed Registry (v3.8.16+)
 
-The local seed registry ships with **3 verified plugins** maintained by the OmniRoute team:
+The local seed registry ships with **4 verified plugins** maintained by the OmniRoute team:
 
-| Plugin           | Tags                 | Description                                 |
-| ---------------- | -------------------- | ------------------------------------------- |
-| `request-logger` | logging, debugging   | Logs all requests and responses with timing |
-| `rate-limiter`   | rate-limit, security | Per-model rate limiting with sliding window |
-| `cost-tracker`   | analytics, cost      | Track token costs per request and per model |
+| Plugin           | Tags                          | Description                                            |
+| ---------------- | ----------------------------- | ------------------------------------------------------ |
+| `request-logger` | logging, debugging            | Logs all requests and responses with timing            |
+| `rate-limiter`   | rate-limit, security          | Per-model rate limiting with sliding window            |
+| `cost-tracker`   | analytics, cost               | Track token costs per request and per model            |
+| `theme-manager`  | theme, ui, css, customization | Dynamic UI theme management via CSS variable injection |
 
-All three are `verified: true` and `license: MIT`.
+All four are `verified: true` and `license: MIT`.
 
 ### Phase 2: Remote Registry (Planned)
 
@@ -177,7 +178,7 @@ import { listMarketplacePlugins, searchMarketplace } from "omniroute/plugins/mar
 
 // List all seed plugins
 const allPlugins = await listMarketplacePlugins();
-console.log(allPlugins); // [request-logger, rate-limiter, cost-tracker]
+console.log(allPlugins); // [request-logger, rate-limiter, cost-tracker, theme-manager]
 
 // Search by tag
 const loggingPlugins = await searchMarketplace({ tags: ["logging"] });
@@ -272,11 +273,12 @@ Users can rate installed plugins 1-5 stars. The aggregate rating is shown in the
 
 The `verified: true` flag means the plugin is published by the **OmniRoute team** or by an author whose public key has been added to the trusted set.
 
-| Plugin           | Author    | Verified | License | Description                                 |
-| ---------------- | --------- | -------- | ------- | ------------------------------------------- |
-| `request-logger` | omniroute | ✅       | MIT     | Logs all requests and responses with timing |
-| `rate-limiter`   | omniroute | ✅       | MIT     | Per-model rate limiting with sliding window |
-| `cost-tracker`   | omniroute | ✅       | MIT     | Track token costs per request and per model |
+| Plugin           | Author    | Verified | License | Description                                            |
+| ---------------- | --------- | -------- | ------- | ------------------------------------------------------ |
+| `request-logger` | omniroute | ✅       | MIT     | Logs all requests and responses with timing            |
+| `rate-limiter`   | omniroute | ✅       | MIT     | Per-model rate limiting with sliding window            |
+| `cost-tracker`   | omniroute | ✅       | MIT     | Track token costs per request and per model            |
+| `theme-manager`  | omniroute | ✅       | MIT     | Dynamic UI theme management via CSS variable injection |
 
 When the remote registry launches, third-party authors can apply for verification by:
 
@@ -291,7 +293,7 @@ When the remote registry launches, third-party authors can apply for verificatio
 
 ### Current State (Phase 1)
 
-- Seed plugins have initial ratings set by the OmniRoute team: `request-logger: 5`, `rate-limiter: 5`, `cost-tracker: 4`
+- Seed plugins have initial ratings set by the OmniRoute team: `request-logger: 5`, `rate-limiter: 5`, `cost-tracker: 4`, `theme-manager: 5`
 - No user ratings yet
 - All plugins are `verified: true` by definition
 
