@@ -373,6 +373,7 @@ import { resolveAccountSemaphoreKey } from "./chatCoreSemaphoreKey.ts";
 import { runSetupPhase } from "./chatCoreSetup.ts";
 
 
+import { runTransformPhase } from "./chatCoreTransform.ts";
 export async function handleChatCore({
   body,
   modelInfo,
@@ -2199,7 +2200,7 @@ export async function handleChatCore({
         model || "",
         sourceFormat
       );
-      translatedBody = translateRequest(
+      translatedBody = runTransformPhase({
         sourceFormat,
         targetFormat,
         model,
@@ -2208,15 +2209,15 @@ export async function handleChatCore({
         credentials,
         provider,
         reqLogger,
-        {
+        options: {
           normalizeToolCallId,
           preserveDeveloperRole,
           preserveCacheControl,
-          signatureNamespace: connectionId,
+          signatureNamespace: connectionId || undefined,
           copilotClient: copilotCompatibleReasoning,
           ...(preCompressionBody ? { preCompressionBody } : {}),
-        }
-      );
+        },
+      });
     }
   } catch (error) {
     // ── Plugin onError hook ──
