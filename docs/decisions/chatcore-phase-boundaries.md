@@ -1,70 +1,66 @@
 # chatCore.ts Modularization — Phase 4+ Analysis
 
-**Status**: Phase 4 partial (module-level extractions done).
-Phase 4 main orchestration refactor DEFERRED to future work.
+**Status**: Phase 1-3 COMPLETE. Phase 4 (partial) COMPLETE. Phase 5-6 DEFERRED.
 
-## Current state (commit 3a4e3937f)
+## Current state
 
 ```
-chatCore.ts: 4857 lines (down from 6022, -19%)
-12 extracted modules: 1624 lines total
+chatCore.ts: 4684 lines (down from 6022, -22%)
+16 extracted modules: 1989 lines total
 ```
 
 ## Extracted modules
 
-| Module | Lines | Purpose |
-|---|---|---|
-| chatCoreUtils.ts | 90 | Pure utility functions |
-| chatCoreErrors.ts | 89 | Error classification & responses |
-| chatCoreExports.ts | 142 | Re-exports of public API |
-| chatCoreHelpers.ts | 325 | Generic helpers (executor, semaphore) |
-| chatCoreLogMeta.ts | 101 | Log metadata builders |
-| chatCoreMemory.ts | 163 | Memory extraction/injection |
-| chatCorePassthrough.ts | 125 | Claude passthrough logic |
-| chatCoreStreamHelpers.ts | 233 | Stream helpers (heartbeat, chunks) |
-| chatCoreStreamUtils.ts | 148 | SSE terminal detection |
-| chatCoreCache.ts | 70 | Module-level cache state |
-| chatCoreClaudeUsage.ts | 39 | Claude extra-usage sync |
-| chatCoreResponseBody.ts | 72 | Non-stream response body reader |
-| chatCoreSemaphoreKey.ts | 27 | Semaphore key resolver |
+| Module | Lines | Phase | Purpose |
+|---|---|---|---|
+| chatCoreUtils.ts | 90 | 1 | Pure utility functions |
+| chatCoreErrors.ts | 89 | 1 | Error classification & responses |
+| chatCoreExports.ts | 142 | 1 | Re-exports of public API |
+| chatCoreHelpers.ts | 325 | 1 | Generic helpers (executor, semaphore) |
+| chatCoreLogMeta.ts | 101 | 2 | Log metadata builders |
+| chatCoreMemory.ts | 163 | 2 | Memory extraction/injection |
+| chatCorePassthrough.ts | 125 | 2 | Claude passthrough logic |
+| chatCoreStreamHelpers.ts | 233 | 2 | Stream helpers (heartbeat, chunks) |
+| chatCoreStreamUtils.ts | 148 | 3 | SSE terminal detection |
+| chatCoreCache.ts | 70 | 4 | Module-level cache state |
+| chatCoreClaudeUsage.ts | 39 | 4 | Claude extra-usage sync |
+| chatCoreResponseBody.ts | 72 | 4 | Non-stream response body reader |
+| chatCoreSemaphoreKey.ts | 27 | 4 | Semaphore key resolver |
+| chatCoreSetup.ts | 219 | 4 | Phase 1: setup (heap guard, trace, plugin hook) |
+| chatCoreTransform.ts | 48 | 4 | Phase 2: request translation wrapper |
+| chatCoreExecutor.ts | 98 | 4 | Phase 4: executor resolution with proxy |
 
 ## What remains
 
-The `handleChatCore` function itself is still 4480 lines. It is a single async
-function with deeply nested closures and 50+ shared local variables. The
-original plan was to refactor it into a `ChatCorePipeline` class with 6 phase
-methods (setup, transform, compress, execute, stream, finalize).
+The `handleChatCore` function itself is still 4684 lines. It is a single async
+function with deeply nested closures and 50+ shared local variables.
 
-### Why the full Phase 4 refactor is deferred
+### Phase 4 (execute) — lines ~2520-2910
+`executeProviderRequest` (~390 lines) handles deduplication, compression,
+translation, and error handling. Depends on 20+ closure variables.
 
-1. **Massive scope**: 4480 lines × 50+ shared variables = 200k+ tokens of
-   context to hold during refactor.
-2. **Tight coupling**: State is mutated throughout — most of it crosses
-   "phase" boundaries conceptually. Extracting phases would require
-   either:
-   - Passing a 50+ field context object between methods (high ceremony,
-     type safety, but unweildy)
-   - Restructuring the entire function into a class (high risk of
-     regression in a request hot path)
-3. **Existing trace markers help**: The function already has explicit
-   `trace("post_injection")`, `trace("post_translation")`, `trace("post_semaphore")`,
-   etc. points that document phase transitions. Adding phase names to
-   the trace labels would help observability without restructuring the
-   function.
+### Phase 5 (stream) — lines ~4370-4620
+`onStreamComplete` callback (~180 lines) and transform stream creation.
+Heavy closure dependency.
+
+### Phase 6 (finalize) — lines ~4620-4685
+Final response construction and cleanup.
+
+### Why these require a class-based refactor
+
+All three phases close over the same 50+ variables (provider, model,
+credentials, translatedBody, stream, connectionId, apiKeyInfo, log,
+trace, startTime, etc.). Extracting them as standalone functions would
+require passing a 50+ field context object — which is exactly what a
+class instance provides.
 
 ### Recommended approach for the next session
 
-1. **Phase boundary documentation**: Add explicit `// === PHASE: <name> ===`
-   comments at every transition point. Cheap, no risk, documents
-   structure.
-2. **Identify "purer" sub-phases** that can be extracted next:
-   - Phase 2 (compression) — has the most local state but well-bounded
-   - Phase 6 (finalize) — usage logging is more stateless than the rest
-3. **Refactor the main function** to extract one phase at a time
-   using a class instance as the shared state container. Each phase
-   method returns a discriminated union (`Continue` or `Result`).
-4. **Keep the existing trace markers** so the refactor doesn't change
-   observable behavior.
+1. Define `ChatCoreContext` interface with all shared state
+2. Create `ChatCorePipeline` class with `runPhase4()`, `runPhase5()`, `runPhase6()` methods
+3. Each phase method takes the context and returns a discriminated union
+4. `handleChatCore` becomes a thin orchestrator that creates the context
+   and calls the phase methods
 
 ## Verification
 
