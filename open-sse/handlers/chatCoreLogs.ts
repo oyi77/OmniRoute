@@ -8,12 +8,9 @@
  * The function takes all its inputs as parameters — no closure dependencies.
  */
 
-import {
-  saveCallLog,
-  truncateForLog,
-  attachLogMeta,
-  cloneBoundedChatLogPayload,
-} from "@/lib/logPayloads";
+import { saveCallLog } from "@/lib/usageDb";
+import { attachLogMeta } from "./chatCoreLogMeta.ts";
+import { cloneBoundedChatLogPayload, truncateForLog } from "./chatCoreStreamHelpers.ts";
 
 export type CallLogPayload = {
   id: string;
@@ -51,7 +48,7 @@ export async function persistCallLog(payload: CallLogPayload): Promise<void> {
 }
 
 /**
- * Build the request/response body for a call log, applying log meta
+ * Build the request body for a call log, applying log meta
  * (Claude prompt cache) and log truncation.
  */
 export function buildCallLogBody(

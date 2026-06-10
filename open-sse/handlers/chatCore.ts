@@ -375,7 +375,8 @@ import { resolveAccountSemaphoreKey } from "./chatCoreSemaphoreKey.ts";
 import { runSetupPhase } from "./chatCoreSetup.ts";
 import { runTransformPhase } from "./chatCoreTransform.ts";
 import { resolveExecutorWithProxy } from "./chatCoreExecutor.ts";
-import { extractSystemMessagesToBody, normalizeClaudeUpstreamMessages } from "./chatCoreClaudeMessages.ts";
+import { extractSystemMessagesToBody, normalizeClaudeUpstreamMessages, type ClaudeMessage } from "./chatCoreClaudeMessages.ts";
+import { persistCallLog, buildCallLogBody, buildCallLogResponseBody } from "./chatCoreLogs.ts";
 export async function handleChatCore({
   body,
   modelInfo,
@@ -883,7 +884,7 @@ export async function handleChatCore({
       }
     }
 
-    saveCallLog({
+    persistCallLog({
       id: pendingRequestId,
       method: "POST",
       path: clientRawRequest?.endpoint || "/v1/chat/completions",
@@ -894,22 +895,11 @@ export async function handleChatCore({
       connectionId: connectionId || credentials?.connectionId || undefined,
       duration: Date.now() - startTime,
       tokens: tokens || {},
-      requestBody: cloneBoundedChatLogPayload(
-        attachLogMeta(truncateForLog(body as Record<string, unknown>), {
-          claudePromptCache: claudeCacheMeta,
-        })
-      ),
-      responseBody: cloneBoundedChatLogPayload(
-        attachLogMeta(truncateForLog(responseBody as Record<string, unknown>), {
-          claudePromptCache: claudeCacheMeta
-            ? {
-                applied: claudeCacheMeta.applied,
-                totalBreakpoints: claudeCacheMeta.totalBreakpoints,
-                anthropicBeta: claudeCacheMeta.anthropicBeta,
-              }
-            : null,
-          claudePromptCacheUsage: claudeCacheUsageMeta,
-        })
+      requestBody: buildCallLogBody(body as Record<string, unknown>, claudeCacheMeta),
+      responseBody: buildCallLogResponseBody(
+        responseBody as Record<string, unknown>,
+        claudeCacheMeta,
+        claudeCacheUsageMeta
       ),
       error: error || null,
       sourceFormat,
@@ -923,7 +913,7 @@ export async function handleChatCore({
       apiKeyName: apiKeyInfo?.name || null,
       noLog: noLogEnabled,
       pipelinePayloads,
-    }).catch(() => {});
+    });
   };
 
   // Primary path: merge client model id + alias target so config on either key applies; resolved
