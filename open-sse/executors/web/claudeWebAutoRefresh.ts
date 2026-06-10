@@ -6,7 +6,7 @@
  */
 
 import type { ExecuteInput } from "../base/base.ts";
-import { ClaudeWebExecutor } from "./claude-web.ts";
+import { ClaudeWebExecutor } from "./claudeWeb.ts";
 import { getCfClearanceToken, getCacheStatus } from "../../services/claudeTurnstileSolver.ts";
 
 class ClaudeWebWithAutoRefresh extends ClaudeWebExecutor {
