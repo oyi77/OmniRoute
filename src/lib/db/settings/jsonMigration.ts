@@ -12,7 +12,7 @@
  */
 
 import type { SqliteAdapter } from "../adapters/types";
-import { normalizeRoutingStrategy } from "../../shared/constants/routingStrategies";
+import { normalizeRoutingStrategy } from "../../../shared/constants/routingStrategies";
 
 type SqliteDatabase = SqliteAdapter;
 
