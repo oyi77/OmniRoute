@@ -14,7 +14,7 @@ export function resolveProjectRoot(
 ): string {
   const markers = ["package.json", ".git"] as const;
   let dir = path.resolve(startDir);
-  for (let i = 0; i < 16; i++) {
+  while (true) {
     if (markers.some((m) => existsSync(path.join(dir, m)))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) break;

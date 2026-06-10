@@ -412,8 +412,7 @@ test("resolveProjectRoot walks up from start dir to nearest package.json or .git
     // a real path (either found via walking or the fallback).
     const lonely = "/proc/1";
     const lonelyResult = autoUpdate.resolveProjectRoot("/my-fallback", lonely);
-    assert.ok(typeof lonelyResult === "string" && lonelyResult.length > 0);
-    assert.notEqual(lonelyResult, "");
+    assert.equal(lonelyResult, "/my-fallback");
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
