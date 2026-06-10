@@ -417,6 +417,28 @@ function openaiToGeminiBase(
             if (!fn) continue;
 
             const signatureForToolCall = resolvedSignatures.get(id);
+
+            // Non-bypass paths (standard Gemini direct, mode "text"/"context")
+            // cannot send a thoughtSignature and reject signature-less native tool
+            // parts, so historical signature-less tool calls are represented as
+            // inert text/context (#3358). The Antigravity/CLI bypass path
+            // (supportsSignatureBypass) instead emits native parts carrying the
+            // skip_thought_signature_validator sentinel below.
+            if (!toolNameOptions.supportsSignatureBypass) {
+              if (!signatureForToolCall && contextualizeSignaturelessToolResponses) {
+                if (!toolCallIds.includes(id)) toolCallIds.push(id);
+              }
+              if (!signatureForToolCall && stringifySignaturelessToolCalls) {
+                parts.push({
+                  text: buildInertHistoricalToolCallText(fn.name, fn.arguments || "{}"),
+                });
+                continue;
+              }
+              if (!signatureForToolCall && signaturelessToolCallMode === "context") {
+                continue;
+              }
+            }
+
             const args = tryParseJSON(fn.arguments || "{}");
             const embeddedThoughtSignature = shouldUseEmbeddedSignature
               ? firstPersistedSignature || signatureForToolCall
@@ -442,7 +464,16 @@ function openaiToGeminiBase(
                 args: args,
               },
             });
-            toolCallIds.push(id);
+
+            // Bypass path always emits the native response; non-bypass keeps the
+            // contextualize-aware bookkeeping (signature-less ids handled as text).
+            if (
+              toolNameOptions.supportsSignatureBypass ||
+              !contextualizeSignaturelessToolResponses ||
+              signatureForToolCall
+            ) {
+              toolCallIds.push(id);
+            }
           }
 
           if (parts.length > 0) {
@@ -463,6 +494,12 @@ function openaiToGeminiBase(
             const toolParts: GeminiPart[] = [];
             for (const fid of toolCallIds) {
               if (!toolResponses[fid]) continue;
+              if (
+                !toolNameOptions.supportsSignatureBypass &&
+                contextualizeSignaturelessToolResponses &&
+                !resolvedSignatures.has(fid)
+              )
+                continue;
 
               let name = tcID2Name[fid];
               if (!name) {
@@ -493,6 +530,33 @@ function openaiToGeminiBase(
                       : { result: parsedResp },
                 },
               });
+            }
+
+            if (
+              !toolNameOptions.supportsSignatureBypass &&
+              contextualizeSignaturelessToolResponses
+            ) {
+              // Signature-less historical tool responses are represented as text
+              // so strict standard-Gemini endpoints don't reject them as native
+              // functionResponse parts missing a matching thoughtSignature.
+              // In context mode the matching historical functionCall is omitted,
+              // avoiding pseudo tool-call records that Gemini Flash can repeat as
+              // the visible final answer.
+              for (const tc of toolCalls) {
+                const id = tc.id as string;
+                if (tc.type !== "function" || !id) continue;
+                if (!resolvedSignatures.has(id) && toolResponses[id]) {
+                  const fn = tc.function as { name?: string } | undefined;
+                  const name = tcID2Name[id] || fn?.name || "unknown";
+                  const resp = toolResponses[id];
+                  toolParts.push({
+                    text:
+                      signaturelessToolCallMode === "text"
+                        ? buildInertHistoricalToolResponseText(name, resp)
+                        : buildHistoricalToolResultContext(name, resp),
+                  });
+                }
+              }
             }
 
             if (toolParts.length > 0) {
