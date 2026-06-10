@@ -148,14 +148,14 @@ export class QoderExecutor extends BaseExecutor {
           for (const line of lines) {
             try {
               const jsonData = JSON.parse(line.slice(6));
-              const { extractTextFromQoderEnvelope } = await import("../services/qoderCli.ts");
+              const { extractTextFromQoderEnvelope } = await import("../../services/qoderCli.ts");
               const chunkText = extractTextFromQoderEnvelope(jsonData);
               if (chunkText) fullContent += chunkText;
             } catch {
               // skip unparseable chunks
             }
           }
-          const { buildQoderCompletionPayload } = await import("../services/qoderCli.ts");
+          const { buildQoderCompletionPayload } = await import("../../services/qoderCli.ts");
           const cosyPayload = buildQoderCompletionPayload({
             model: mappedModel || resolvedModel,
             text: fullContent,
