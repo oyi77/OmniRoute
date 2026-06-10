@@ -5,7 +5,7 @@ import { DEFAULT_DATABASE_SETTINGS, type DatabaseSettings } from "@/types/databa
 import { backupDbFile } from "../backup";
 import { DATA_DIR, SQLITE_FILE, getDbInstance } from "../core";
 import { invalidateDbCache } from "../cache/readCache";
-import { getDatabaseStats } from "./stats";
+import { getDatabaseStats } from "../monitoring/stats";
 
 const DATABASE_SETTINGS_NAMESPACE = "databaseSettings";
 
