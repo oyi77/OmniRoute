@@ -266,7 +266,7 @@ function makeStreamChunkMethods(
   ) => {
     if (!captureChunks) return;
     push();
-      appendBoundedChunk(arr, bytes, chunk, maxBytes, maxItems);
+    appendBoundedChunk(arr, bytes, chunk, maxBytes, maxItems);
   };
 
   return {
