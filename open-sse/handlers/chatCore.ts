@@ -1,8 +1,7 @@
 import { CORS_HEADERS } from "../utils/cors.ts";
-import { HEAP_PRESSURE_THRESHOLD_MB } from "../utils/heapPressure.ts";
+
 import { normalizeHeaders } from "../utils/headers.ts";
 import { detectFormatFromEndpoint, getTargetFormat } from "../services/provider.ts";
-import { injectSystemPrompt } from "../services/systemPrompt.ts";
 import { translateRequest, needsTranslation } from "../translator/index.ts";
 import { FORMATS } from "../translator/formats.ts";
 import { splitMisplacedToolResults } from "../translator/helpers/claudeHelper.ts";
@@ -73,7 +72,6 @@ import {
   getCallLogPipelineCaptureStreamChunks,
 } from "@/lib/logEnv";
 import { logAuditEvent } from "@/lib/compliance";
-import { emit } from "@/lib/events/eventBus";
 import { extractProviderWarnings } from "@/lib/compliance/providerAudit";
 import { adaptBodyForCompression } from "../services/compression/bodyAdapter.ts";
 import { handleBypassRequest } from "../utils/bypassHandler.ts";
@@ -372,6 +370,7 @@ import { resolveAccountSemaphoreKey } from "./chatCoreSemaphoreKey.ts";
  * @param {string} options.comboStrategy - Combo routing strategy (e.g., 'priority', 'cost-optimized')
  * @param {boolean} options.isCombo - Whether this request is from a combo
  */
+import { runSetupPhase } from "./chatCoreSetup.ts";
 
 
 export async function handleChatCore({
@@ -397,138 +396,44 @@ export async function handleChatCore({
   skipUpstreamRetry = false,
   createPiiTransform = null,
 }) {
-  let { provider, model, extendedContext } = modelInfo;
-  // ── Memory pressure guard ────────────────────────────────────────────
-  // Reject early if V8 heap is already near the 256MB limit. Prevents
-  // cascading OOM when many large-context requests arrive concurrently.
-  try {
-    const heapUsedMB = process.memoryUsage().heapUsed / (1024 * 1024);
-    if (heapUsedMB > HEAP_PRESSURE_THRESHOLD_MB) {
-      // Internal telemetry only — never expose the heap figure to clients (Hard Rule #12).
-      console.warn(
-        `[chatCore] heap pressure guard tripped: ${Math.round(heapUsedMB)}MB > ${HEAP_PRESSURE_THRESHOLD_MB}MB; returning 503`
-      );
-      return {
-        success: false,
-        status: 503,
-        error: "Service temporarily unavailable due to resource pressure. Retry shortly.",
-        response: new Response(
-          JSON.stringify({
-            error: {
-              message: "Service temporarily unavailable due to resource pressure. Retry shortly.",
-              type: "server_error",
-              code: "heap_pressure",
-            },
-          }),
-          { status: 503, headers: { "Content-Type": "application/json", "Retry-After": "5" } }
-        ),
-      };
-    }
-  } catch {
-    /* memoryUsage() never throws */
-  }
-
-  // apiFormat is an optional custom-model marker injected by getModelInfo for
-  // providers whose models can route to /chat/completions or /responses
-  // (Azure AI Foundry, OCI generic OpenAI). It's not on the base ModelInfo
-  // shape, so we read it via a structural narrowing without `as any`.
-  const apiFormat: string | undefined =
-    modelInfo && typeof modelInfo === "object" && "apiFormat" in modelInfo
-      ? typeof (modelInfo as { apiFormat?: unknown }).apiFormat === "string"
-        ? ((modelInfo as { apiFormat?: string }).apiFormat as string)
-        : undefined
-      : undefined;
-  // #2905: per-model wire-format override for custom models, injected by
-  // getModelInfo. Custom models are not in the static registry, so
-  // getModelTargetFormat() can't see this — use it before the provider default.
-  const customModelTargetFormat: string | undefined =
-    modelInfo && typeof modelInfo === "object" && "targetFormat" in modelInfo
-      ? typeof (modelInfo as { targetFormat?: unknown }).targetFormat === "string"
-        ? ((modelInfo as { targetFormat?: string }).targetFormat as string)
-        : undefined
-      : undefined;
-  const requestedModel =
-    typeof body?.model === "string" && body.model.trim().length > 0 ? body.model : model;
-  const isModelScope = () => isModelScopeProvider(provider, credentials?.providerSpecificData);
-  const startTime = Date.now();
-  // Per-request trace id + checkpoint helper. Lets us see exactly which await
-  // a hung request was sitting on in `[STAGE_TRACE]` log lines.
-  const traceId = Math.random().toString(36).slice(2, 8);
-
-  // Emit request.started event for real-time dashboard
-  setImmediate(() => {
-    emit("request.started", {
-      id: traceId,
-      model: model || "unknown",
-      provider: provider || "unknown",
-      timestamp: startTime,
-      comboName: comboName || undefined,
-    });
+  // ── Phase 1: Setup (extracted to chatCoreSetup.ts) ──────────────
+  // Initializes heap-pressure guard, apiFormat/targetFormat, trace
+  // instrumentation, system prompt injection, and the plugin onRequest
+  // hook. On short-circuit (heap pressure, plugin block) the early
+  // return is propagated immediately.
+  const setupResult = await runSetupPhase({
+    body,
+    modelInfo,
+    apiKeyInfo,
+    log,
+    comboName,
   });
-  const traceEnabled = process.env.OMNIROUTE_TRACE === "true" || process.env.DEBUG === "true";
-  const trace = (label: string, extra?: Record<string, unknown>) => {
-    if (!traceEnabled) return;
-    const elapsed = Date.now() - startTime;
-    let suffix = "";
-    if (extra) {
-      try {
-        suffix = ` ${JSON.stringify(extra)}`;
-      } catch {
-        suffix = " [unserializable]";
-      }
-    }
-    log?.info?.("STAGE_TRACE", `${traceId} ${label} t=${elapsed}ms${suffix}`);
-  };
-  let tokensCompressed: number | null = null;
-  body = injectSystemPrompt(body);
-  // ── Plugin onRequest hook ──
-  // Dynamic import cached by Node.js after first call — minimal overhead
-  try {
-    const { runOnRequest } = await import("@/lib/plugins/hooks");
-    const pluginCtx = {
-      requestId: traceId,
-      body,
-      model,
-      provider,
-      apiKeyInfo,
-      metadata: {},
+  if (setupResult.kind === "earlyReturn") {
+    return {
+      success: false,
+      status: setupResult.status,
+      error: setupResult.status === 503
+        ? "Service temporarily unavailable due to resource pressure. Retry shortly."
+        : "Request blocked by plugin",
+      response: setupResult.response,
     };
-    const pluginResult = await runOnRequest(pluginCtx);
-    if (pluginResult?.blocked) {
-      log?.info?.("PLUGIN", `Request blocked by plugin`);
-      return {
-        success: false,
-        status: 403,
-        error: "Request blocked by plugin",
-        response: pluginResult.response
-          ? new Response(JSON.stringify(pluginResult.response), {
-              status: 403,
-              headers: { "Content-Type": "application/json" },
-            })
-          : new Response(
-              JSON.stringify({
-                error: { message: "Request blocked by plugin", type: "plugin_block" },
-              }),
-              {
-                status: 403,
-                headers: { "Content-Type": "application/json" },
-              }
-            ),
-      };
-    }
-    if (pluginResult?.body) {
-      body = pluginResult.body;
-    }
-    if (pluginResult?.metadata) {
-      Object.assign(pluginCtx.metadata, pluginResult.metadata);
-    }
-  } catch (pluginErr) {
-    log?.debug?.(
-      "PLUGIN",
-      `onRequest hook error (non-fatal): ${pluginErr instanceof Error ? pluginErr.message : String(pluginErr)}`
-    );
   }
-
+  const setup = setupResult.context;
+  // Re-bind the local state with the setup results. We declare these
+  // as `let` (replacing the original line-400 declaration) so the
+  // rest of the function can reassign them during fallback and retry.
+  let { provider, model, extendedContext } = setup;
+  body = setup.body;
+  const apiFormat = setup.apiFormat;
+  const customModelTargetFormat = setup.customModelTargetFormat;
+  const requestedModel = setup.requestedModel;
+  const isModelScope = () =>
+    isModelScopeProvider(provider, credentials?.providerSpecificData);
+  const startTime = setup.startTime;
+  const traceId = setup.traceId;
+  const trace = setup.trace;
+  const traceEnabled = setup.traceEnabled;
+  let tokensCompressed: number | null = setup.tokensCompressed;
   type EffectiveServiceTier = "standard" | CodexServiceTier;
   let effectiveServiceTier: EffectiveServiceTier = "standard";
   const resolveEffectiveServiceTier = (requestBody?: unknown): EffectiveServiceTier => {
