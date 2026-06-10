@@ -378,6 +378,7 @@ import { resolveExecutorWithProxy } from "./chatCoreExecutor.ts";
 import { extractSystemMessagesToBody, normalizeClaudeUpstreamMessages, type ClaudeMessage } from "./chatCoreClaudeMessages.ts";
 import { persistCallLog, buildCallLogBody, buildCallLogResponseBody } from "./chatCoreLogs.ts";
 import { persistFailureUsage } from "./chatCoreFailureUsage.ts";
+import { attachCompressionUsageReceiptAfterAnalytics } from "./chatCoreCompressionUsage.ts";
 export async function handleChatCore({
   body,
   modelInfo,
@@ -793,22 +794,7 @@ export async function handleChatCore({
     detailedLoggingEnabled && getCallLogPipelineCaptureStreamChunks();
   const skillRequestId = generateRequestId();
   let compressionAnalyticsWritePromise: Promise<void> | null = null;
-  const attachCompressionUsageReceiptAfterAnalytics = (
-    usage: Record<string, unknown>,
-    source: "provider" | "estimated" | "stream"
-  ) => {
-    const pendingWrite = compressionAnalyticsWritePromise;
-    void (async () => {
-      try {
-        if (pendingWrite) await pendingWrite;
-        const { attachCompressionUsageReceipt } =
-          await import("../../src/lib/db/compressionAnalytics.ts");
-        attachCompressionUsageReceipt(skillRequestId, usage, source);
-      } catch {
-        // Compression analytics are best-effort and must never affect responses.
-      }
-    })();
-  };
+
   const pipelineSessionId =
     (clientRawRequest?.headers && typeof clientRawRequest.headers.get === "function"
       ? clientRawRequest.headers.get("x-omniroute-session-id")
@@ -3761,7 +3747,11 @@ export async function handleChatCore({
     // Log usage for non-streaming responses
     const usage = extractUsageFromResponse(responseBody, provider);
     if (usage && typeof usage === "object") {
-      attachCompressionUsageReceiptAfterAnalytics(usage as Record<string, unknown>, "provider");
+      attachCompressionUsageReceiptAfterAnalytics(
+        { skillRequestId, pendingWrite: compressionAnalyticsWritePromise },
+        usage as Record<string, unknown>,
+        "provider"
+      );
     }
     appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(
       () => {}
@@ -4242,7 +4232,11 @@ export async function handleChatCore({
 
     // Track cache token metrics for streaming responses
     if (streamUsage && typeof streamUsage === "object") {
-      attachCompressionUsageReceiptAfterAnalytics(streamUsage as Record<string, unknown>, "stream");
+      attachCompressionUsageReceiptAfterAnalytics(
+        { skillRequestId, pendingWrite: compressionAnalyticsWritePromise },
+        streamUsage as Record<string, unknown>,
+        "stream"
+      );
 
       saveRequestUsage({
         provider: provider || "unknown",
