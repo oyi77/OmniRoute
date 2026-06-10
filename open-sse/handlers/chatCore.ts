@@ -48,7 +48,6 @@ import {
 import {
   COOLDOWN_MS,
   HTTP_STATUS,
-  FETCH_BODY_TIMEOUT_MS,
   MAX_TOOLS_LIMIT,
   PROVIDER_MAX_TOKENS,
   SSE_HEARTBEAT_INTERVAL_MS,
@@ -155,7 +154,6 @@ import {
 } from "../services/rateLimitManager.ts";
 import {
   acquire as acquireAccountSemaphore,
-  buildAccountSemaphoreKey,
   markBlocked as markAccountSemaphoreBlocked,
 } from "../services/accountSemaphore.ts";
 import { lockModel, lockModelIfPerModelQuota } from "../services/accountFallback.ts";
@@ -215,8 +213,6 @@ import {
   resolveClaudeCodeCompatibleSessionId,
 } from "../services/claudeCodeCompatible.ts";
 import { setGeminiThoughtSignatureMode } from "../services/geminiThoughtSignatureStore.ts";
-import { fetchLiveProviderLimits } from "@/lib/usage/providerLimits";
-import { isClaudeExtraUsageBlockEnabled } from "@/lib/providers/claudeExtraUsage";
 import {
   classifyModelScope429,
   getModelScopeRetryDelayMs,
@@ -232,7 +228,6 @@ import {
   getHeaderValueCaseInsensitive,
 } from "./chatCoreUtils.ts";
 import {
-  createBodyTimeoutError,
   createStreamingErrorResult,
   getUpstreamErrorIdentifier,
 } from "./chatCoreErrors.ts";
@@ -241,7 +236,6 @@ import {
   convertNDJSONToSSE,
   normalizeNonStreamingEventPayload,
   processNonStreamingSseTerminalLine,
-  appendNonStreamingSseTerminalSignal,
 } from "./chatCoreStreamUtils.ts";
 import {
   buildClaudePassthroughToolNameMap,
@@ -283,14 +277,12 @@ import {
   materializeDeduplicatedExecutionResult,
   normalizeExecutorResult,
   wrapReadableStreamWithFinalize,
-  resolveAccountSemaphoreAccountKey,
   resolveAccountSemaphoreMaxConcurrency,
   buildExecutorClientHeaders,
   isCopilotClient,
   buildClaudePromptCacheLogMeta,
 } from "./chatCoreHelpers.ts";
 import {
-  readStreamChunkWithTimeout,
   computeBillableTokens,
   getExecutorTimeoutMs,
   executeWithUpstreamStartTimeout,
@@ -310,28 +302,9 @@ import {
   getCombosCached,
   clearCombosCache,
 } from "./chatCoreCache.ts";
-async function maybeSyncClaudeExtraUsageState({
-  provider,
-  connectionId,
-  providerSpecificData,
-  log,
-}: {
-  provider: string | null | undefined;
-  connectionId: string | null | undefined;
-  providerSpecificData: unknown;
-  log?: { debug?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void } | null;
-}) {
-  if (!connectionId || !isClaudeExtraUsageBlockEnabled(provider, providerSpecificData)) {
-    return;
-  }
-
-  try {
-    await fetchLiveProviderLimits(connectionId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    log?.debug?.("CLAUDE_USAGE", `Failed to sync Claude extra-usage state: ${message}`);
-  }
-}
+import { maybeSyncClaudeExtraUsageState } from "./chatCoreClaudeUsage.ts";
+import { readNonStreamingResponseBody } from "./chatCoreResponseBody.ts";
+import { resolveAccountSemaphoreKey } from "./chatCoreSemaphoreKey.ts";
 
 
 
@@ -366,57 +339,10 @@ async function maybeSyncClaudeExtraUsageState({
  * payload we are actually sending.
  */
 
-async function readNonStreamingResponseBody(
-  response: Response,
-  contentType: string,
-  upstreamStream: boolean
-): Promise<string> {
-  if (
-    !upstreamStream ||
-    !response.body ||
-    (!contentType.includes("text/event-stream") && !contentType.includes("application/x-ndjson"))
-  ) {
-    return withBodyTimeout<string>(response.text());
-  }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const terminalState: NonStreamingSseTerminalState = {
-    currentEvent: "",
-    pendingLine: "",
-  };
-  let rawBody = "";
-  const deadline = FETCH_BODY_TIMEOUT_MS > 0 ? Date.now() + FETCH_BODY_TIMEOUT_MS : 0;
 
-  try {
-    while (true) {
-      const timeoutMs = deadline > 0 ? deadline - Date.now() : 0;
-      if (deadline > 0 && timeoutMs <= 0) {
-        throw createBodyTimeoutError(FETCH_BODY_TIMEOUT_MS);
-      }
-
-      const { done, value } = await readStreamChunkWithTimeout(reader, timeoutMs);
-      if (done) break;
-      if (!value) continue;
-
-      const decodedChunk = decoder.decode(value, { stream: true });
-      rawBody += decodedChunk;
-      if (appendNonStreamingSseTerminalSignal(terminalState, decodedChunk)) {
-        await reader.cancel("non-streaming bridge consumed terminal SSE event").catch(() => {});
-        break;
-      }
-    }
-  } catch (error) {
-    await reader.cancel(error).catch(() => {});
-    throw error;
-  } finally {
-    rawBody += decoder.decode();
-    reader.releaseLock();
-  }
-
-  return rawBody;
-}
-
+/**
+ * Core chat handler - shared between SSE and Worker
 
 
 
@@ -447,21 +373,6 @@ async function readNonStreamingResponseBody(
  * @param {boolean} options.isCombo - Whether this request is from a combo
  */
 
-function resolveAccountSemaphoreKey({
-  provider,
-  model,
-  connectionId,
-  credentials,
-}: {
-  provider: string | null | undefined;
-  model: string;
-  connectionId: string | null | undefined;
-  credentials: Record<string, unknown> | null | undefined;
-}): string | null {
-  const accountKey = resolveAccountSemaphoreAccountKey(connectionId, credentials);
-  if (!accountKey || !provider) return null;
-  return buildAccountSemaphoreKey({ provider, accountKey });
-}
 
 export async function handleChatCore({
   body,

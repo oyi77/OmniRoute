@@ -89,7 +89,7 @@ const NON_STREAMING_SSE_TERMINAL_TYPES: Record<string, true> = {
   "response.incomplete": true,
 };
 
-type NonStreamingSseTerminalState = {
+export type NonStreamingSseTerminalState = {
   currentEvent: string;
   pendingLine: string;
 };
