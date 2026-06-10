@@ -375,7 +375,7 @@ import { resolveAccountSemaphoreKey } from "./chatCoreSemaphoreKey.ts";
 import { runSetupPhase } from "./chatCoreSetup.ts";
 import { runTransformPhase } from "./chatCoreTransform.ts";
 import { resolveExecutorWithProxy } from "./chatCoreExecutor.ts";
-import { extractSystemMessagesToBody } from "./chatCoreClaudeMessages.ts";
+import { extractSystemMessagesToBody, normalizeClaudeUpstreamMessages } from "./chatCoreClaudeMessages.ts";
 export async function handleChatCore({
   body,
   modelInfo,
@@ -1844,93 +1844,7 @@ export async function handleChatCore({
 
 
 
-  const normalizeClaudeUpstreamMessages = (
-    payload: Record<string, unknown>,
-    options?: { preserveToolResultBlocks?: boolean }
-  ) => {
-    const preserveToolResultBlocks = options?.preserveToolResultBlocks === true;
-    if (!Array.isArray(payload.messages)) return;
-    let messages = payload.messages as ClaudeMessage[];
 
-    // Extract system/developer role messages into top-level system parameter.
-    extractSystemRoleMessages(payload);
-    messages = payload.messages as ClaudeMessage[];
-
-    // Anthropic rejects empty text blocks in native Messages payloads.
-    for (const msg of messages) {
-      if (Array.isArray(msg.content)) {
-        msg.content = msg.content.filter(
-          (block: ClaudeContentBlock) =>
-            block.type !== "text" || (typeof block.text === "string" && block.text.length > 0)
-        );
-      }
-    }
-
-    // Normalize unsupported content types without reintroducing the Claude -> OpenAI round-trip.
-    for (const msg of messages) {
-      if (msg.role !== "user" || !Array.isArray(msg.content)) continue;
-      msg.content = (msg.content as ClaudeContentBlock[]).flatMap((block: ClaudeContentBlock) => {
-        if (
-          block.type === "text" ||
-          block.type === "image_url" ||
-          block.type === "image" ||
-          block.type === "file_url" ||
-          block.type === "file" ||
-          block.type === "document"
-        ) {
-          const fileData = (block.file_url ?? block.file ?? block.document) as
-            | Record<string, unknown>
-            | undefined;
-          if (
-            (block.type === "file" || block.type === "document") &&
-            !fileData?.url &&
-            !fileData?.data
-          ) {
-            const fileContent =
-              (block.file as ClaudeContentBlock)?.content ??
-              (block.file as ClaudeContentBlock)?.text ??
-              block.content ??
-              block.text;
-            const fileName =
-              (block.file as Record<string, unknown>)?.name ?? block.name ?? "attachment";
-            if (typeof fileContent === "string" && fileContent.length > 0) {
-              return [{ type: "text", text: `[${fileName}]\n${fileContent}` }];
-            }
-          }
-          return [block];
-        }
-
-        if (block.type === "tool_result") {
-          if (preserveToolResultBlocks) {
-            return [block];
-          }
-          const toolId = block.tool_use_id ?? block.id ?? "unknown";
-          const resultContent = block.content ?? block.text ?? block.output ?? "";
-          const resultText =
-            typeof resultContent === "string"
-              ? resultContent
-              : Array.isArray(resultContent)
-                ? resultContent
-                    .filter((c: Record<string, unknown>) => c.type === "text")
-                    .map((c: Record<string, unknown>) => c.text)
-                    .join("\n")
-                : JSON.stringify(resultContent);
-          if (resultText.length > 0) {
-            return [{ type: "text", text: `[Tool Result: ${toolId}]\n${resultText}` }];
-          }
-          return [];
-        }
-
-        log?.debug?.("CONTENT", `Dropped unsupported content part type="${block.type}"`);
-        return [];
-      });
-    }
-
-    // #2815: move stray tool_result blocks out of assistant messages.
-    payload.messages = splitMisplacedToolResults(
-      payload.messages as ClaudeMessage[]
-    ) as unknown as Record<string, unknown>[];
-  };
 
   try {
     if (nativeCodexPassthrough) {
