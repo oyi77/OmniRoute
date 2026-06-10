@@ -8,7 +8,7 @@ import {
   type ProviderCredentials,
 } from "../base/base.ts";
 import { applyFingerprint, isCliCompatEnabled } from "../../config/cliFingerprints.ts";
-import { buildAntigravityUpstreamError } from "./antigravityUpstreamError.ts";
+import { buildAntigravityUpstreamError } from "../base/antigravityUpstreamError.ts";
 import {
   PROVIDERS,
   OAUTH_ENDPOINTS,
