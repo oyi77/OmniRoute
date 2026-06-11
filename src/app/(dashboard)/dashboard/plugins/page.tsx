@@ -230,7 +230,7 @@ export default function PluginsPage() {
                   <div>
                     <h3 className="font-semibold flex items-center gap-2">
                       {plugin.name}
-                      {plugin.verified && <Badge variant="success">Verified</Badge>}
+                      {plugin.verified && <Badge variant="success">{t("verified")}</Badge>}
                     </h3>
                     <p className="text-sm text-gray-500">
                       v{plugin.version} by {plugin.author} — {plugin.description}
@@ -247,10 +247,10 @@ export default function PluginsPage() {
                     <Button
                       variant="primary"
                       onClick={async () => {
-                        addNotification({ type: "success", message: `Plugin ${plugin.name} installed! (Mock)` });
+                        addNotification({ type: "success", message: t("installedFromMarketplace", { name: plugin.name }) });
                       }}
                     >
-                      Install
+                      {t("install")}
                     </Button>
                   </div>
                 </div>

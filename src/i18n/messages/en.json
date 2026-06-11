@@ -8142,6 +8142,9 @@
     "saveMarketplaceUrl": "Save & Reload",
     "marketplaceUrlSaved": "Marketplace URL updated",
     "marketplaceEmpty": "No plugins found in marketplace.",
+    "verified": "Verified",
+    "install": "Install",
+    "installedFromMarketplace": "Plugin {name} installed!",
     "hooks": "Hooks"
   },
   "quotaPlans": {
