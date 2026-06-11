@@ -44,106 +44,109 @@ export interface LoadedPlugin {
 // Uses process.send()/process.on("message") — NOT worker_threads.
 // Written as .mjs to force ESM execution regardless of package.json.
 
-function buildHostScript(hasDb: boolean): string {
-  const ipcGlobals = `
-globalThis.__omniroute = {
-  broadcast: (event, data) => {
-    process.send({ type: "ipc", kind: "broadcast", event, data });
-  },
-  sendTo: (target, event, data) => {
-    process.send({ type: "ipc", kind: "targeted", target, event, data });
-  },`;
-  const dbGlobals = hasDb ? `
-  db: {
-    get: (key) => new Promise((resolve, reject) => {
-      const id = String(Math.random());
-      const handler = (msg) => {
-        if (msg.type === "db_result" && msg.id === id) {
-          process.removeListener("message", handler);
-          if (msg.error) reject(new Error(msg.error));
-          else resolve(msg.value);
-        }
-      };
-      process.on("message", handler);
-      process.send({ type: "db", id, op: "get", key });
-    }),
-    set: (key, value) => new Promise((resolve, reject) => {
-      const id = String(Math.random());
-      const handler = (msg) => {
-        if (msg.type === "db_result" && msg.id === id) {
-          process.removeListener("message", handler);
-          if (msg.error) reject(new Error(msg.error));
-          else resolve(undefined);
-        }
-      };
-      process.on("message", handler);
-      process.send({ type: "db", id, op: "set", key, value });
-    }),
-    delete: (key) => new Promise((resolve, reject) => {
-      const id = String(Math.random());
-      const handler = (msg) => {
-        if (msg.type === "db_result" && msg.id === id) {
-          process.removeListener("message", handler);
-          if (msg.error) reject(new Error(msg.error));
-          else resolve(undefined);
-        }
-      };
-      process.on("message", handler);
-      process.send({ type: "db", id, op: "delete", key });
-    }),
-    list: () => new Promise((resolve, reject) => {
-      const id = String(Math.random());
-      const handler = (msg) => {
-        if (msg.type === "db_result" && msg.id === id) {
-          process.removeListener("message", handler);
-          if (msg.error) reject(new Error(msg.error));
-          else resolve(msg.value);
-        }
-      };
-      process.on("message", handler);
-      process.send({ type: "db", id, op: "list" });
-    }),
-  },` : "";
-  const scriptFooter = `
-};
+function buildHostScript(hasDb: boolean, permissions: string[]): string {
+  const hasNetwork = permissions.includes("network");
+  const hasFileRead = permissions.includes("file-read");
+  const hasFileWrite = permissions.includes("file-write");
+  const hasEnv = permissions.includes("env");
 
-const pluginPath = process.argv[2];
-const plugin = await import(pluginPath);
-const exports = plugin.default || plugin;
+  const sandboxGlobals = [
+    'const vm = require("vm");',
+    'const fs = require("fs");',
+    'const path = require("path");',
+    'const pluginDir = path.dirname(process.argv[2]);',
+    'const pluginCode = fs.readFileSync(process.argv[2], "utf-8");',
+    'const ipcSend = process.send.bind(process);',
+    'const ipcOn = process.on.bind(process);',
+    "const sandbox = {",
+    '  console: { log: (...a) => ipcSend({type:"log",level:"info",args:a}), warn: (...a) => ipcSend({type:"log",level:"warn",args:a}), error: (...a) => ipcSend({type:"log",level:"error",args:a}) },',
+    "  setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout,",
+    "  setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval,",
+    "  Promise: globalThis.Promise, JSON: globalThis.JSON, Math: globalThis.Math, Date: globalThis.Date,",
+    "  Array: globalThis.Array, Object: globalThis.Object, String: globalThis.String, Number: globalThis.Number,",
+    "  Boolean: globalThis.Boolean, RegExp: globalThis.RegExp, Error: globalThis.Error,",
+    "  TypeError: globalThis.TypeError, RangeError: globalThis.RangeError, SyntaxError: globalThis.SyntaxError, URIError: globalThis.URIError,",
+    "  Map: globalThis.Map, Set: globalThis.Set, WeakMap: globalThis.WeakMap, WeakSet: globalThis.WeakSet, Symbol: globalThis.Symbol,",
+    "  parseInt: globalThis.parseInt, parseFloat: globalThis.parseFloat, isNaN: globalThis.isNaN, isFinite: globalThis.isFinite,",
+    "  URL: globalThis.URL, URLSearchParams: globalThis.URLSearchParams, Buffer: globalThis.Buffer,",
+    "  __omniroute: {",
+    '    broadcast: (e,d) => ipcSend({type:"ipc",kind:"broadcast",event:e,data:d}),',
+    '    sendTo: (t,e,d) => ipcSend({type:"ipc",kind:"targeted",target:t,event:e,data:d}),',
+  ];
 
-process.send({ type: "ready", hooks: Object.keys(exports).filter(k => typeof exports[k] === "function") });
-
-process.on("message", async (msg) => {
-  if (msg.type === "call") {
-    try {
-      const handler = exports[msg.hook];
-      if (typeof handler !== "function") {
-        process.send({ type: "result", id: msg.id, error: "Hook not found" });
-        return;
-      }
-      const result = await handler(msg.payload);
-      process.send({ type: "result", id: msg.id, result });
-    } catch (err) {
-      process.send({ type: "result", id: msg.id, error: err.message });
-    }
-  } else if (msg.type === "notify") {
-    try {
-      const handler = exports["onPluginMessage"];
-      if (typeof handler === "function") {
-        await handler(msg.payload);
-      }
-    } catch (err) {
-      process.send({ type: "log", level: "error", args: ["notify handler failed: " + err.message] });
-    }
+  if (hasDb) {
+    sandboxGlobals.push(
+      "    db: {",
+      "      get: (k) => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOn('message',h); if(m.error) rej(Error(m.error)); else res(m.value); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'get',key:k}); }),",
+      "      set: (k,v) => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOn('message',h); if(m.error) rej(Error(m.error)); else res(undefined); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'set',key:k,value:v}); }),",
+      "      delete: (k) => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOn('message',h); if(m.error) rej(Error(m.error)); else res(undefined); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'delete',key:k}); }),",
+      "      list: () => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOn('message',h); if(m.error) rej(Error(m.error)); else res(m.value); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'list'}); }),",
+      "    },",
+    );
   }
-});
-`;
-  return (
-    'import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);\n' +
-    ipcGlobals +
-    dbGlobals +
-    scriptFooter
+
+  if (hasNetwork) {
+    sandboxGlobals.push(
+      "  fetch: globalThis.fetch, AbortController: globalThis.AbortController,",
+      "  Headers: globalThis.Headers, Request: globalThis.Request, Response: globalThis.Response,",
+    );
+  }
+
+  if (hasFileRead || hasFileWrite) {
+    sandboxGlobals.push("  fs: {");
+    if (hasFileRead) {
+      sandboxGlobals.push("    readFile: (p,e) => fs.promises.readFile(path.resolve(pluginDir,p),e),");
+      sandboxGlobals.push("    readdir: (p) => fs.promises.readdir(path.resolve(pluginDir,p)),");
+      sandboxGlobals.push("    stat: (p) => fs.promises.stat(path.resolve(pluginDir,p)),");
+    }
+    if (hasFileWrite) {
+      sandboxGlobals.push("    writeFile: (p,d) => fs.promises.writeFile(path.resolve(pluginDir,p),d),");
+      sandboxGlobals.push("    mkdir: (p) => fs.promises.mkdir(path.resolve(pluginDir,p),{recursive:true}),");
+      sandboxGlobals.push("    rm: (p) => fs.promises.rm(path.resolve(pluginDir,p),{recursive:true,force:true}),");
+    }
+    sandboxGlobals.push("  },");
+  }
+
+  if (hasEnv) {
+    sandboxGlobals.push(
+      '  process: { env: new Proxy({}, { get: (t,k) => typeof k==="string"?process.env[k]:undefined, set: () => false, has: (t,k) => typeof k==="string"?k in process.env:false }) },',
+    );
+  }
+
+  sandboxGlobals.push(
+    "  },",
+    "};",
+    "",
+    'const transformedCode = pluginCode',
+    '  .replace(/^export\\s+function\\s+/gm, "function ")',
+    '  .replace(/^export\\s+(const|let|var)\\s+/gm, "$1 ")',
+    '  .replace(/^export\\s+default\\s+/gm, "");',
+    "",
+    "const context = vm.createContext(sandbox);",
+    "const script = new vm.Script(transformedCode, { filename: process.argv[2] });",
+    "script.runInContext(context);",
+    "const exports = context;",
+    "",
+    'process.send({ type: "ready", hooks: Object.keys(exports).filter(k => typeof exports[k] === "function") });',
+    "",
+    'process.on("message", async (msg) => {',
+    '  if (msg.type === "call") {',
+    "    try {",
+    "      const handler = exports[msg.hook];",
+    '      if (typeof handler !== "function") { process.send({ type: "result", id: msg.id, error: "Hook not found" }); return; }',
+    "      const result = await handler(msg.payload);",
+    '      process.send({ type: "result", id: msg.id, result });',
+    "    } catch (err) { process.send({ type: \"result\", id: msg.id, error: err.message }); }",
+    '  } else if (msg.type === "notify") {',
+    "    try {",
+    '      const handler = exports["onPluginMessage"];',
+    '      if (typeof handler === "function") { await handler(msg.payload); }',
+    '    } catch (err) { process.send({ type: "log", level: "error", args: ["notify handler failed: " + err.message] }); }',
+    "  }",
+    "});",
   );
+
+  return sandboxGlobals.join("\n");
 }
 
 export interface LoadPluginOptions {
@@ -193,7 +196,7 @@ export async function loadPlugin(
   let hostScriptPath: string;
   {
     const tryWrite = async (id: string): Promise<string> => {
-      const script = buildHostScript(permissions.includes("db"));
+      const script = buildHostScript(permissions.includes("db"), permissions);
       const p = join(tmpdir(), `omniroute-plugin-host-${id}.mjs`);
       await writeFile(p, script, { encoding: "utf-8", mode: 0o600, flag: "wx" });
       return p;
