@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { BaseExecutor, type ExecuteInput, type ProviderCredentials } from "../base.ts";
 import { OMNIROUTE_VERSION } from "@/shared/constants/version.ts";
 import { getProxyForAccount } from "../../utils/proxyFallback.ts";
