@@ -305,12 +305,6 @@ Both the **head** and **tail** of each section are preserved; middle content is 
 
 ### Configuring Intensity
 
-**Globally** (via env):
-
-```bash
-RTK_INTENSITY=aggressive
-```
-
 **Per-combo** (in combo config):
 
 ```json
@@ -443,6 +437,7 @@ The `engines/rtk/filters/` directory contains **49+ built-in filter JSON files**
     ]
   },
   "tests": [
+    {
       "name": "preserves-error-type-and-location",
       "input": "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n    do_thing()\n  File \"lib/utils.py\", line 17, in helper\n    return 1 / 0\nZeroDivisionError: division by zero",
       "expected": "Traceback (most recent call last):\n  File \"app.py\", line 42, in main\n  File \"lib/utils.py\", line 17, in helper\nZeroDivisionError: division by zero",
@@ -532,13 +527,6 @@ RTK compress (with rawOutput.enabled=true)
 }
 ```
 
-**Globally** (env):
-
-```bash
-RTK_RAW_OUTPUT_ENABLED=true
-RTK_RAW_OUTPUT_MAX_BYTES=1048576
-```
-
 **Default**: `rawOutput.enabled: false` (saves storage).
 
 ### Storage Cost
@@ -593,7 +581,7 @@ if (!result.passed) {
 4. `aggressive` intensity preserves errors, test failures, and stack traces
 5. Compressed output is never larger than original input
 
-### When to Run Verify
+- Source: `open-sse/services/compression/engines/rtk/` (63 files, ~70KB)
 
 - **Before merging a filter change** — always ensure tests pass
 - **After upgrading RTK engine** — schema may have changed
