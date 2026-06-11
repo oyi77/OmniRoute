@@ -13,6 +13,7 @@ import { parentPort, workerData } from "worker_threads";
 import { readFile, readdir, stat, writeFile, mkdir, rm } from "fs/promises";
 import { resolve } from "path";
 import * as vm from "vm";
+import { getDbInstance } from "../db/core";
 
 if (!parentPort) {
   throw new Error("pluginWorker must be run as a Worker thread");
@@ -52,7 +53,7 @@ type WorkerMessage = LoadMessage | CallMessage | CleanupMessage;
  *      (opt-in, default OFF) — child_process is never wired silently.
  * Treat plugins as local-operator-trusted code, not sandboxed untrusted code.
  */
-function createSandbox(permissions: string[], pluginDir: string): Record<string, unknown> {
+function createSandbox(permissions: string[], pluginDir: string, pluginName: string): Record<string, unknown> {
   const activeTimers = new Set<ReturnType<typeof setTimeout>>();
 
   const sandbox: Record<string, unknown> = {
@@ -95,6 +96,31 @@ function createSandbox(permissions: string[], pluginDir: string): Record<string,
 
   if (permissions.includes("file-read") || permissions.includes("file-write")) {
     sandbox.Buffer = Buffer;
+  }
+
+  if (permissions.includes("db")) {
+    sandbox.db = {
+      get: (key: string) => {
+        const db = getDbInstance();
+        const row = db.prepare("SELECT value FROM key_value WHERE namespace = ? AND key = ?").get(`plugin:${pluginName}`, key) as any;
+        if (!row) return undefined;
+        try { return JSON.parse(row.value); } catch { return row.value; }
+      },
+      set: (key: string, value: any) => {
+        const db = getDbInstance();
+        const str = typeof value === "string" ? value : JSON.stringify(value);
+        db.prepare("INSERT INTO key_value (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value").run(`plugin:${pluginName}`, key, str);
+      },
+      delete: (key: string) => {
+        const db = getDbInstance();
+        db.prepare("DELETE FROM key_value WHERE namespace = ? AND key = ?").run(`plugin:${pluginName}`, key);
+      },
+      list: () => {
+        const db = getDbInstance();
+        const rows = db.prepare("SELECT key FROM key_value WHERE namespace = ?").all(`plugin:${pluginName}`) as any[];
+        return rows.map((r: any) => r.key);
+      }
+    };
   }
 
   if (permissions.includes("network")) {
@@ -151,7 +177,7 @@ let activeTimers: Set<ReturnType<typeof setTimeout>> | null = null;
 
 async function loadPlugin(entryPoint: string, permissions: string[], name: string): Promise<string[]> {
   const pluginDir = resolve(entryPoint, "..");
-  const sandbox = createSandbox(permissions, pluginDir);
+  const sandbox = createSandbox(permissions, pluginDir, name);
   context = vm.createContext(sandbox);
   activeTimers = sandbox.__activeTimers as Set<ReturnType<typeof setTimeout>>;
 

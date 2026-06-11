@@ -37,6 +37,28 @@ Plugins can export any of the following lifecycle hooks in `index.mjs`:
 - `onError(ctx, error)`: Fires if the provider fails.
 - `onActivate(ctx)` / `onDeactivate(ctx)`: Fired during lifecycle state changes.
 
+### Plugin Capabilities & Permissions
+By default, plugins run with **no permissions**. They cannot read files, make network requests, or access the database. To request capabilities, add them to your `plugin.json` manifest:
+
+```json
+{
+  "name": "my-advanced-plugin",
+  "requires": {
+    "permissions": ["network", "db"]
+  }
+}
+```
+
+**Available Permissions:**
+- `"network"`: Injects the global `fetch()`, `Request`, `Response`, and `Headers` objects into your sandbox.
+- `"db"`: Injects a global `db` object providing a persistent, isolated Key-Value store using OmniRoute's SQLite database.
+  - `db.set(key, value)`
+  - `db.get(key)`
+  - `db.delete(key)`
+  - `db.list()` (returns an array of keys)
+- `"file-read"` / `"file-write"`: Gives access to a sandboxed `fs` object scoped *only* to your plugin's directory.
+- `"env"`: Exposes the system's `process.env`.
+
 ### The 3 Example Plugins
 
 We have provided three example plugins in the `examples/plugins/` directory to help you get started:
