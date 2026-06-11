@@ -1,0 +1,30 @@
+{
+  "name": "smart-router",
+  "version": "1.0.0",
+  "description": "Dynamically routes requests to cheaper/faster models based on prompt complexity or user limits.",
+  "author": "OmniRoute",
+  "license": "MIT",
+  "main": "index.mjs",
+  "source": "local",
+  "tags": ["routing", "optimization", "cost"],
+  "hooks": {
+    "onModelSelect": true,
+    "onRequest": true
+  },
+  "requires": {
+    "permissions": []
+  },
+  "enabledByDefault": false,
+  "configSchema": {
+    "fallbackModel": {
+      "type": "string",
+      "default": "gpt-3.5-turbo",
+      "description": "Default cheap model to route to"
+    },
+    "maxTokensForExpensiveModel": {
+      "type": "number",
+      "default": 1000,
+      "description": "If request > this length, route to fallback"
+    }
+  }
+}
