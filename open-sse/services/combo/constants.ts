@@ -142,7 +142,7 @@ export const RESET_WINDOW_DEFAULT_TIE_BAND_MS = 60_000;
 // multiplied by this factor so over-quota-soft keys are de-prioritized
 // without being fully blocked (that is done by "hard" policy).
 // Override via QUOTA_SOFT_DEPRIORITIZE_FACTOR env var (range 0..1, default 0.7).
-export const QUOTA_SOFT_DEPRIORITIZE_FACTOR = Number(
+const rawFactor = Number(
   process.env.QUOTA_SOFT_DEPRIORITIZE_FACTOR ?? "0.7"
 );
 
