@@ -595,4 +595,4 @@ if (!result.passed) {
 - [COMPRESSION_GUIDE.md](./COMPRESSION_GUIDE.md) — Full compression pipeline overview
 - [COMPRESSION_ENGINES.md](./COMPRESSION_ENGINES.md) — Engine registry and built-in engines
 - [EXTENDING_COMPRESSION.md](./EXTENDING_COMPRESSION.md) — Custom engines, language packs, stacked pipelines
-- Source: `open-sse/services/compression/engines/rtk/` (10 files, ~70KB)
+- Source: `open-sse/services/compression/engines/rtk/` (63 files, ~70KB)

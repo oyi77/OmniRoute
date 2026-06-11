@@ -87,6 +87,19 @@ The simplest possible engine — strip extra whitespace from messages.
 import type { CompressionEngine } from "omniroute/compression/engines/types";
 import { registerCompressionEngine } from "omniroute/compression/engines/registry";
 
+function preserveCodeBlocks(text: string): string {
+  // Split by code block markers and preserve whitespace inside them
+  const parts = text.split(/(```[\s\S]*?```)/);
+  return parts
+    .map((part) => {
+      if (part.startsWith("```")) {
+        return part; // Don't modify code blocks
+      }
+      return part.replace(/\n{3,}/g, "\n\n"); // Only apply to prose
+    })
+    .join("");
+}
+
 const whitespaceEngine: CompressionEngine = {
   id: "whitespace",
   name: "Whitespace Stripper",
@@ -156,18 +169,6 @@ const whitespaceEngine: CompressionEngine = {
     };
   },
 
-  preserveCodeBlocks(text) {
-    // Split by code block markers and preserve whitespace inside them
-    const parts = text.split(/(```[\s\S]*?```)/);
-    return parts
-      .map((part) => {
-        if (part.startsWith("```")) {
-          return part; // Don't modify code blocks
-        }
-        return part.replace(/\n{3,}/g, "\n\n"); // Only apply to prose
-      })
-      .join("");
-  },
   
   getConfigSchema() {
     return [
@@ -531,4 +532,4 @@ Then in combo config:
 - [COMPRESSION_RULES_FORMAT.md](./COMPRESSION_RULES_FORMAT.md) — Rule format spec
 - [COMPRESSION_LANGUAGE_PACKS.md](./COMPRESSION_LANGUAGE_PACKS.md) — Language pack details
 - [RTK_COMPRESSION.md](./RTK_COMPRESSION.md) — RTK engine and custom filters
-- Source: `open-sse/services/compression/` (39 files, ~250KB)
+- Source: `open-sse/services/compression/` (117 files, ~250KB)
