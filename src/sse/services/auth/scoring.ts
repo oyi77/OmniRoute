@@ -208,7 +208,7 @@ export function compareLruConnections(a: ProviderConnectionView, b: ProviderConn
   return (a.priority || 999) - (b.priority || 999);
 }
 
-async export function selectSessionAffinityConnection(
+export async function selectSessionAffinityConnection(
   provider: string,
   sessionKey: string | null | undefined,
   connections: ProviderConnectionView[],

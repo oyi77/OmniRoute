@@ -68,7 +68,7 @@ import { getCodexScopeRateLimitedUntil, isCodexScopeUnavailable, evaluateQuotaLi
 /**
  * Resolve provider aliases (e.g., nvidia -> nvidia_nim) for DB lookup
  */
-async export function getProviderSearchPool(provider: string): Promise<string[]> {
+export async function getProviderSearchPool(provider: string): Promise<string[]> {
   const canonicalProvider = resolveProviderId(provider);
   const canonicalAlias = getProviderAlias(canonicalProvider);
 
