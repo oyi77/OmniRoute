@@ -78,6 +78,7 @@ export const updateSettingsSchema = z.object({
   sidebarItemOrder: z.record(z.string(), z.array(z.string().max(100))).optional(),
   sidebarActivePreset: z.enum(["all", "minimal", "developer", "admin"]).nullable().optional(),
   comboConfigMode: z.enum(COMBO_CONFIG_MODES).optional(),
+  pluginMarketplaceUrl: z.string().max(500).nullable().optional(),
   codexServiceTier: z
     .object({
       enabled: z.boolean().optional(),
