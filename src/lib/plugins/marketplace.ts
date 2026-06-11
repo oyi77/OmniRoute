@@ -1,3 +1,4 @@
+import { getSettings } from "../db/settings";
 /**
  * Plugin Marketplace — browse, search, install plugins from a registry.
  *
@@ -88,16 +89,30 @@ const SEED_REGISTRY: MarketplaceEntry[] = [
 /**
  * List all available plugins in the marketplace.
  */
-export function listMarketplacePlugins(): MarketplaceEntry[] {
+export async function listMarketplacePlugins(): Promise<MarketplaceEntry[]> {
+  try {
+    const settings = await getSettings();
+    const url = typeof settings.pluginMarketplaceUrl === "string" ? settings.pluginMarketplaceUrl : null;
+    if (url) {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        return Array.isArray(data) ? data : (data.plugins || []);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to fetch from custom plugin marketplace:", err);
+  }
   return [...SEED_REGISTRY];
 }
 
 /**
  * Search marketplace plugins by query.
  */
-export function searchMarketplace(query: string): MarketplaceEntry[] {
+export async function searchMarketplace(query: string): Promise<MarketplaceEntry[]> {
+  const plugins = await listMarketplacePlugins();
   const q = query.toLowerCase();
-  return SEED_REGISTRY.filter(
+  return plugins.filter(
     (p) =>
       p.name.includes(q) ||
       p.description.toLowerCase().includes(q) ||
@@ -108,13 +123,19 @@ export function searchMarketplace(query: string): MarketplaceEntry[] {
 /**
  * Get a specific marketplace entry.
  */
-export function getMarketplaceEntry(name: string): MarketplaceEntry | undefined {
-  return SEED_REGISTRY.find((p) => p.name === name);
+export async function getMarketplaceEntry(name: string): Promise<MarketplaceEntry | undefined> {
+  const plugins = await listMarketplacePlugins();
+  return plugins.find((p) => p.name === name);
 }
 
 /**
  * Check if marketplace is available.
  */
-export function isMarketplaceAvailable(): boolean {
-  return true; // Local seed always available
+export async function isMarketplaceAvailable(): Promise<boolean> {
+  try {
+    const settings = await getSettings();
+    return true; // Always available (falls back to seed)
+  } catch {
+    return false;
+  }
 }
