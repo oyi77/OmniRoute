@@ -101,7 +101,7 @@ export function resolveThinkingEffort(
   return normalizeThinkingEffort(nested);
 }
 
-async export function setUserThinkingEffort(
+export async function setUserThinkingEffort(
   modelSlug: string,
   effort: "standard" | "extended",
   accessToken: string,

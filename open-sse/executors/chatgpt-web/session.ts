@@ -168,7 +168,7 @@ export function buildSessionCookieHeader(rawInput: string): string {
   return `__Secure-next-auth.session-token=${s}`;
 }
 
-async export function exchangeSession(
+export async function exchangeSession(
   cookie: string,
   signal: AbortSignal | null | undefined
 ): Promise<TokenEntry> {
