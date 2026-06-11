@@ -510,7 +510,7 @@ class PluginManager {
     const loaded = this.loadedPlugins.get(name);
     if (!loaded) throw new Error(`Plugin '${name}' is not loaded`);
 
-    const handler = loaded.plugin["onRender"] as ((payload: unknown) => Promise<unknown>) | undefined;
+    const handler = loaded.plugin.onRender;
     if (typeof handler !== "function") {
       throw new Error(`Plugin '${name}' does not support rendering`);
     }

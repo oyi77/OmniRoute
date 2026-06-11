@@ -324,15 +324,9 @@ export async function loadPlugin(
   }
 
   if (manifest.hooks.onRender) {
-    plugin.onRender = async (payload: unknown) => {
-      try {
-        return await callHook("onRender", payload);
-      } catch (err: unknown) {
-        log.error("plugin.onRender_error", {
-          name: manifest.name,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+    plugin.onRender = async (payload) => {
+      const result = await callHook("onRender", payload);
+      return (result ?? {}) as Record<string, unknown>;
     };
     registeredHooks.push("onRender");
   }

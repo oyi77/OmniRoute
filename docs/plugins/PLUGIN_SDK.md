@@ -30,11 +30,11 @@ Factory function that creates a Plugin object with defaults.
 **Parameters:**
 - `name` (string, required) — Plugin name in kebab-case
 - `priority` (number, optional, default: 100) — Lower runs first
-- `enabled` (boolean, optional, default: true) — Start enabled?
 - `onRequest` (function, optional) — Runs before chat handler
 - `onResponse` (function, optional) — Runs after chat handler
 - `onError` (function, optional) — Runs on handler error
-
+- `onPluginMessage` (function, optional) — Receives IPC messages from other plugins via `__omniroute.broadcast()` / `__omniroute.sendTo()`
+- `onRender` (function, optional) — Renders a dashboard page when a user visits the plugin's admin page
 ### `blockRequest(response?): BlockingHookResult`
 
 Block the request and optionally return a custom response.
@@ -132,17 +132,86 @@ Or as simple booleans (default priority 100):
 
 ## Permission System
 
-Plugins run in a sandboxed VM context. Access to external resources requires explicit permissions:
+Plugins run in an isolated child process. Access to external resources requires explicit permissions:
 
 | Permission | Grants |
 |---|---|
 | `network` | `fetch`, `AbortController`, `Headers`, `Request`, `Response` |
-| `file-read` | `fs.readFile`, `fs.readdir`, `fs.stat` |
-| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm` |
+| `file-read` | `fs.readFile`, `fs.readdir`, `fs.stat` (scoped to plugin's directory) |
+| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm` (scoped to plugin's directory) |
 | `env` | Read-only `process.env` proxy |
-| `exec` | `child_process.exec`, `child_process.execSync` |
+| `exec` | `child_process.exec`, `child_process.execSync` (requires `OMNIROUTE_PLUGINS_ALLOW_EXEC=1`) |
+| `db` | `__omniroute.db` — persistent key-value store (SQLite-backed, isolated per plugin) |
+| `ipc` | `__omniroute.broadcast()` / `__omniroute.sendTo()` — cross-plugin messaging |
 
-Without a permission, the corresponding globals are simply not available in the sandbox.
+Without a permission, the corresponding globals are simply not available.
+
+## IPC Messaging
+
+Plugins can communicate with each other using the global `__omniroute` API. Requires `"ipc"` permission.
+
+- `__omniroute.broadcast(event, data)` — Send a message to ALL active plugins
+- `__omniroute.sendTo(targetPluginName, event, data)` — Send a message to a specific plugin
+
+Receiving plugin exports:
+```ts
+export function onPluginMessage(payload) {
+  // payload = { source: "sender-plugin", event: "eventName", data: { ... } }
+  console.log(`Received "${payload.event}" from ${payload.source}`);
+}
+```
+
+## Database (Key-Value Store)
+
+Plugins can persist data across restarts using a built-in SQLite-backed key-value store. Requires `"db"` permission.
+Each plugin's data is isolated to its own namespace — no two plugins can read each other's data.
+
+```ts
+// Global API available inside plugin sandbox (child process)
+__omniroute.db.set("myKey", { any: "JSON-serializable value" });
+const val = __omniroute.db.get("myKey"); // returns parsed value
+__omniroute.db.delete("myKey");
+const keys = __omniroute.db.list(); // all keys for this plugin
+```
+
+## UI Extensibility (Admin Pages)
+
+Plugins can register custom pages in the OmniRoute dashboard sidebar. Declare them in `plugin.json`:
+
+```json
+{
+  "adminPages": [
+    { "slug": "dashboard", "title": "My Plugin", "icon": "extension", "position": 10 },
+    { "slug": "settings", "title": "Settings", "parent": "my-plugin-dashboard" }
+  ]
+}
+```
+
+The plugin exports `onRender` to serve page content:
+```ts
+export function onRender(payload) {
+  const { slug, params } = payload;
+  if (slug === "dashboard") {
+    return {
+      type: "html",
+      html: "<h1>Plugin Dashboard</h1><p>Welcome!</p>"
+    };
+  }
+}
+```
+
+Registered pages appear in the sidebar "Plugins" section automatically. The sidebar fetches `/api/plugins/ui-extensions` on mount and renders dynamic menu items.
+
+## Dashboard Widgets
+
+Plugins can declare dashboard widgets in their manifest:
+```json
+{
+  "dashboardWidgets": [
+    { "id": "my-stats", "title": "Usage Stats", "position": "top", "width": "half" }
+  ]
+}
+```
 
 ## Config Schema
 
@@ -183,6 +252,8 @@ Config values are persisted in the database and accessible via the dashboard con
 | `onActivate` | Plugin activated | `{ name, version, manifest }` |
 | `onDeactivate` | Plugin deactivated | `{ name, version, manifest }` |
 | `onUninstall` | Plugin uninstalled (before files deleted) | `{ name, version, manifest }` |
+| `onPluginMessage` | IPC message from another plugin | `{ source, event, data }` |
+| `onRender` | Dashboard page requested | `{ slug, params }` — return HTML or structured content |
 
 ## Examples
 
@@ -212,7 +283,7 @@ export default definePlugin({
   onRequest: async (ctx) => {
     const key = ctx.headers["x-api-key"] || "anonymous";
     const now = Date.now();
-    const window = 60000; // 1 minute
+    const window = 60000;
     const maxRequests = 100;
 
     const timestamps = (requests.get(key) || []).filter(t => t > now - window);
@@ -226,21 +297,44 @@ export default definePlugin({
 });
 ```
 
-### Response Transformer
+### Inter-Plugin Communication
+
+Plugin A broadcasts an event, Plugin B receives it.
+
+**plugin-a/index.mjs:**
+```ts
+export function onRequest(ctx) {
+  __omniroute.broadcast("request:started", { model: ctx.model, provider: ctx.provider });
+}
+```
+
+**plugin-b/index.mjs:**
+```ts
+export function onPluginMessage(payload) {
+  console.log(`Plugin B heard: ${payload.event} from ${payload.source}`);
+  __omniroute.db.set("lastRequest", payload.data);
+}
+```
+
+### Dashboard Admin Page with Widget
+
+```json
+{
+  "name": "my-dashboard-plugin",
+  "hooks": { "onRender": true },
+  "adminPages": [{ "slug": "stats", "title": "Stats", "icon": "bar_chart" }],
+  "dashboardWidgets": [{ "id": "quick-stats", "title": "Quick Stats", "width": "half" }]
+}
+```
 
 ```ts
-import { definePlugin } from "omniroute/plugins/sdk";
-
-export default definePlugin({
-  name: "response-transformer",
-  onResponse: async (ctx, response) => {
-    if (response.choices) {
-      response.choices = response.choices.map((c: any) => ({
-        ...c,
-        message: { ...c.message, content: c.message.content.trim() },
-      }));
-    }
-    return response;
-  },
-});
+export function onRender(payload) {
+  if (payload.slug === "stats") {
+    const count = __omniroute.db.get("requestCount") || 0;
+    return {
+      type: "html",
+      html: `<h2>Request Stats</h2><p>Total requests tracked: ${count}</p>`
+    };
+  }
+}
 ```
