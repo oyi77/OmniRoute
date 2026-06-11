@@ -1,5 +1,6 @@
 import { convertOpenAIToResponsesToolCall } from "../handlers/responseTranslator.ts";
 import { v4 as uuidv4 } from "uuid";
+import { FORMATS, initState } from "../../translator/formats";
 
 import { parseTextualToolCallFromContent, containsTextualToolCallCandidate, containsMalformedTextualToolCall, extractAllowedToolNames, collectPassthroughTextualToolCall } from "./textualToolCalls.ts";
 import { getOpenAIIntermediateChunks } from "./openaiChunks.ts";
@@ -9,9 +10,9 @@ import { buildResponsesFunctionCallEvents, formatSSEDataEvents, toChatCompletion
 import { stringifyIdValue, asRecord, appendBoundedText, STREAM_MODE } from "./utils.ts";
 import { JsonRecord, StreamLogger, StreamCompletePayload, StreamFailurePayload, StreamOptions, TranslateState, ToolCall, UsageTokenRecord } from "./types.ts";
 import { normalizeStreamFailurePayload } from "./errors.ts";
+import { STREAM_IDLE_TIMEOUT_MS } from "../../config/constants";
 
 /**
- * Create unified SSE transform stream with idle timeout protection.
  * If the upstream provider stops sending data for STREAM_IDLE_TIMEOUT_MS,
  * the stream emits an error event and closes to prevent indefinite hanging.
  *
