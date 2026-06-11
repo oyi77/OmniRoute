@@ -50,7 +50,7 @@ export async function handleRecraftImageGeneration({
   log,
 }) {
   const startTime = Date.now();
-  const token = credentials.apiKey || credentials.accessToken;
+  const token = credentials?.apiKey || credentials?.accessToken;
   const upstreamBody: Record<string, unknown> = {
     model,
     prompt: body.prompt,
@@ -127,7 +127,7 @@ export async function handleTopazImageGeneration({
   log,
 }) {
   const startTime = Date.now();
-  const token = credentials.apiKey || credentials.accessToken;
+  const token = credentials?.apiKey || credentials?.accessToken;
   const { imageUrl } = extractImageInputs(body);
 
   if (!imageUrl) {
@@ -229,7 +229,7 @@ export async function handleHyperbolicImageGeneration({
   log,
 }) {
   const startTime = Date.now();
-  const token = credentials.apiKey || credentials.accessToken;
+  const token = credentials?.apiKey || credentials?.accessToken;
 
   const [width, height] = (body.size || "1024x1024").split("x").map(Number);
 
@@ -329,7 +329,7 @@ export async function handleNanoBananaImageGeneration({
   log,
 }) {
   const startTime = Date.now();
-  const token = credentials.apiKey || credentials.accessToken;
+  const token = credentials?.apiKey || credentials?.accessToken;
 
   // Route to pro URL for "nanobanana-pro" model
   const isPro = model === "nanobanana-pro";
@@ -639,6 +639,9 @@ async function normalizeNanoBananaTaskResult(taskData, body, log) {
     if (urlCandidates.length > 0) {
       const firstUrl = urlCandidates[0];
       const remoteImage = await fetchRemoteImage(firstUrl);
+      if (!remoteImage || !remoteImage.buffer) {
+        throw new Error("Failed to fetch remote image or image buffer is empty");
+      }
       const base64 = remoteImage.buffer.toString("base64");
       return [{ b64_json: base64, revised_prompt: body.prompt }];
     }
@@ -901,6 +904,18 @@ export async function handleHaiperImageGeneration({
       return { success: false, status: res.status, error: errorText };
     }
     const { job_id } = await res.json();
+    if (!job_id) {
+      saveCallLog({
+        method: "POST",
+        path: "/v1/images/generations",
+        status: 502,
+        model: provider + "/" + model,
+        provider,
+        duration: Date.now() - startTime,
+        error: "No job ID returned",
+      }).catch(() => {});
+      return { success: false, status: 502, error: "No job ID returned" };
+    }
     const deadline = Date.now() + 300000;
     while (Date.now() < deadline) {
       await sleep(5000);
@@ -908,7 +923,8 @@ export async function handleHaiperImageGeneration({
         headers: { HAIPER_KEY: token },
       });
       const status = await statusRes.json();
-      if (status.status === "completed" || status.status === "succeeded") {
+      if (status && typeof status === "object") {
+        if (status.status === "completed" || status.status === "succeeded") {
         const imgUrl = status.creation_url || status.output?.image_url;
         if (imgUrl) {
           const imgRes = await fetch(imgUrl);
@@ -948,6 +964,7 @@ export async function handleHaiperImageGeneration({
           error: "Haiper image generation failed",
         }).catch(() => {});
         return { success: false, status: 502, error: "Haiper image generation failed" };
+        }
       }
     }
     saveCallLog({
@@ -1041,8 +1058,9 @@ export async function handleLeonardoImageGeneration({
         headers: { Authorization: `Bearer ${token}` },
       });
       const status = await statusRes.json();
-      const gen = status.generations_by_pk || status;
-      if (gen.status === "COMPLETE") {
+      const gen = status && typeof status === "object" ? (status.generations_by_pk || status) : null;
+      if (gen && typeof gen === "object") {
+        if (gen.status === "COMPLETE") {
         const imgUrl = gen.generated_images?.[0]?.url;
         if (imgUrl) {
           const imgRes = await fetch(imgUrl);
@@ -1082,6 +1100,7 @@ export async function handleLeonardoImageGeneration({
           error: "Leonardo image generation failed",
         }).catch(() => {});
         return { success: false, status: 502, error: "Leonardo image generation failed" };
+        }
       }
     }
     saveCallLog({
@@ -1149,7 +1168,7 @@ export async function handleIdeogramImageGeneration({
       return { success: false, status: res.status, error: errorText };
     }
     const data = await res.json();
-    if (data.data && data.data.length > 0) {
+    if (data && typeof data === "object" && Array.isArray(data.data) && data.data.length > 0) {
       const imgUrl = data.data[0].url;
       const imgRes = await fetch(imgUrl);
       if (!imgRes.ok) {

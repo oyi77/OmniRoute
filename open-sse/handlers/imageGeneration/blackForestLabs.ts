@@ -68,7 +68,7 @@ export async function handleBlackForestLabsImageGeneration({
   log,
 }) {
   const startTime = Date.now();
-  const token = credentials.apiKey || credentials.accessToken;
+  const token = credentials?.apiKey || credentials?.accessToken;
   const endpoint = BFL_MODEL_ENDPOINTS[model];
 
   if (!endpoint) {

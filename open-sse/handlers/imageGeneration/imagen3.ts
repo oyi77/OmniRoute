@@ -61,7 +61,7 @@ export async function handleImagen3ImageGeneration({
   log,
 }: Imagen3ImageGenArgs) {
   const startTime = Date.now();
-  const token = credentials.apiKey || credentials.accessToken;
+  const token = credentials?.apiKey || credentials?.accessToken;
   const aspectRatio = mapImageSize(body.size);
 
   const upstreamBody = {
@@ -111,10 +111,11 @@ export async function handleImagen3ImageGeneration({
 
     // Normalize response to OpenAI format
     const images: Imagen3NormalizedImage[] = [];
-    if (Array.isArray(data.images)) {
+    if (data && typeof data === "object") {
+      if (Array.isArray(data.images)) {
       images.push(
         ...data.images.map((img: Record<string, unknown>) => ({
-          b64_json: img.image ?? img.b64_json ?? img.url ?? img,
+          b64_json: img?.image ?? img?.b64_json ?? img?.url ?? img,
           revised_prompt: body.prompt,
         }))
       );
@@ -122,10 +123,11 @@ export async function handleImagen3ImageGeneration({
       images.push(...data.data);
     } else if (data.url || data.b64_json || data.image) {
       images.push({
-        b64_json: data.image || data.b64_json || data.url,
-        url: data.url,
-        revised_prompt: body.prompt,
-      });
+          b64_json: data.image || data.b64_json || data.url,
+          url: data.url,
+          revised_prompt: body.prompt,
+        });
+      }
     }
 
     saveCallLog({
