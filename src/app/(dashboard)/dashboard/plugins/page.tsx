@@ -43,9 +43,9 @@ export default function PluginsPage() {
   useEffect(() => {
     fetchPlugins();
     fetch("/api/settings")
-      .then((res) => res.json())
+      .then((res) => res.ok ? res.json() : null)
       .then((data) => {
-        if (data.pluginMarketplaceUrl) setMarketplaceUrl(data.pluginMarketplaceUrl);
+        if (data?.pluginMarketplaceUrl) setMarketplaceUrl(data.pluginMarketplaceUrl);
       });
   }, [fetchPlugins]);
   
@@ -68,11 +68,16 @@ export default function PluginsPage() {
   const handleSaveUrl = async () => {
     setSavingUrl(true);
     try {
-      await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pluginMarketplaceUrl: marketplaceUrl || null }),
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        addNotification({ type: "error", message: errData?.error || "Failed to save" });
+        return;
+      }
       addNotification({ type: "success", message: "Marketplace URL updated" });
       await fetchMarketplace();
     } catch {
