@@ -180,7 +180,7 @@ import {
   isCacheableForRead,
   isCacheableForWrite,
 } from "@/lib/semanticCache";
-import { saveIdempotency } from "@/lib/idempotencyLayer";
+import { getIdempotencyKey, saveIdempotency } from "@/lib/idempotencyLayer";
 import { createProgressTransform, wantsProgress } from "../utils/progressTracker.ts";
 import { createPiiSseTransform } from "@/lib/streamingPiiTransform";
 import { isFeatureFlagEnabled } from "@/shared/utils/featureFlags";
@@ -5232,6 +5232,10 @@ export async function handleChatCore({
     }
 
     // ── Phase 9.2: Save for idempotency ──
+    // The idempotency *check* moved into checkIdempotencyCache() during the
+    // chatCore modularization (#3598); re-derive the key here for the save path.
+    // getIdempotencyKey is pure (reads idempotency-key/x-request-id headers).
+    const idempotencyKey = getIdempotencyKey(clientRawRequest?.headers);
     saveIdempotency(idempotencyKey, translatedResponse, 200);
     reqLogger.logConvertedResponse(translatedResponse);
     persistAttemptLogs({
