@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { HttpProxyConfig } from "@/shared/utils/http-proxy";
 import {
   isClaudeCodeCompatibleProvider,
   isAnthropicCompatibleProvider,
