@@ -139,6 +139,7 @@ export interface DplInfo {
 }
 
 export let dplCache: DplInfo | null = null;
+export function resetDplCache(): void { dplCache = null; }
 
 export const DPL_TTL_MS = 60 * 60 * 1000;
 
