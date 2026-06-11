@@ -81,7 +81,7 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { asRecord, toNonEmptyString } from "../utils.ts";
+import { asRecord, toNonEmptyString, mergeLocalCatalogModels } from "../utils.ts";
 
 export async function handleAnthropicCompatibleModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;
@@ -103,6 +103,16 @@ export async function handleAnthropicCompatibleModels(ctx: ModelsRequestContext)
       const copilotToken =
         toNonEmptyString(psd.copilotToken) || toNonEmptyString(accessToken) || null;
 
+      // Compute local catalog models for fallback within the handler
+      const catalogModels = getModelsByProviderId(ctx.provider) || [];
+      const staticModels = getStaticModelsForProvider(ctx.provider) || [];
+      const mergedCatalog = mergeLocalCatalogModels(catalogModels, staticModels);
+      const fallbackModels = mergedCatalog.map((model) => ({
+        id: model.id,
+        name: model.name || model.id,
+        ...(catalogModels.length > 0 ? { owned_by: ctx.provider } : {}),
+      }));
+
       const discovery = await fetchGitHubCopilotModels({
         token: copilotToken,
         fetchImpl: (url, init) =>
@@ -112,9 +122,8 @@ export async function handleAnthropicCompatibleModels(ctx: ModelsRequestContext)
             proxyConfig: proxy,
             ...(init as Record<string, unknown>),
           }),
-        fallbackModels: toLocalCatalogModels(),
+        fallbackModels,
       });
-
       if (discovery.source === "api") {
         return buildApiDiscoveryResponse(discovery.models);
       }
