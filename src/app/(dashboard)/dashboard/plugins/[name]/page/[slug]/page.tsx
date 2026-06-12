@@ -1,5 +1,6 @@
 "use client";
 
+import DOMPurify from "dompurify";
 import { useState, useEffect, use } from "react";
 import { Card } from "@/shared/components";
 import { useTranslations } from "next-intl";
@@ -92,9 +93,9 @@ export default function PluginPagePage({
       </Link>
       <Card className="p-4">
         {typeof content === "string" ? (
-          <div dangerouslySetInnerHTML={{ __html: content }} />
+          <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }} />
         ) : content && typeof content === "object" && "html" in (content as Record<string, unknown>) ? (
-          <div dangerouslySetInnerHTML={{ __html: (content as Record<string, string>).html }} />
+          <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize((content as Record<string, string>).html) }} />
         ) : content && typeof content === "object" && "type" in (content as Record<string, unknown>) ? (
           <PluginStructuredContent data={content as StructuredContent} />
         ) : (

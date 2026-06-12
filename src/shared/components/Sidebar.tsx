@@ -240,6 +240,7 @@ export default function Sidebar({
         title: getSidebarLabel(section.titleKey, section.titleFallback),
         children,
       };
+    })
     .filter((section) => {
       const allItems = section.children.flatMap((child: any) =>
         child.type === "group" ? child.items : [child]
