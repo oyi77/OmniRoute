@@ -1,4 +1,6 @@
 import { getSettings } from "../db/settings";
+import dns from "node:dns/promises";
+import net from "node:net";
 /**
  * Plugin Marketplace — browse, search, install plugins from a registry.
  *
@@ -7,6 +9,51 @@ import { getSettings } from "../db/settings";
  *
  * @module plugins/marketplace
  */
+
+/**
+ * Validate a URL for SSRF safety: must be http/https and must not resolve
+ * to a private or loopback IP address.
+ */
+async function isSafeMarketplaceUrl(urlStr: string): Promise<boolean> {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+  // Resolve hostname to IPs and check none are private/loopback
+  try {
+    const addresses = await dns.resolve4(parsed.hostname);
+    for (const ip of addresses) {
+      if (net.isIPv4(ip)) {
+        const parts = ip.split(".").map(Number);
+        // 127.0.0.0/8 (loopback)
+        if (parts[0] === 127) return false;
+        // 10.0.0.0/8 (private)
+        if (parts[0] === 10) return false;
+        // 172.16.0.0/12 (private)
+        if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return false;
+        // 192.168.0.0/16 (private)
+        if (parts[0] === 192 && parts[1] === 168) return false;
+        // 0.0.0.0/8 (current network)
+        if (parts[0] === 0) return false;
+        // 100.64.0.0/10 (CGNAT)
+        if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return false;
+        // 169.254.0.0/16 (link-local)
+        if (parts[0] === 169 && parts[1] === 254) return false;
+        // 198.18.0.0/15 (benchmarking)
+        if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return false;
+      }
+    }
+  } catch {
+    // DNS resolution failure — reject to be safe
+    return false;
+  }
+  return true;
+}
 
 // Marketplace — local seed registry. Remote registry in Phase 2.
 
@@ -94,6 +141,10 @@ export async function listMarketplacePlugins(): Promise<MarketplaceEntry[]> {
     const settings = await getSettings();
     const url = typeof settings.pluginMarketplaceUrl === "string" ? settings.pluginMarketplaceUrl : null;
     if (url) {
+      if (!(await isSafeMarketplaceUrl(url))) {
+        console.warn("Custom marketplace URL rejected (SSRF guard):", url);
+        return [...SEED_REGISTRY];
+      }
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) {
         console.warn("Custom marketplace returned non-OK status:", res.status);
@@ -105,8 +156,8 @@ export async function listMarketplacePlugins(): Promise<MarketplaceEntry[]> {
           entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).name === "string"
         ) as MarketplaceEntry[];
       }
-      if (data && typeof data === "object" && Array.isArray(data.plugins)) {
-        return data.plugins.filter((entry: unknown) =>
+      if (data && typeof data === "object" && Array.isArray((data as Record<string, unknown>).plugins)) {
+        return ((data as Record<string, unknown>).plugins as unknown[]).filter((entry: unknown) =>
           entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).name === "string"
         ) as MarketplaceEntry[];
       }
@@ -143,11 +194,6 @@ export async function getMarketplaceEntry(name: string): Promise<MarketplaceEntr
 /**
  * Check if marketplace is available.
  */
-export async function isMarketplaceAvailable(): Promise<boolean> {
-  try {
-    const settings = await getSettings();
-    return true; // Always available (falls back to seed)
-  } catch {
-    return false;
-  }
+export function isMarketplaceAvailable(): boolean {
+  return true; // Always available (falls back to seed)
 }
