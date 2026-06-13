@@ -1,9 +1,10 @@
 /**
  * Smart Router Plugin — demonstrates dynamic model routing via onRequest.
  *
- * onModelSelect is NOT a supported hook in the plugin system. Instead, this
- * plugin uses onRequest to intercept the request body.model field and
- * rewrite it when the prompt exceeds the configured token threshold.
+ * onModelSelect is defined as a built-in event but is not yet wired into the
+ * routing pipeline. Instead, this plugin uses onRequest to intercept the
+ * request body.model field and rewrite it when the prompt exceeds the
+ * configured token threshold.
  *
  * To test: activate the plugin and send a long prompt to an expensive model.
  * The plugin will rewrite body.model to your configured fallback model
@@ -26,9 +27,13 @@ export function onRequest(ctx) {
 
   // If the prompt exceeds the threshold, rewrite the model
   if (promptText.length > maxChars) {
-    console.log(`[smart-router] Prompt length ${promptText.length} > ${maxChars}. Rewriting model: ${originalModel} -> ${fallback}`);
+    console.log(
+      `[smart-router] Prompt length ${promptText.length} > ${maxChars}. Rewriting model: ${originalModel} -> ${fallback}`
+    );
     return { body: { ...body, model: fallback } };
   }
 
-  console.log(`[smart-router] Prompt length ${promptText.length} <= ${maxChars}. Keeping model: ${originalModel}`);
+  console.log(
+    `[smart-router] Prompt length ${promptText.length} <= ${maxChars}. Keeping model: ${originalModel}`
+  );
 }
