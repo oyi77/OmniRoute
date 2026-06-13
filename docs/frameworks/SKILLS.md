@@ -380,28 +380,29 @@ const total = skillExecutor.countExecutions("api-key-id");
 
 The `maxRetries` setting is stored but **not currently used** by the executor's `execute()` method — it only performs a single attempt. The `maxRetries` value is exposed for future implementation and for hooks that want to read it.
 
-For now, retries must be implemented inside the handler:
+For now, retries must be implemented inside the skill handler itself. Built-in
+skills are registered against the executor (e.g. `registerBuiltinSkills(executor)`
+/ `registerBrowserSkill(executor)` in `src/lib/skills/builtin/`); whichever handler
+you register can wrap its own retry loop:
 
 ```ts
-export default defineSkill({
-  name: "fetch-with-retry",
-  handler: async (input, ctx) => {
-    const maxRetries = 3;
-    let lastError: Error | null = null;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await fetchSomething(input);
-      } catch (err) {
-        lastError = err as Error;
-        if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 1000 * attempt));
-        }
+// inside a skill handler
+async function handler(input, ctx) {
+  const maxRetries = 3;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetchSomething(input);
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
       }
     }
-    throw lastError;
-  },
-});
+  }
+  throw lastError;
+}
 ```
 
 ---
@@ -430,14 +431,14 @@ enum SkillMode {
 
 ### AUTO Scoring
 
-When `AUTO` mode is active, OmniRoute scores each available skill against the request context. The score is computed in `src/lib/skills/registry.ts` based on:
-
-- **Tag overlap** — does the request mention concepts in the skill's `tags`?
-- **Description similarity** — does the skill's `description` match the request intent?
-- **Recent usage** — has the skill been called recently for similar inputs? (deprioritizes redundant calls)
-- **Provider affinity** — does the active provider work well with this skill?
-
-A skill with a score above the threshold (default: `0.6`) is offered to the LLM as a callable tool. Skills below the threshold are filtered out to reduce tool-call noise.
+When `AUTO` mode is active, each candidate skill is scored against the request
+context by `scoreAutoSkill()` in `src/lib/skills/injection.ts` — an additive,
+integer point system (skill-name match, name/tag/description token overlap,
+background-reason hints, provider-hint bonus/penalty). The top
+`AUTO_MAX_SKILLS = 5` skills with `score >= AUTO_MIN_SCORE = 3` are injected as
+callable tools, ties broken by `installCount` then name. See the full point table
+in [**Tool Schema Generation → AUTO Scoring**](#auto-scoring) earlier in this
+document; there is no float `0.6`-style threshold and no `registry.ts` scoring.
 
 ---
 

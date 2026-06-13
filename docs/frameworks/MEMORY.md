@@ -669,7 +669,9 @@ To prevent runaway extraction, the following limits apply:
 
 ### When to Disable Extraction
 
-Set `extractionEnabled: false` in settings when:
+Extraction runs automatically whenever memory is enabled; there is no separate
+extraction-only toggle. To turn it off, disable memory entirely (`enabled: false`
+via `PUT /api/settings/memory`). Consider doing so when:
 - You have high message volume and the extraction cost is non-trivial
 - Your conversations are mostly transient (chat, debugging) with no long-term value
 - You're already capturing context via custom plugins
@@ -762,50 +764,37 @@ The `summarization.ts` module (`src/lib/memory/summarization.ts`) compresses old
 
 ### What Gets Summarized
 
-Summarization runs in two passes:
+Two entry points are exported from `summarization.ts`:
 
-1. **Group** — cluster related memories by `tags` and `key` (e.g., all `preference_*` memories)
-2. **Summarize** — pass each group through an LLM to produce a single consolidated memory
+- **`summarizeMemories(apiKeyId, sessionId?, maxTokens = 4000)`** — condenses the
+  memories for a session into a single summary text bounded by a token budget.
+- **`summarizeMemoriesOlderThan(apiKeyId, days, dryRun)`** — the age-based
+  compaction used by the API: it selects every memory older than `days`, builds
+  one condensed summary memory from them, and (when `dryRun` is `false`) deletes
+  the originals. Pass `dryRun: true` to preview the candidate set and token total
+  without modifying anything.
 
-**Example:**
+There is no tag/key clustering pass or per-memory "core vs summarizable" scoring —
+selection is purely the age cutoff, and the summary text is a condensed,
+type-prefixed line per candidate.
 
-Before (5 separate memories):
-- `pref_languages_typescript` → "TypeScript"
-- `pref_languages_python` → "Python"
-- `pref_languages_rust` → "Rust"
-- `pref_languages_go` → "Go"
-- `pref_languages_elixir` → "Elixir"
+### Triggering Summarization
 
-After (1 summarized memory):
-- `pref_languages` → "User prefers TypeScript, Python, Rust, Go, and Elixir"
-
-### How the Summarizer Decides What to Keep
-
-The summarizer uses a **5-factor scoring** to decide which memories are "core" (preserved verbatim) vs "summarizable" (merged):
-
-| Factor | Core if | Summarizable if |
-|--------|---------|-----------------|
-| Recency | Accessed in last 7 days | Not accessed in 30+ days |
-| Frequency | Injected >10 times | Injected <3 times |
-| Type | `identity`, `constraint` | `preference`, `context` |
-| Source | User-stated | Inferred |
-| Specificity | References unique entity | Generic statement |
-
-### Disabling Summarization
-
-To disable summarization, use the API:
+Summarization is **manual / opt-in** — the `autoSummarize` setting is `false` by
+default, so nothing is compacted automatically. Trigger it via the API:
 
 ```bash
-curl -X PATCH http://localhost:20128/api/memory/settings \
-  -H "Authorization: Bearer $OMNIROUTE_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"summarizeEnabled": false}'
+curl -X POST http://localhost:20128/api/memory/summarize \
+  -H "Authorization: Bearer $OMNIROUTE_KEY"
 ```
+
+To leave it off, simply keep `autoSummarize` at its default (`false`).
 
 ### Summarization Quality Tips
 
-- **Use `summary` type for consolidated memories** — the `MemoryType` enum includes `summary` as a distinct type so they can be filtered
-- **Set `MEMORY_SUMMARIZE_KEEP_RECENT=50`** to always preserve the 50 most recent memories verbatim
+- **Preview first with `dryRun`** — `summarizeMemoriesOlderThan(..., true)` returns
+  the candidate list and total token count so you can confirm what would be merged
+  before deleting the originals.
 - **Run summarization during low-traffic hours** if you have a large memory corpus — the LLM call is the slow part
 
 ```bash

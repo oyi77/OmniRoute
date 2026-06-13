@@ -320,10 +320,14 @@ Both the **head** and **tail** of each section are preserved; middle content is 
 
 **Programmatically**:
 
-```ts
-import { rtkEngine } from "omniroute/compression/engines/rtk";
+`rtkEngine` (`@omniroute/open-sse/services/compression/engines/rtk`) is a
+`CompressionEngine` and has no `updateConfig` method. Update an engine's config
+through the registry helper instead:
 
-rtkEngine.updateConfig({ intensity: "aggressive" });
+```ts
+import { updateEngineConfig } from "@omniroute/open-sse/services/compression/engines/registry";
+
+updateEngineConfig("rtk", { intensity: "aggressive" });
 ```
 
 ### Verifying the Effect
@@ -465,9 +469,11 @@ Filters are loaded automatically on startup via `loadRtkFilters()` in `open-sse/
 To load filters programmatically:
 
 ```ts
-import { loadRtkFilters } from "omniroute/compression/engines/rtk/filterLoader";
+import { loadRtkFilters } from "@omniroute/open-sse/services/compression/engines/rtk/filterLoader";
 
-const filters = loadRtkFilters({ includeUserFilters: true });
+// Options: customFiltersEnabled (load user/project filters, default on),
+// trustProjectFilters, refresh.
+const filters = loadRtkFilters({ customFiltersEnabled: true });
 ```
 
 ### Validation

@@ -205,18 +205,21 @@ Or load programmatically from a plugin:
 
 ```ts
 // In your plugin
-import { registerCompressionEngine } from "omniroute/compression/engines/registry";
+import { registerCompressionEngine, unregisterCompressionEngine } from "@omniroute/open-sse/services/compression/engines/registry";
 import { myEngine } from "./engines/my-engine";
 
 export default definePlugin({
   name: "my-compression-plugin",
-  onActivate: async () => {
+  // The plugin SDK exposes onRequest / onResponse / onError hooks. Register the
+  // engine when the plugin module loads (or on first onRequest); unregister it
+  // from your own teardown path.
+  onRequest: async (ctx) => {
     registerCompressionEngine(myEngine);
   },
-  onDeactivate: async () => {
-    unregisterCompressionEngine("my-engine");
-  },
 });
+
+// On teardown:
+// unregisterCompressionEngine("my-engine");
 ```
 
 ### Testing Your Engine
@@ -315,7 +318,10 @@ RULE_LOADER: pack "hi/filler.json" failed validation:
   - rules.1.context: must be one of [all, user, system, assistant]
 ```
 
-Run `npm run check:rules` to validate all installed packs.
+Validation runs automatically when a pack is loaded (against `_schema.json`); an
+invalid pack is rejected and the error above is logged. There is no separate
+`npm run` script for pack validation — load the pack (e.g. start the server or
+exercise the compression path) and watch the logs.
 
 ### Loading a Custom Language Pack
 
@@ -466,23 +472,32 @@ Stacking isn't always better:
 
 ### Building a Custom Pipeline
 
-```ts
-import { strategySelector } from "omniroute/compression/strategySelector";
+There is no named-pipeline registry. A stacked pipeline is just an **inline array
+of steps** passed to `applyStackedCompression()` (exported from
+`@omniroute/open-sse/services/compression/strategySelector`):
 
-strategySelector.registerPipeline("my-custom-pipeline", [
-  { engine: "rtk", config: { intensity: "aggressive" } },
-  { engine: "caveman", config: { intensity: "lite" } },
-  { engine: "whitespace", config: {} },  // custom engine from above
+```ts
+import { applyStackedCompression } from "@omniroute/open-sse/services/compression/strategySelector";
+
+const result = applyStackedCompression(body, [
+  { engine: "rtk", intensity: "aggressive" },
+  { engine: "caveman", intensity: "full" },
 ]);
 ```
 
-Then in combo config:
+When you don't pass a pipeline, it defaults to `rtk(standard) → caveman(full)`.
+
+To drive it from config, set `mode: "stacked"` and provide the step array under
+`stackedPipeline` (read from `config.stackedPipeline`):
 
 ```json
 {
   "compression": {
     "mode": "stacked",
-    "pipelineName": "my-custom-pipeline"
+    "stackedPipeline": [
+      { "engine": "rtk", "intensity": "aggressive" },
+      { "engine": "caveman", "intensity": "full" }
+    ]
   }
 }
 ```
