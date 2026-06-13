@@ -6,6 +6,7 @@
 
 import type { RoutingHint } from "../manifestAdapter";
 import { clamp01 } from "../../utils/number";
+import { classifyTier } from "../tierResolver";
 
 export interface ScoringFactors {
   quota: number;
@@ -135,7 +136,6 @@ function calculateTierAffinity(
 ): number {
   if (!hint) return 0.5;
   try {
-    const { classifyTier } = require("../tierResolver");
     const assignment = classifyTier(candidate.provider, candidate.model);
     const tierOrder = ["free", "cheap", "premium"];
     const providerTierIdx = tierOrder.indexOf(assignment.tier);
@@ -155,7 +155,6 @@ function calculateSpecificityMatch(
 ): number {
   if (!hint) return 0.5;
   try {
-    const { classifyTier } = require("../tierResolver");
     const assignment = classifyTier(candidate.provider, candidate.model);
     const specificityScore = hint.specificity.score;
 

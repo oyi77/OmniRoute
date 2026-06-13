@@ -83,6 +83,11 @@ import { getSessionConnection } from "./sessionManager.ts";
 import { orderTargetsByEvalScores } from "./evalRouting.ts";
 import { generateRoutingHints } from "./manifestAdapter";
 import type { RoutingHint } from "./manifestAdapter";
+import {
+  classifyRequestComplexity,
+  escalateTier,
+  type ComplexityTier,
+} from "./autoCombo/complexityRouter";
 import type { CompressionMode } from "./compression/types.ts";
 import { getModelContextLimit } from "../../src/lib/modelCapabilities";
 import { getProviderConnections } from "../../src/lib/db/providers";
@@ -2906,11 +2911,12 @@ function resolveWeightedTargets(
   };
 }
 
-function scoreAutoTargets(
+export function scoreAutoTargets(
   targets: ResolvedComboTarget[],
   candidates: AutoProviderCandidate[],
   taskType: string | null,
-  weights: ScoringWeights
+  weights: ScoringWeights,
+  manifestHint?: RoutingHint | null
 ) {
   const candidateByExecutionKey = new Map(
     candidates.map((candidate: ProviderCandidate & { executionKey: string }) => [
@@ -2926,7 +2932,8 @@ function scoreAutoTargets(
         candidate as ProviderCandidate,
         candidates,
         taskType ?? "general",
-        getTaskFitness
+        getTaskFitness,
+        manifestHint ?? undefined
       );
       let score = calculateScore(factors, weights);
       // B17: Quota Share soft-policy deprioritization
@@ -3401,7 +3408,50 @@ export async function handleComboChat({
         selectionReason = `score=${selection.score.toFixed(3)}${selection.isExploration ? " (exploration)" : ""}`;
       }
 
-      const scoredTargets = scoreAutoTargets(eligibleTargets, candidates, taskType, weights);
+      // Complexity-aware routing (2026, opt-in): classify the request's
+      // difficulty and feed a tier hint into scoring so tierAffinity /
+      // specificityMatch favor candidates whose tier matches the request.
+      let autoManifestHint: RoutingHint | null = null;
+      if (config.complexityAwareRouting === true) {
+        try {
+          const ruleInput = {
+            messages: Array.isArray(body?.messages)
+              ? (body.messages as Array<{ role?: string; content?: string | unknown }>)
+              : [],
+            tools: Array.isArray(body?.tools)
+              ? (body.tools as Array<{
+                  function?: { name: string; description?: string; parameters?: unknown };
+                }>)
+              : undefined,
+            model: typeof body?.model === "string" ? body.model : undefined,
+          };
+          autoManifestHint = generateRoutingHints(
+            eligibleTargets.filter((t) => t.kind === "model"),
+            ruleInput
+          );
+          // Tool-use escalation: floor the recommended tier at "cheap" so the
+          // scoring favors function-calling-reliable models for agentic requests.
+          const classification = classifyRequestComplexity(ruleInput);
+          autoManifestHint.recommendedMinTier = escalateTier(
+            autoManifestHint.recommendedMinTier as ComplexityTier,
+            classification.recommendedTier
+          ) as typeof autoManifestHint.recommendedMinTier;
+          log.info(
+            "COMBO",
+            `Complexity-aware routing: level=${classification.level} score=${classification.score} minTier=${autoManifestHint.recommendedMinTier} tools=${classification.hasToolUse}`
+          );
+        } catch {
+          autoManifestHint = null; // fail-open: scoring stays tier-neutral
+        }
+      }
+
+      const scoredTargets = scoreAutoTargets(
+        eligibleTargets,
+        candidates,
+        taskType,
+        weights,
+        autoManifestHint
+      );
       const rankedTargets = scoredTargets.map((entry) => entry.target);
       const selectedTarget =
         scoredTargets.find((entry) => {
