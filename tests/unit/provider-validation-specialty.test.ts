@@ -5,13 +5,18 @@ const {
   validateProviderApiKey,
   validateClaudeCodeCompatibleProvider,
   validateCommandCodeProvider,
+  isSecurityBlockError,
 } = await import("../../src/lib/providers/validation.ts");
+
+const { SafeOutboundFetchError } = await import("../../src/shared/network/safeOutboundFetch.ts");
 
 const { __setTlsFetchOverrideForTesting: __setPplxTlsFetchOverride } =
   await import("../../open-sse/services/perplexityTlsClient.ts");
 
 const { __setTlsFetchOverrideForTesting: __setGrokTlsFetchOverride } =
   await import("../../open-sse/services/grokTlsClient.ts");
+
+const { COMMAND_CODE_VERSION } = await import("../../open-sse/executors/commandCode.ts");
 
 const originalFetch = globalThis.fetch;
 
@@ -88,7 +93,7 @@ test("specialty provider validators cover Deepgram, AssemblyAI, ElevenLabs and I
 
 test("validateCommandCodeProvider ignores caller baseUrl and chatPath overrides", async () => {
   globalThis.fetch = async (url, init = {}) => {
-    assert.equal(String(url), "https://api.commandcode.ai/provider/v1/chat/completions");
+    assert.equal(String(url), "https://api.commandcode.ai/alpha/generate");
     const headers = init.headers as Record<string, string>;
     assert.equal(headers.Authorization, "Bearer cc-key");
     const body = JSON.parse(String(init.body));
@@ -506,9 +511,7 @@ test("grok-web validator: 403 with credential-rejection body is treated as auth-
 
 test("grok-web validator: TLS client unavailable surfaces actionable error", async () => {
   __setGrokTlsFetchOverride(async () => {
-    const { TlsClientUnavailableError } = await import(
-      "../../open-sse/services/grokTlsClient.ts"
-    );
+    const { TlsClientUnavailableError } = await import("../../open-sse/services/grokTlsClient.ts");
     throw new TlsClientUnavailableError("native binary not found");
   });
 
@@ -1956,11 +1959,11 @@ test("validateCommandCodeProvider sends Command Code probe URL, headers, and wra
 
   assert.deepEqual(result, { valid: true, error: null });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "https://api.commandcode.ai/provider/v1/chat/completions");
+  assert.equal(calls[0].url, "https://api.commandcode.ai/alpha/generate");
   assert.equal(calls[0].method, "POST");
   assert.equal(calls[0].headers.Authorization, "Bearer cc_test_key");
   assert.equal(calls[0].headers["Content-Type"], "application/json");
-  assert.equal(calls[0].headers["x-command-code-version"], "0.24.1");
+  assert.equal(calls[0].headers["x-command-code-version"], COMMAND_CODE_VERSION);
   assert.equal(calls[0].headers["x-cli-environment"], "external");
   assert.equal(calls[0].headers["x-project-slug"], "pi-cc");
   assert.equal(calls[0].headers["x-taste-learning"], "false");
@@ -2003,7 +2006,11 @@ test("validateCommandCodeProvider rejects auth failures and provider outages", a
 const { __setTlsFetchOverrideForTesting: __setClaudeTlsFetchOverride } =
   await import("../../open-sse/services/claudeTlsClient.ts");
 
-function makeClaudeTlsResponse(status: number, body: string, headers: Record<string, string> = {}): any {
+function makeClaudeTlsResponse(
+  status: number,
+  body: string,
+  headers: Record<string, string> = {}
+): any {
   const h = new Headers();
   for (const [k, v] of Object.entries(headers)) h.set(k, v);
   return { status, ok: status >= 200 && status < 300, headers: h, text: body, body: null };
@@ -2024,7 +2031,10 @@ test("claude-web validator: 200 from /api/organizations → valid", async () => 
   assert.equal(result.valid, true);
   assert.equal(result.error, null);
   assert.equal(captured?.url, "https://claude.ai/api/organizations");
-  assert.match((captured?.opts.headers as Record<string, string>).Cookie || "", /sessionKey=sk-ant-sid02-test-session-key/);
+  assert.match(
+    (captured?.opts.headers as Record<string, string>).Cookie || "",
+    /sessionKey=sk-ant-sid02-test-session-key/
+  );
   __setClaudeTlsFetchOverride(null);
 });
 
@@ -2072,9 +2082,7 @@ test("claude-web validator: 429 → valid (rate limited means auth passed)", asy
 });
 
 test("claude-web validator: 500 → Claude.ai unavailable", async () => {
-  __setClaudeTlsFetchOverride(async () =>
-    makeClaudeTlsResponse(500, "internal server error")
-  );
+  __setClaudeTlsFetchOverride(async () => makeClaudeTlsResponse(500, "internal server error"));
 
   const result = await validateProviderApiKey({
     provider: "claude-web",
@@ -2335,10 +2343,7 @@ test("gitlawb validator: accepts valid API key via chat/completions probe", asyn
 test("gitlawb validator: 400/422/429 treated as auth success", async () => {
   for (const status of [400, 422, 429]) {
     globalThis.fetch = async (url) => {
-      assert.equal(
-        String(url),
-        "https://opengateway.gitlawb.com/v1/xiaomi-mimo/chat/completions"
-      );
+      assert.equal(String(url), "https://opengateway.gitlawb.com/v1/xiaomi-mimo/chat/completions");
       return new Response(JSON.stringify({ error: "bad request" }), { status });
     };
     const result = await validateProviderApiKey({ provider: "gitlawb", apiKey: "glb-key" });
@@ -2349,10 +2354,7 @@ test("gitlawb validator: 400/422/429 treated as auth success", async () => {
 
 test("gitlawb validator: rejects invalid API key (401)", async () => {
   globalThis.fetch = async (url) => {
-    assert.equal(
-      String(url),
-      "https://opengateway.gitlawb.com/v1/xiaomi-mimo/chat/completions"
-    );
+    assert.equal(String(url), "https://opengateway.gitlawb.com/v1/xiaomi-mimo/chat/completions");
     return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
   };
 
@@ -2363,10 +2365,7 @@ test("gitlawb validator: rejects invalid API key (401)", async () => {
 
 test("gitlawb validator: rejects invalid API key (403)", async () => {
   globalThis.fetch = async (url) => {
-    assert.equal(
-      String(url),
-      "https://opengateway.gitlawb.com/v1/xiaomi-mimo/chat/completions"
-    );
+    assert.equal(String(url), "https://opengateway.gitlawb.com/v1/xiaomi-mimo/chat/completions");
     return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
   };
 
@@ -2387,10 +2386,7 @@ test("gitlawb validator: surfaces network failures", async () => {
 
 test("gitlawb validator: accepts custom baseUrl override", async () => {
   globalThis.fetch = async (url, init = {}) => {
-    assert.equal(
-      String(url),
-      "https://custom-gateway.example.com/v1/xiaomi-mimo/chat/completions"
-    );
+    assert.equal(String(url), "https://custom-gateway.example.com/v1/xiaomi-mimo/chat/completions");
     assert.equal((init.headers as Record<string, string>).Authorization, "Bearer glb-key");
     return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
       status: 200,
@@ -2414,7 +2410,10 @@ test("gitlawb-gmi validator: accepts valid API key via chat/completions probe", 
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), headers: init.headers || {} });
     assert.equal(String(url), "https://opengateway.gitlawb.com/v1/gmi-cloud/chat/completions");
-    assert.equal((init.headers as Record<string, string>).Authorization, "Bearer glb-gmi-valid-key");
+    assert.equal(
+      (init.headers as Record<string, string>).Authorization,
+      "Bearer glb-gmi-valid-key"
+    );
     const body = JSON.parse(String(init.body));
     assert.equal(body.model, "XiaomiMiMo/MiMo-V2.5-Pro");
     assert.equal(body.messages[0].content, "test");
@@ -2435,10 +2434,7 @@ test("gitlawb-gmi validator: accepts valid API key via chat/completions probe", 
 test("gitlawb-gmi validator: accepts 400/422/429 as auth success", async () => {
   for (const status of [400, 422, 429]) {
     globalThis.fetch = async (url) => {
-      assert.equal(
-        String(url),
-        "https://opengateway.gitlawb.com/v1/gmi-cloud/chat/completions"
-      );
+      assert.equal(String(url), "https://opengateway.gitlawb.com/v1/gmi-cloud/chat/completions");
       return new Response(JSON.stringify({ error: "bad request" }), { status });
     };
     const result = await validateProviderApiKey({
@@ -2451,10 +2447,7 @@ test("gitlawb-gmi validator: accepts 400/422/429 as auth success", async () => {
 
 test("gitlawb-gmi validator: rejects invalid API key (401)", async () => {
   globalThis.fetch = async (url) => {
-    assert.equal(
-      String(url),
-      "https://opengateway.gitlawb.com/v1/gmi-cloud/chat/completions"
-    );
+    assert.equal(String(url), "https://opengateway.gitlawb.com/v1/gmi-cloud/chat/completions");
     return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
   };
 
@@ -2468,10 +2461,7 @@ test("gitlawb-gmi validator: rejects invalid API key (401)", async () => {
 
 test("gitlawb-gmi validator: rejects invalid API key (403)", async () => {
   globalThis.fetch = async (url) => {
-    assert.equal(
-      String(url),
-      "https://opengateway.gitlawb.com/v1/gmi-cloud/chat/completions"
-    );
+    assert.equal(String(url), "https://opengateway.gitlawb.com/v1/gmi-cloud/chat/completions");
     return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
   };
 
@@ -2498,10 +2488,7 @@ test("gitlawb-gmi validator: surfaces network failures", async () => {
 
 test("gitlawb-gmi validator: accepts custom baseUrl override", async () => {
   globalThis.fetch = async (url, init = {}) => {
-    assert.equal(
-      String(url),
-      "https://custom-gateway.example.com/v1/gmi-cloud/chat/completions"
-    );
+    assert.equal(String(url), "https://custom-gateway.example.com/v1/gmi-cloud/chat/completions");
     assert.equal((init.headers as Record<string, string>).Authorization, "Bearer glb-gmi-key");
     return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
       status: 200,
@@ -2516,4 +2503,106 @@ test("gitlawb-gmi validator: accepts custom baseUrl override", async () => {
     },
   });
   assert.equal(result.valid, true);
+});
+
+// #3288 / #3758: qwen-web validation used to fall through to the generic
+// OpenAI-compatible validator, which probed a non-existent `/api/v2/models` URL that
+// answered with a 307 redirect — blocked by the outbound guard and mislabeled as an
+// SSRF block. A specialty validator now probes the real session endpoint instead.
+test("qwen-web validator probes /api/v2/user (not /api/v2/models) and returns valid on 200", async () => {
+  let probedUrl = "";
+  let sentHeaders: Record<string, string> = {};
+  globalThis.fetch = async (url, init = {}) => {
+    probedUrl = String(url);
+    sentHeaders = toPlainHeaders(init.headers);
+    return new Response(JSON.stringify({ data: { id: "u-1", name: "Tester" } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const result = await validateProviderApiKey({
+    provider: "qwen-web",
+    apiKey: "token=eyJqwen; cna=abc; ssxmod_itna=def",
+  });
+
+  assert.equal(probedUrl, "https://chat.qwen.ai/api/v2/user");
+  assert.ok(!probedUrl.includes("/api/v2/models"), "must not probe the bogus /api/v2/models URL");
+  assert.equal(sentHeaders.Authorization, "Bearer eyJqwen");
+  assert.equal(sentHeaders.source, "web");
+  assert.match(sentHeaders.Cookie, /token=eyJqwen/);
+  assert.equal(result.valid, true);
+});
+
+test("qwen-web validator reports an invalid session (401) without flagging a security block", async () => {
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+
+  const result = await validateProviderApiKey({
+    provider: "qwen-web",
+    apiKey: "token=stale; cna=abc; ssxmod_itna=def",
+  });
+
+  assert.equal(result.valid, false);
+  assert.equal((result as { securityBlocked?: boolean }).securityBlocked ?? false, false);
+  assert.match(result.error ?? "", /invalid or expired/i);
+});
+
+test("qwen-web validator surfaces the WAF/anti-bot HTML challenge as a re-login hint", async () => {
+  globalThis.fetch = async () =>
+    new Response("<html>aliyun_waf</html>", {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    });
+
+  const result = await validateProviderApiKey({
+    provider: "qwen-web",
+    apiKey: "token=eyJqwen; cna=abc; ssxmod_itna=def",
+  });
+
+  assert.equal(result.valid, false);
+  assert.match(result.error ?? "", /WAF|Cookie header/i);
+});
+
+// #3288 / #3758: a blocked redirect (REDIRECT_BLOCKED) to a PUBLIC host is benign — the
+// redirect was never followed, so it must NOT be mislabeled as an SSRF security block.
+// Only a redirect whose target is a private/internal host is a genuine security event.
+test("isSecurityBlockError: public-host redirect block is NOT a security block", () => {
+  const publicRedirect = new SafeOutboundFetchError("Redirect blocked", {
+    code: "REDIRECT_BLOCKED",
+    url: "https://chat.qwen.ai/api/v2/models",
+    method: "GET",
+    attempts: 1,
+    status: 307,
+    location: "https://chat.qwen.ai/login",
+    isRetryable: false,
+  });
+  assert.equal(isSecurityBlockError(publicRedirect), false);
+});
+
+test("isSecurityBlockError: private-host redirect block IS a security block", () => {
+  const privateRedirect = new SafeOutboundFetchError("Redirect blocked", {
+    code: "REDIRECT_BLOCKED",
+    url: "https://api.example.com/probe",
+    method: "GET",
+    attempts: 1,
+    status: 302,
+    location: "http://169.254.169.254/latest/meta-data/",
+    isRetryable: false,
+  });
+  assert.equal(isSecurityBlockError(privateRedirect), true);
+});
+
+test("isSecurityBlockError: a URL-guard block remains a security block", () => {
+  const guardBlock = new SafeOutboundFetchError("Blocked private host", {
+    code: "URL_GUARD_BLOCKED",
+    url: "http://10.0.0.5/internal",
+    method: "GET",
+    attempts: 1,
+    isRetryable: false,
+  });
+  assert.equal(isSecurityBlockError(guardBlock), true);
 });

@@ -1,6 +1,10 @@
 import { HTTP_STATUS, FETCH_TIMEOUT_MS } from "../config/constants.ts";
 import { applyFingerprint, isCliCompatEnabled } from "../config/cliFingerprints.ts";
-import { supportsClaudeMaxEffort, supportsXHighEffort } from "../config/providerModels.ts";
+import {
+  supportsClaudeMaxEffort,
+  supportsXHighEffort,
+  supportsXHighEffortForMaxNormalization,
+} from "../config/providerModels.ts";
 import type { PoolConfig } from "../services/sessionPool/types.ts";
 import type { Session } from "../services/sessionPool/session.ts";
 import { SessionPool } from "../services/sessionPool/sessionPool.ts";
@@ -25,7 +29,10 @@ import {
   modelSupportsContext1mBeta,
 } from "../services/claudeCodeCompatible.ts";
 import { getClaudeCodeCompatibleRequestDefaults } from "@/lib/providers/requestDefaults";
-import { cloakThirdPartyToolNames, remapToolNamesInRequest } from "../services/claudeCodeToolRemapper.ts";
+import {
+  cloakThirdPartyToolNames,
+  remapToolNamesInRequest,
+} from "../services/claudeCodeToolRemapper.ts";
 import { obfuscateInBody } from "../services/claudeCodeObfuscation.ts";
 import { sanitizeClaudeToolSchemas } from "../translator/helpers/schemaCoercion.ts";
 import { sanitizeResponsesInputItems } from "../services/responsesInputSanitizer.ts";
@@ -223,12 +230,11 @@ function hasActiveClaudeThinking(body: Record<string, unknown>): boolean {
  * Each rejection burns a combo fallback attempt before reaching a working
  * provider. Apply provider-aware sanitation here (after transformRequest, so
  * reintroductions by per-provider transforms are also caught) before fetch.
- * xhigh support is registry-gated: models that genuinely support xhigh pass
- * through unchanged, and Claude models default to xhigh support unless marked
- * as legacy unsupported entries. max support is Claude/CC-compatible only and
+ * xhigh support is opt-out: pass through unchanged unless the registry marks
+ * a model as unsupported. max support is Claude/CC-compatible only and
  * intentionally separate: older Opus/Sonnet models may support max even when
- * they do not support xhigh. For OpenAI-shape providers, normalize max to
- * xhigh when that top tier is allowed; otherwise downgrade to high.
+ * they do not support xhigh. For OpenAI-shape providers, keep the existing
+ * max normalization behavior.
  */
 const MISTRAL_NO_REASONING_EFFORT_PATTERN = /devstral/i;
 const GITHUB_NO_REASONING_EFFORT_PATTERN = /(claude|haiku|oswe)/i;
@@ -260,10 +266,10 @@ export function sanitizeReasoningEffortForProvider(
 
   const supportsXHigh = supportsXHighEffort(provider, modelStr);
   const shouldDowngradeXHigh = effortStr === "xhigh" && !supportsXHigh;
-  const shouldNormalizeMaxToXHigh =
-    effortStr === "max" && !supportsMaxEffortForProvider(provider, modelStr) && supportsXHigh;
-  const shouldDowngradeMax =
-    effortStr === "max" && !supportsMaxEffortForProvider(provider, modelStr) && !supportsXHigh;
+  const supportsXHighForMax = supportsXHighEffortForMaxNormalization(provider, modelStr);
+  const supportsMax = supportsMaxEffortForProvider(provider, modelStr);
+  const shouldNormalizeMaxToXHigh = effortStr === "max" && !supportsMax && supportsXHighForMax;
+  const shouldDowngradeMax = effortStr === "max" && !supportsMax && !supportsXHighForMax;
 
   if (shouldNormalizeMaxToXHigh) {
     log?.info?.(
@@ -315,6 +321,27 @@ export function sanitizeReasoningEffortForProvider(
   }
 
   return body;
+}
+
+/**
+ * Strip the OmniRoute provider prefix from versioned built-in tool model
+ * fields (e.g. `cc/claude-opus-4-8` → `claude-opus-4-8`). Versioned built-in
+ * tool types carry an 8-digit date suffix (`advisor_20260301`, `bash_20250124`);
+ * the real Claude CLI sends a bare model id there, never a prefixed one, so a
+ * leaked OmniRoute prefix makes Anthropic reject the request. Mutates in place.
+ */
+export function stripVersionedToolModelPrefix(tools: unknown): void {
+  if (!Array.isArray(tools)) return;
+  for (const t of tools as Array<Record<string, unknown>>) {
+    if (
+      typeof t.type === "string" &&
+      /^[a-z][a-z0-9_]*_\d{8}$/.test(t.type) &&
+      typeof t.model === "string" &&
+      t.model.includes("/")
+    ) {
+      t.model = t.model.split("/").pop();
+    }
+  }
 }
 
 /**
@@ -824,6 +851,9 @@ export class BaseExecutor {
             for (const t of tb.tools as Array<Record<string, unknown>>) {
               delete t.cache_control;
             }
+            // Also strip OmniRoute provider prefix from versioned built-in tool
+            // model fields (e.g. cc/claude-opus-4-8 → claude-opus-4-8).
+            stripVersionedToolModelPrefix(tb.tools);
           }
 
           // Per-request behavior overrides via custom client headers.
@@ -1004,10 +1034,14 @@ export class BaseExecutor {
           // convention; SSE decoding is gated on body.stream). anthropic-beta
           // is selected per request shape; the full set on a quota probe is
           // itself a fingerprint.
+          // Respect the client's negotiated anthropic-beta (real Claude Code) instead
+          // of force-injecting thinking/effort betas it never requested (#3415).
+          const clientAnthropicBeta =
+            clientHeaders?.["anthropic-beta"] ?? clientHeaders?.["Anthropic-Beta"] ?? null;
           const ccHeaders: Record<string, string> = {
             Accept: "application/json",
             "anthropic-version": "2023-06-01",
-            "anthropic-beta": selectBetaFlags(tb),
+            "anthropic-beta": selectBetaFlags(tb, null, clientAnthropicBeta),
             "anthropic-dangerous-direct-browser-access": "true",
             "x-app": "cli",
             "User-Agent": `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,

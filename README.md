@@ -33,9 +33,9 @@
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/hmexnhgE)
 [![Telegram](https://img.shields.io/badge/Telegram-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/omnirouteOficial)
 [![WhatsApp Global](https://img.shields.io/badge/WhatsApp_Global-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://chat.whatsapp.com/JI7cDQ1GyaiDHhVBpLxf8b?mode=gi_t)
-[![WhatsApp Brasil](https://img.shields.io/badge/WhatsApp_Brasil-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://chat.whatsapp.com/CeGCxdFzqBe5Uki288wOvf)
+[![WhatsApp Brasil](https://img.shields.io/badge/WhatsApp_Brasil-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://chat.whatsapp.com/BTGJXIyjeNIIgExvTMGGhI)
 
-**Questions, provider tips, roadmap & support → [Discord](https://discord.gg/hmexnhgE) · [Telegram](https://t.me/omnirouteOficial) · WhatsApp [🌍 Global](https://chat.whatsapp.com/JI7cDQ1GyaiDHhVBpLxf8b?mode=gi_t) / [🇧🇷 Brasil](https://chat.whatsapp.com/CeGCxdFzqBe5Uki288wOvf)**
+**Questions, provider tips, roadmap & support → [Discord](https://discord.gg/hmexnhgE) · [Telegram](https://t.me/omnirouteOficial) · WhatsApp [🌍 Global](https://chat.whatsapp.com/JI7cDQ1GyaiDHhVBpLxf8b?mode=gi_t) / [🇧🇷 Brasil](https://chat.whatsapp.com/BTGJXIyjeNIIgExvTMGGhI)**
 
 <br/>
 
@@ -1012,6 +1012,14 @@ Special thanks to **[Caveman](https://github.com/JuliusBrussee/caveman)** by **[
 Special thanks to **[RTK - Rust Token Killer](https://github.com/rtk-ai/rtk)** by **[RTK AI](https://github.com/rtk-ai)** — the high-performance command-output compression project whose terminal, build, test, git, and tool-output filtering model inspired OmniRoute's RTK engine, JSON filter DSL, raw-output recovery, and stacked RTK → Caveman compression pipeline.
 
 Special thanks to **[Troglodita](https://github.com/leninejunior/troglodita)** by **[Lenine Júnior](https://github.com/leninejunior)** — the PT-BR token compression project ("por que gastar muitos tokens quando poucos resolve?") whose Portuguese-native rules power OmniRoute's pt-BR language pack: pleonasm reduction, filler removal tuned for Brazilian Portuguese grammar, and technical abbreviations for the dev BR community.
+
+## ❤️ Support
+
+OmniRoute is free and open source, built and maintained in the open. If it saves you time or money, consider supporting development:
+
+- ⭐ **Star the repo** — it genuinely helps visibility
+- 💖 **[GitHub Sponsors](https://github.com/sponsors/diegosouzapw)** — fund ongoing maintenance and new providers
+- 🐛 **Report bugs and share feedback** in [Discussions](https://github.com/diegosouzapw/OmniRoute/discussions)
 
 ## 📄 License
 
