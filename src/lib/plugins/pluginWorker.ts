@@ -13,7 +13,7 @@ import { parentPort, workerData } from "worker_threads";
 import { readFile, readdir, stat, writeFile, mkdir, rm } from "fs/promises";
 import { resolve } from "path";
 import * as vm from "vm";
-import { getDbInstance } from "../db/core";
+import { pluginKvGet, pluginKvSet, pluginKvDelete, pluginKvListKeys } from "../db/pluginKv";
 
 if (!parentPort) {
   throw new Error("pluginWorker must be run as a Worker thread");
@@ -53,7 +53,11 @@ type WorkerMessage = LoadMessage | CallMessage | CleanupMessage;
  *      (opt-in, default OFF) — child_process is never wired silently.
  * Treat plugins as local-operator-trusted code, not sandboxed untrusted code.
  */
-function createSandbox(permissions: string[], pluginDir: string, pluginName: string): Record<string, unknown> {
+function createSandbox(
+  permissions: string[],
+  pluginDir: string,
+  pluginName: string
+): Record<string, unknown> {
   const activeTimers = new Set<ReturnType<typeof setTimeout>>();
 
   const sandbox: Record<string, unknown> = {
@@ -62,10 +66,24 @@ function createSandbox(permissions: string[], pluginDir: string, pluginName: str
       warn: (...args: unknown[]) => port.postMessage({ type: "log", level: "warn", args }),
       error: (...args: unknown[]) => port.postMessage({ type: "log", level: "error", args }),
     },
-    setTimeout: (fn: (...args: unknown[]) => void, ms?: number) => { const t = setTimeout(fn, ms); activeTimers.add(t); return t; },
-    clearTimeout: (t: unknown) => { activeTimers.delete(t as ReturnType<typeof setTimeout>); clearTimeout(t as ReturnType<typeof setTimeout>); },
-    setInterval: (fn: (...args: unknown[]) => void, ms?: number) => { const t = setInterval(fn, ms); activeTimers.add(t); return t; },
-    clearInterval: (t: unknown) => { activeTimers.delete(t as ReturnType<typeof setInterval>); clearInterval(t as ReturnType<typeof setInterval>); },
+    setTimeout: (fn: (...args: unknown[]) => void, ms?: number) => {
+      const t = setTimeout(fn, ms);
+      activeTimers.add(t);
+      return t;
+    },
+    clearTimeout: (t: unknown) => {
+      activeTimers.delete(t as ReturnType<typeof setTimeout>);
+      clearTimeout(t as ReturnType<typeof setTimeout>);
+    },
+    setInterval: (fn: (...args: unknown[]) => void, ms?: number) => {
+      const t = setInterval(fn, ms);
+      activeTimers.add(t);
+      return t;
+    },
+    clearInterval: (t: unknown) => {
+      activeTimers.delete(t as ReturnType<typeof setInterval>);
+      clearInterval(t as ReturnType<typeof setInterval>);
+    },
     Promise,
     JSON,
     Math,
@@ -99,27 +117,12 @@ function createSandbox(permissions: string[], pluginDir: string, pluginName: str
   }
 
   if (permissions.includes("db")) {
+    const ns = `plugin:${pluginName}`;
     sandbox.db = {
-      get: (key: string) => {
-        const db = getDbInstance();
-        const row = db.prepare("SELECT value FROM key_value WHERE namespace = ? AND key = ?").get(`plugin:${pluginName}`, key) as any;
-        if (!row) return undefined;
-        try { return JSON.parse(row.value); } catch { return row.value; }
-      },
-      set: (key: string, value: any) => {
-        const db = getDbInstance();
-        const str = typeof value === "string" ? value : JSON.stringify(value);
-        db.prepare("INSERT INTO key_value (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value").run(`plugin:${pluginName}`, key, str);
-      },
-      delete: (key: string) => {
-        const db = getDbInstance();
-        db.prepare("DELETE FROM key_value WHERE namespace = ? AND key = ?").run(`plugin:${pluginName}`, key);
-      },
-      list: () => {
-        const db = getDbInstance();
-        const rows = db.prepare("SELECT key FROM key_value WHERE namespace = ?").all(`plugin:${pluginName}`) as any[];
-        return rows.map((r: any) => r.key);
-      }
+      get: (key: string) => pluginKvGet(ns, key),
+      set: (key: string, value: unknown) => pluginKvSet(ns, key, value),
+      delete: (key: string) => pluginKvDelete(ns, key),
+      list: () => pluginKvListKeys(ns),
     };
   }
 
@@ -140,7 +143,7 @@ function createSandbox(permissions: string[], pluginDir: string, pluginName: str
   }
 
   if (permissions.includes("file-write")) {
-    const fs = sandbox.fs as Record<string, unknown> || {};
+    const fs = (sandbox.fs as Record<string, unknown>) || {};
     fs.writeFile = (p: string, data: string) => writeFile(resolve(pluginDir, p), data);
     fs.mkdir = (p: string) => mkdir(resolve(pluginDir, p), { recursive: true });
     fs.rm = (p: string) => rm(resolve(pluginDir, p), { recursive: true, force: true });
@@ -148,11 +151,16 @@ function createSandbox(permissions: string[], pluginDir: string, pluginName: str
   }
 
   if (permissions.includes("env")) {
-    sandbox.process = { env: new Proxy({}, {
-      get: (_t, key) => typeof key === "string" ? process.env[key] : undefined,
-      set: () => false,
-      has: (_t, key) => typeof key === "string" ? key in process.env : false,
-    }) };
+    sandbox.process = {
+      env: new Proxy(
+        {},
+        {
+          get: (_t, key) => (typeof key === "string" ? process.env[key] : undefined),
+          set: () => false,
+          has: (_t, key) => (typeof key === "string" ? key in process.env : false),
+        }
+      ),
+    };
   }
 
   if (permissions.includes("exec")) {
@@ -175,7 +183,11 @@ let context: vm.Context | null = null;
 let pluginExports: Record<string, unknown> | null = null;
 let activeTimers: Set<ReturnType<typeof setTimeout>> | null = null;
 
-async function loadPlugin(entryPoint: string, permissions: string[], name: string): Promise<string[]> {
+async function loadPlugin(
+  entryPoint: string,
+  permissions: string[],
+  name: string
+): Promise<string[]> {
   const pluginDir = resolve(entryPoint, "..");
   const sandbox = createSandbox(permissions, pluginDir, name);
   context = vm.createContext(sandbox);
@@ -205,15 +217,21 @@ async function loadPlugin(entryPoint: string, permissions: string[], name: strin
   }
 
   for (const src of sources) {
-    if (typeof src.onRequest === "function" && !hooks.includes("onRequest")) hooks.push("onRequest");
-    if (typeof src.onResponse === "function" && !hooks.includes("onResponse")) hooks.push("onResponse");
+    if (typeof src.onRequest === "function" && !hooks.includes("onRequest"))
+      hooks.push("onRequest");
+    if (typeof src.onResponse === "function" && !hooks.includes("onResponse"))
+      hooks.push("onResponse");
     if (typeof src.onError === "function" && !hooks.includes("onError")) hooks.push("onError");
   }
 
   return hooks;
 }
 
-function callHook(hook: string, payload: unknown, extra?: { response?: unknown; error?: string }): unknown {
+function callHook(
+  hook: string,
+  payload: unknown,
+  extra?: { response?: unknown; error?: string }
+): unknown {
   if (!context || !pluginExports) throw new Error("Plugin not loaded");
 
   const sources = [pluginExports];
@@ -256,7 +274,10 @@ port.on("message", async (msg: WorkerMessage) => {
       const hooks = await loadPlugin(msg.entryPoint, msg.permissions, msg.name);
       port.postMessage({ type: "loaded", hooks });
     } else if (msg.type === "call") {
-      const result = callHook(msg.hook, msg.payload, { response: (msg as CallMessage).response, error: (msg as CallMessage).error });
+      const result = callHook(msg.hook, msg.payload, {
+        response: (msg as CallMessage).response,
+        error: (msg as CallMessage).error,
+      });
       port.postMessage({ type: "result", value: result });
     } else if (msg.type === "cleanup" || msg.type === "exit" || msg.type === "terminate") {
       cleanup();
