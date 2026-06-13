@@ -754,6 +754,7 @@ export const updateSettingsSchema = z.object({
   showTokenSaverOnEndpoint: z.boolean().optional(),
   bruteForceProtection: z.boolean().optional(),
   comboConfigMode: z.enum(COMBO_CONFIG_MODES).optional(),
+  hiddenSidebarItems: z.array(z.enum(HIDEABLE_SIDEBAR_ITEM_IDS)).optional(),
   pluginMarketplaceUrl: z.string().max(500).nullable().optional(),
   codexServiceTier: z
     .object({

@@ -103,6 +103,34 @@ describe("pluginWorker sandbox — vm.runInContext timeout", () => {
   });
 });
 
+describe("pluginWorker sandbox — db permission gating", () => {
+  it("gates SQLite db operations behind db permission", () => {
+    assert.ok(
+      source.includes('permissions.includes("db")'),
+      "source must check for db permission"
+    );
+  });
+
+  it("wires get, set, and delete operations on sandbox.db", () => {
+    assert.ok(
+      source.includes("sandbox.db ="),
+      "sandbox.db must be assigned"
+    );
+    assert.ok(
+      source.includes("get:"),
+      "sandbox.db must have get method"
+    );
+    assert.ok(
+      source.includes("set:"),
+      "sandbox.db must have set method"
+    );
+    assert.ok(
+      source.includes("delete:"),
+      "sandbox.db must have delete method"
+    );
+  });
+});
+
 describe("pluginWorker sandbox — trust-model comment", () => {
   it("documents that vm is NOT a security boundary", () => {
     assert.ok(
