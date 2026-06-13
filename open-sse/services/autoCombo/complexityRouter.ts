@@ -53,7 +53,7 @@ export function classifyRequestComplexity(input: RuleInput): ComplexityClassific
   const level = getSpecificityLevel(result.score);
 
   const explicitTools = Array.isArray(input.tools) && input.tools.length > 0;
-  const hasToolUse = explicitTools || result.breakdown.toolCalling > 0;
+  const hasToolUse = explicitTools || (result.breakdown?.toolCalling ?? 0) > 0;
 
   let recommendedTier = getRecommendedMinTier(level) as ComplexityTier;
   // Tool-using / agentic requests need reliable function calling — floor at "cheap".

@@ -156,7 +156,8 @@ function calculateSpecificityMatch(
   if (!hint) return 0.5;
   try {
     const assignment = classifyTier(candidate.provider, candidate.model);
-    const specificityScore = hint.specificity.score;
+    const specificityScore = hint.specificity?.score;
+    if (specificityScore === undefined) return 0.5;
 
     if (assignment.tier === "free") return specificityScore <= 15 ? 0.9 : 0.2;
     if (assignment.tier === "cheap")
