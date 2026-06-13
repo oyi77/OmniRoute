@@ -81,7 +81,8 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { asRecord, toNonEmptyString, getProviderBaseUrl, buildOptionalBearerHeaders, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
+import { asRecord, getProviderBaseUrl, buildOptionalBearerHeaders } from "../utils.ts";
+import { normalizeSapModelsResponse } from "../customNormalizers.ts";
 import { GET } from "../route.ts";
 
 export async function handleSapModels(ctx: ModelsRequestContext): Promise<any> {
@@ -109,26 +110,25 @@ export async function handleSapModels(ctx: ModelsRequestContext): Promise<any> {
       }
 
       const psd = asRecord(connection.providerSpecificData);
-      const baseUrl = getProviderBaseUrl(psd) || OCI_DEFAULT_BASE_URL;
-      const projectId =
-        connection.projectId || toNonEmptyString(psd.projectId) || toNonEmptyString(psd.project);
+      const baseUrl = getProviderBaseUrl(psd) || SAP_DEFAULT_BASE_URL;
+      const resourceGroup = getSapResourceGroup(psd);
 
       let response: Response;
       try {
-        response = await safeOutboundFetch(buildOciModelsUrl(baseUrl), {
+        response = await safeOutboundFetch(buildSapModelsUrl(baseUrl), {
           ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
           guard: getProviderOutboundGuard(),
           proxyConfig: proxy,
           method: "GET",
           headers: {
             ...buildOptionalBearerHeaders(token),
-            ...(projectId ? { "OpenAI-Project": projectId } : {}),
+            "AI-Resource-Group": resourceGroup,
           },
         });
       } catch (error) {
         const fallback = buildDiscoveryErrorFallbackResponse(error, {
-          cacheWarning: "OCI models API unavailable — using cached catalog",
-          localWarning: "OCI models API unavailable — using local catalog",
+          cacheWarning: "SAP models API unavailable — using cached catalog",
+          localWarning: "SAP models API unavailable — using local catalog",
         });
         if (fallback) return fallback;
         throw error;
@@ -146,8 +146,6 @@ export async function handleSapModels(ctx: ModelsRequestContext): Promise<any> {
         );
       }
 
-      return buildApiDiscoveryResponse(
-        normalizeOpenAiLikeModelsResponse(await response.json(), "oci")
-      );
+      return buildApiDiscoveryResponse(normalizeSapModelsResponse(await response.json()));
   return null;
 }

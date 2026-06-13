@@ -81,7 +81,8 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { getProviderBaseUrl, isLocalOpenAIStyleProvider, isNamedOpenAIStyleProvider, buildOptionalBearerHeaders, buildNamedOpenAiStyleHeaders, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
+import { getProviderBaseUrl, buildOptionalBearerHeaders } from "../utils.ts";
+import { normalizeDataRobotCatalogResponse } from "../customNormalizers.ts";
 import { GET } from "../route.ts";
 
 export async function handleDatarobotModels(ctx: ModelsRequestContext): Promise<any> {
@@ -92,118 +93,86 @@ export async function handleDatarobotModels(ctx: ModelsRequestContext): Promise<
       const autoFetchDisabledResponse = maybeReturnAutoFetchDisabled();
       if (autoFetchDisabledResponse) return autoFetchDisabledResponse;
 
-      const registryEntry =
-        isLocalOpenAIStyleProvider(provider) || isNamedOpenAIStyleProvider(provider)
-          ? getRegistryEntry(provider)
-          : null;
-      const rawBaseUrl =
-        getProviderBaseUrl(connection.providerSpecificData) ||
-        (typeof registryEntry?.baseUrl === "string" ? registryEntry.baseUrl : null);
-      const baseUrl = rawBaseUrl;
-      if (!baseUrl) {
+      const token = accessToken || apiKey;
+      if (!token) {
         const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: "Base URL unavailable — using cached catalog",
-          localWarning: "Base URL unavailable — using local catalog",
+          cacheWarning: "No token configured — using cached catalog",
+          localWarning: "No token configured — using local catalog",
         });
         if (fallback) return fallback;
         return NextResponse.json(
           {
-            error: isOpenAICompatibleProvider(provider)
-              ? "No base URL configured for OpenAI compatible provider"
-              : isLocalOpenAIStyleProvider(provider)
-                ? "No base URL configured for local provider"
-                : "No base URL configured for provider",
+            error:
+              "No API key configured for this provider. Please add an API key in the provider settings.",
           },
           { status: 400 }
         );
       }
 
-      let base = baseUrl.replace(/\/$/, "");
-      if (base.endsWith("/chat/completions")) {
-        base = base.slice(0, -17);
-      } else if (base.endsWith("/completions")) {
-        base = base.slice(0, -12);
-      } else if (base.endsWith("/v1")) {
-        base = base.slice(0, -3);
-      }
+      const configuredBaseUrl =
+        getProviderBaseUrl(connection.providerSpecificData) || DATAROBOT_DEFAULT_BASE_URL;
 
-      // T39: Try multiple endpoint formats
-      const endpoints = [
-        `${base}/v1/models`,
-        `${base}/models`,
-        `${baseUrl.replace(/\/$/, "")}/models`, // Original fallback
-      ];
-
-      // Remove duplicates
-      const uniqueEndpoints = [...new Set(endpoints)];
-      let models = null;
-      let lastErrorStatus = null;
-      const token = apiKey || accessToken;
-
-      for (const modelsUrl of uniqueEndpoints) {
-        try {
-          const response = await safeOutboundFetch(modelsUrl, {
-            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsProbe,
-            guard: getProviderOutboundGuard(),
-            proxyConfig: proxy,
-            method: "GET",
-            headers: isNamedOpenAIStyleProvider(provider)
-              ? buildNamedOpenAiStyleHeaders(provider, token)
-              : buildOptionalBearerHeaders(token),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            models = isNamedOpenAIStyleProvider(provider)
-              ? normalizeOpenAiLikeModelsResponse(data, provider)
-              : data.data || data.models || [];
-            break; // Success!
-          }
-
-          if (response.status === 401 || response.status === 403) {
-            lastErrorStatus = response.status;
-            throw new Error("auth_failed");
-          }
-        } catch (err: any) {
-          if (err.message === "auth_failed") break; // Don't try other endpoints if auth failed
-          const status = getSafeOutboundFetchErrorStatus(err);
-          if (status) {
-            throw err;
-          }
-        }
-      }
-
-      // If all endpoints failed (but not because of auth), fallback to local catalog
-      if (!models) {
+      if (isDataRobotDeploymentUrl(configuredBaseUrl)) {
         const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning:
-            lastErrorStatus === 401 || lastErrorStatus === 403
-              ? `Auth failed (${lastErrorStatus}) — using cached catalog`
-              : "API unavailable — using cached catalog",
-          localWarning:
-            lastErrorStatus === 401 || lastErrorStatus === 403
-              ? `Auth failed (${lastErrorStatus}) — using local catalog`
-              : "API unavailable — using local catalog",
+          cacheWarning: "Deployment URL does not expose catalog — using cached catalog",
+          localWarning: "Deployment URL does not expose catalog — using local catalog",
         });
         if (fallback) return fallback;
-
-        if (lastErrorStatus === 401 || lastErrorStatus === 403) {
-          return NextResponse.json(
-            { error: `Auth failed: ${lastErrorStatus}` },
-            { status: lastErrorStatus }
-          );
-        }
-
-        console.warn(`[models] All endpoints failed for ${provider}, using local catalog`);
-        models = toLocalCatalogModels();
         return buildResponse({
           provider,
           connectionId,
-          models,
+          models: toLocalCatalogModels(),
           source: "local_catalog",
-          warning: "API unavailable — using local catalog",
+          warning: "Deployment URL does not expose catalog — using local catalog",
         });
       }
-      return buildApiDiscoveryResponse(models);
+
+      const catalogUrl = buildDataRobotCatalogUrl(configuredBaseUrl);
+      if (!catalogUrl) {
+        const fallback = buildDiscoveryFallbackResponse({
+          cacheWarning: "Invalid DataRobot base URL — using cached catalog",
+          localWarning: "Invalid DataRobot base URL — using local catalog",
+        });
+        if (fallback) return fallback;
+        return NextResponse.json({ error: "Invalid DataRobot base URL" }, { status: 400 });
+      }
+
+      let response: Response;
+      try {
+        response = await safeOutboundFetch(catalogUrl, {
+          ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
+          guard: getProviderOutboundGuard(),
+          proxyConfig: proxy,
+          method: "GET",
+          headers: buildOptionalBearerHeaders(token),
+        });
+      } catch (error) {
+        const fallback = buildDiscoveryErrorFallbackResponse(error, {
+          cacheWarning: "DataRobot catalog unavailable — using cached catalog",
+          localWarning: "DataRobot catalog unavailable — using local catalog",
+        });
+        if (fallback) return fallback;
+        throw error;
+      }
+
+      if (!response.ok) {
+        const fallback = buildDiscoveryFallbackResponse({
+          cacheWarning: `Catalog probe failed (${response.status}) — using cached catalog`,
+          localWarning: `Catalog probe failed (${response.status}) — using local catalog`,
+        });
+        if (fallback) return fallback;
+        return NextResponse.json(
+          { error: `Failed to fetch models: ${response.status}` },
+          { status: response.status }
+        );
+      }
+
+      const models = normalizeDataRobotCatalogResponse(await response.json());
+      return buildApiDiscoveryResponse(
+        models.map((model) => ({
+          ...model,
+          owned_by: "datarobot",
+        }))
+      );
   return null;
 }

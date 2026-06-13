@@ -81,71 +81,13 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { asRecord, getProviderBaseUrl, buildOptionalBearerHeaders } from "../utils.ts";
-import { normalizeSapModelsResponse } from "../customNormalizers.ts";
-import { GET } from "../route.ts";
 
 export async function handleClaudeModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;
-  const cachedResponse = maybeReturnCachedDiscovery();
-      if (cachedResponse) return cachedResponse;
-
-      const autoFetchDisabledResponse = maybeReturnAutoFetchDisabled();
-      if (autoFetchDisabledResponse) return autoFetchDisabledResponse;
-
-      const token = accessToken || apiKey;
-      if (!token) {
-        const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: "No token configured — using cached catalog",
-          localWarning: "No token configured — using local catalog",
-        });
-        if (fallback) return fallback;
-        return NextResponse.json(
-          {
-            error:
-              "No API key configured for this provider. Please add an API key in the provider settings.",
-          },
-          { status: 400 }
-        );
-      }
-
-      const psd = asRecord(connection.providerSpecificData);
-      const baseUrl = getProviderBaseUrl(psd) || SAP_DEFAULT_BASE_URL;
-      const resourceGroup = getSapResourceGroup(psd);
-
-      let response: Response;
-      try {
-        response = await safeOutboundFetch(buildSapModelsUrl(baseUrl), {
-          ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
-          guard: getProviderOutboundGuard(),
-          proxyConfig: proxy,
-          method: "GET",
-          headers: {
-            ...buildOptionalBearerHeaders(token),
-            "AI-Resource-Group": resourceGroup,
-          },
-        });
-      } catch (error) {
-        const fallback = buildDiscoveryErrorFallbackResponse(error, {
-          cacheWarning: "SAP models API unavailable — using cached catalog",
-          localWarning: "SAP models API unavailable — using local catalog",
-        });
-        if (fallback) return fallback;
-        throw error;
-      }
-
-      if (!response.ok) {
-        const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: `Models probe failed (${response.status}) — using cached catalog`,
-          localWarning: `Models probe failed (${response.status}) — using local catalog`,
-        });
-        if (fallback) return fallback;
-        return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
-          { status: response.status }
-        );
-      }
-
-      return buildApiDiscoveryResponse(normalizeSapModelsResponse(await response.json()));
+  return buildResponse({
+        provider,
+        connectionId,
+        models: getStaticModelsForProvider("claude") || [],
+      });
   return null;
 }

@@ -81,8 +81,7 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { asRecord } from "../utils.ts";
-import { GET } from "../route.ts";
+import { asRecord, toGeminiCliProjectId } from "../utils.ts";
 
 export async function handleGeminiCliModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;
@@ -92,72 +91,76 @@ export async function handleGeminiCliModels(ctx: ModelsRequestContext): Promise<
       const autoFetchDisabledResponse = maybeReturnAutoFetchDisabled();
       if (autoFetchDisabledResponse) return autoFetchDisabledResponse;
 
-      const token = apiKey || accessToken;
-      const glmProviderSpecificData = {
-        ...asRecord(connection.providerSpecificData),
-        ...(provider === "glm-cn" ? { apiRegion: "china" } : {}),
-      };
-      const discoveredTargets = [
-        {
-          transport: "openai" as const,
-          url: buildGlmModelsUrl(glmProviderSpecificData, "openai"),
-        },
-        {
-          transport: "anthropic" as const,
-          url: buildGlmModelsUrl(glmProviderSpecificData, "anthropic"),
-        },
-      ];
-      const discoveryTargets = discoveredTargets.filter(
-        (target, index, all) => all.findIndex((other) => other.url === target.url) === index
-      );
-
-      let response: Response | null = null;
-      try {
-        for (const target of discoveryTargets) {
-          response = await safeOutboundFetch(target.url, {
-            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
-            guard: getProviderOutboundGuard(),
-            proxyConfig: proxy,
-            method: "GET",
-            headers:
-              target.transport === "openai"
-                ? token
-                  ? buildGlmCodingHeaders(token, false)
-                  : { "Content-Type": "application/json", Accept: "application/json" }
-                : {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                    ...(token ? { "x-api-key": token } : {}),
-                    "anthropic-version": "2023-06-01",
-                  },
-          });
-          if (response.ok) break;
-          if (response.status === 401 || response.status === 403) break;
-        }
-      } catch (error) {
-        const fallback = buildDiscoveryErrorFallbackResponse(error);
-        if (fallback) return fallback;
-        throw error;
-      }
-
-      if (!response?.ok) {
-        if (response?.status === 401 || response?.status === 403) {
-          return NextResponse.json(
-            { error: `Failed to fetch models: ${response.status}` },
-            { status: response.status }
-          );
-        }
-        const fallback = buildDiscoveryFallbackResponse();
-        if (fallback) return fallback;
+      // Gemini CLI doesn't have a /models endpoint. Instead, query the quota
+      // endpoint to discover available models from the quota buckets.
+      if (!accessToken) {
         return NextResponse.json(
-          { error: `Failed to fetch models: ${response?.status || 502}` },
-          { status: response?.status || 502 }
+          { error: "No access token for Gemini CLI. Please reconnect OAuth." },
+          { status: 400 }
         );
       }
 
-      const data = await response.json();
-      const models = data.data || data.models || [];
+      const psd = asRecord(connection.providerSpecificData);
+      const projectId =
+        toGeminiCliProjectId(psd.projectId) ||
+        toGeminiCliProjectId(psd.project) ||
+        toGeminiCliProjectId(connection.projectId);
 
-      return buildApiDiscoveryResponse(models);
+      if (!projectId) {
+        return NextResponse.json(
+          { error: "Gemini CLI project ID not available. Please reconnect OAuth." },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const quotaRes = await safeOutboundFetch(
+          "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+          {
+            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
+            guard: getProviderOutboundGuard(),
+            proxyConfig: proxy,
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ project: projectId }),
+          }
+        );
+
+        if (!quotaRes.ok) {
+          const errText = await quotaRes.text();
+          console.log("[models] Gemini CLI quota fetch failed", {
+            status: quotaRes.status,
+            errText,
+          });
+          const fallback = buildDiscoveryFallbackResponse();
+          if (fallback) return fallback;
+          return NextResponse.json(
+            { error: `Failed to fetch Gemini CLI models: ${quotaRes.status}` },
+            { status: quotaRes.status }
+          );
+        }
+
+        const quotaData = await quotaRes.json();
+        const buckets: Array<{ modelId?: string; tokenType?: string }> = quotaData.buckets || [];
+
+        const models = buckets
+          .filter((b) => b.modelId)
+          .map((b) => ({
+            id: b.modelId,
+            name: b.modelId,
+            owned_by: "google",
+          }));
+
+        return buildApiDiscoveryResponse(models);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log("[models] Gemini CLI model fetch error:", msg);
+        const fallback = buildDiscoveryFallbackResponse();
+        if (fallback) return fallback;
+        return NextResponse.json({ error: "Failed to fetch Gemini CLI models" }, { status: 500 });
+      }
   return null;
 }

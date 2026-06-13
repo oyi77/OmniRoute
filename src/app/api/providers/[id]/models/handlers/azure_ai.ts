@@ -81,8 +81,7 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { getProviderBaseUrl, buildOptionalBearerHeaders } from "../utils.ts";
-import { normalizeDataRobotCatalogResponse } from "../customNormalizers.ts";
+import { getProviderBaseUrl } from "../utils.ts";
 import { GET } from "../route.ts";
 
 export async function handleAzureAiModels(ctx: ModelsRequestContext): Promise<any> {
@@ -109,47 +108,26 @@ export async function handleAzureAiModels(ctx: ModelsRequestContext): Promise<an
         );
       }
 
-      const configuredBaseUrl =
-        getProviderBaseUrl(connection.providerSpecificData) || DATAROBOT_DEFAULT_BASE_URL;
-
-      if (isDataRobotDeploymentUrl(configuredBaseUrl)) {
-        const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: "Deployment URL does not expose catalog — using cached catalog",
-          localWarning: "Deployment URL does not expose catalog — using local catalog",
-        });
-        if (fallback) return fallback;
-        return buildResponse({
-          provider,
-          connectionId,
-          models: toLocalCatalogModels(),
-          source: "local_catalog",
-          warning: "Deployment URL does not expose catalog — using local catalog",
-        });
-      }
-
-      const catalogUrl = buildDataRobotCatalogUrl(configuredBaseUrl);
-      if (!catalogUrl) {
-        const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: "Invalid DataRobot base URL — using cached catalog",
-          localWarning: "Invalid DataRobot base URL — using local catalog",
-        });
-        if (fallback) return fallback;
-        return NextResponse.json({ error: "Invalid DataRobot base URL" }, { status: 400 });
-      }
+      const baseUrl =
+        getProviderBaseUrl(connection.providerSpecificData) || AZURE_AI_DEFAULT_BASE_URL;
+      const modelsUrl = buildAzureAiModelsUrl(baseUrl);
 
       let response: Response;
       try {
-        response = await safeOutboundFetch(catalogUrl, {
+        response = await safeOutboundFetch(modelsUrl, {
           ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
           guard: getProviderOutboundGuard(),
           proxyConfig: proxy,
           method: "GET",
-          headers: buildOptionalBearerHeaders(token),
+          headers: {
+            "Content-Type": "application/json",
+            "api-key": token,
+          },
         });
       } catch (error) {
         const fallback = buildDiscoveryErrorFallbackResponse(error, {
-          cacheWarning: "DataRobot catalog unavailable — using cached catalog",
-          localWarning: "DataRobot catalog unavailable — using local catalog",
+          cacheWarning: "Azure AI models API unavailable — using cached catalog",
+          localWarning: "Azure AI models API unavailable — using local catalog",
         });
         if (fallback) return fallback;
         throw error;
@@ -157,8 +135,8 @@ export async function handleAzureAiModels(ctx: ModelsRequestContext): Promise<an
 
       if (!response.ok) {
         const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: `Catalog probe failed (${response.status}) — using cached catalog`,
-          localWarning: `Catalog probe failed (${response.status}) — using local catalog`,
+          cacheWarning: `Models probe failed (${response.status}) — using cached catalog`,
+          localWarning: `Models probe failed (${response.status}) — using local catalog`,
         });
         if (fallback) return fallback;
         return NextResponse.json(
@@ -167,12 +145,20 @@ export async function handleAzureAiModels(ctx: ModelsRequestContext): Promise<an
         );
       }
 
-      const models = normalizeDataRobotCatalogResponse(await response.json());
-      return buildApiDiscoveryResponse(
-        models.map((model) => ({
-          ...model,
-          owned_by: "datarobot",
-        }))
-      );
+      const data = await response.json();
+      const models = (data.data || data.models || []).map((model: Record<string, unknown>) => ({
+        id:
+          (typeof model.id === "string" && model.id) ||
+          (typeof model.name === "string" && model.name) ||
+          "",
+        name:
+          (typeof model.display_name === "string" && model.display_name) ||
+          (typeof model.name === "string" && model.name) ||
+          (typeof model.id === "string" && model.id) ||
+          "",
+        owned_by: "azure-ai",
+      }));
+
+      return buildApiDiscoveryResponse(models.filter((model) => model.id));
   return null;
 }

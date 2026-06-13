@@ -81,7 +81,7 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { getProviderBaseUrl, normalizeAzureOpenAIBaseUrl, getAzureOpenAIApiVersion, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
+import { getProviderBaseUrl, buildOptionalBearerHeaders, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
 import { GET } from "../route.ts";
 
 export async function handleWatsonxModels(ctx: ModelsRequestContext): Promise<any> {
@@ -94,6 +94,11 @@ export async function handleWatsonxModels(ctx: ModelsRequestContext): Promise<an
 
       const token = accessToken || apiKey;
       if (!token) {
+        const fallback = buildDiscoveryFallbackResponse({
+          cacheWarning: "No token configured — using cached catalog",
+          localWarning: "No token configured — using local catalog",
+        });
+        if (fallback) return fallback;
         return NextResponse.json(
           {
             error:
@@ -103,64 +108,41 @@ export async function handleWatsonxModels(ctx: ModelsRequestContext): Promise<an
         );
       }
 
-      const rawBaseUrl = getProviderBaseUrl(connection.providerSpecificData);
-      if (!rawBaseUrl) {
+      const baseUrl =
+        getProviderBaseUrl(connection.providerSpecificData) || WATSONX_DEFAULT_BASE_URL;
+
+      let response: Response;
+      try {
+        response = await safeOutboundFetch(buildWatsonxModelsUrl(baseUrl), {
+          ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
+          guard: getProviderOutboundGuard(),
+          proxyConfig: proxy,
+          method: "GET",
+          headers: buildOptionalBearerHeaders(token),
+        });
+      } catch (error) {
+        const fallback = buildDiscoveryErrorFallbackResponse(error, {
+          cacheWarning: "watsonx models API unavailable — using cached catalog",
+          localWarning: "watsonx models API unavailable — using local catalog",
+        });
+        if (fallback) return fallback;
+        throw error;
+      }
+
+      if (!response.ok) {
+        const fallback = buildDiscoveryFallbackResponse({
+          cacheWarning: `Models probe failed (${response.status}) — using cached catalog`,
+          localWarning: `Models probe failed (${response.status}) — using local catalog`,
+        });
+        if (fallback) return fallback;
         return NextResponse.json(
-          { error: "No Azure OpenAI resource endpoint configured" },
-          { status: 400 }
+          { error: `Failed to fetch models: ${response.status}` },
+          { status: response.status }
         );
       }
 
-      const baseUrl = normalizeAzureOpenAIBaseUrl(rawBaseUrl);
-      const apiVersion = encodeURIComponent(
-        getAzureOpenAIApiVersion(connection.providerSpecificData)
-      );
-      const discoveryUrls = [
-        `${baseUrl}/openai/deployments?api-version=${apiVersion}`,
-        `${baseUrl}/openai/models?api-version=${apiVersion}`,
-      ];
-
-      let lastStatus = 0;
-      for (const modelsUrl of discoveryUrls) {
-        let response: Response;
-        try {
-          response = await safeOutboundFetch(modelsUrl, {
-            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
-            guard: getProviderOutboundGuard(),
-            proxyConfig: proxy,
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              "api-key": token,
-            },
-          });
-        } catch (error) {
-          const fallback = buildDiscoveryErrorFallbackResponse(error, {
-            cacheWarning: "Azure OpenAI models API unavailable — using cached catalog",
-            localWarning: "Azure OpenAI models API unavailable — using local catalog",
-          });
-          if (fallback) return fallback;
-          throw error;
-        }
-
-        if (response.ok) {
-          return buildApiDiscoveryResponse(
-            normalizeOpenAiLikeModelsResponse(await response.json(), "azure-openai")
-          );
-        }
-
-        lastStatus = response.status;
-        if (response.status === 401 || response.status === 403) break;
-      }
-
-      const fallback = buildDiscoveryFallbackResponse({
-        cacheWarning: `Azure OpenAI models probe failed (${lastStatus}) — using cached catalog`,
-        localWarning: `Azure OpenAI models probe failed (${lastStatus}) — using local catalog`,
-      });
-      if (fallback) return fallback;
-      return NextResponse.json(
-        { error: `Failed to fetch models: ${lastStatus || "unknown"}` },
-        { status: lastStatus || 502 }
+      return buildApiDiscoveryResponse(
+        normalizeOpenAiLikeModelsResponse(await response.json(), "watsonx")
       );
   return null;
 }

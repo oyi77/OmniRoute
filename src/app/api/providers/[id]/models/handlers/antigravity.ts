@@ -81,7 +81,7 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { asRecord, toGeminiCliProjectId } from "../utils.ts";
+import { fetchAntigravityDiscoveryModelsCached } from "../antigravityHelpers.ts";
 
 export async function handleAntigravityModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;
@@ -91,76 +91,42 @@ export async function handleAntigravityModels(ctx: ModelsRequestContext): Promis
       const autoFetchDisabledResponse = maybeReturnAutoFetchDisabled();
       if (autoFetchDisabledResponse) return autoFetchDisabledResponse;
 
-      // Gemini CLI doesn't have a /models endpoint. Instead, query the quota
-      // endpoint to discover available models from the quota buckets.
+      const staticModels = getStaticModelsForProvider("antigravity") || [];
+
       if (!accessToken) {
-        return NextResponse.json(
-          { error: "No access token for Gemini CLI. Please reconnect OAuth." },
-          { status: 400 }
-        );
-      }
-
-      const psd = asRecord(connection.providerSpecificData);
-      const projectId =
-        toGeminiCliProjectId(psd.projectId) ||
-        toGeminiCliProjectId(psd.project) ||
-        toGeminiCliProjectId(connection.projectId);
-
-      if (!projectId) {
-        return NextResponse.json(
-          { error: "Gemini CLI project ID not available. Please reconnect OAuth." },
-          { status: 400 }
-        );
-      }
-
-      try {
-        const quotaRes = await safeOutboundFetch(
-          "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
-          {
-            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
-            guard: getProviderOutboundGuard(),
-            proxyConfig: proxy,
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ project: projectId }),
-          }
-        );
-
-        if (!quotaRes.ok) {
-          const errText = await quotaRes.text();
-          console.log("[models] Gemini CLI quota fetch failed", {
-            status: quotaRes.status,
-            errText,
-          });
-          const fallback = buildDiscoveryFallbackResponse();
-          if (fallback) return fallback;
-          return NextResponse.json(
-            { error: `Failed to fetch Gemini CLI models: ${quotaRes.status}` },
-            { status: quotaRes.status }
-          );
-        }
-
-        const quotaData = await quotaRes.json();
-        const buckets: Array<{ modelId?: string; tokenType?: string }> = quotaData.buckets || [];
-
-        const models = buckets
-          .filter((b) => b.modelId)
-          .map((b) => ({
-            id: b.modelId,
-            name: b.modelId,
-            owned_by: "google",
-          }));
-
-        return buildApiDiscoveryResponse(models);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log("[models] Gemini CLI model fetch error:", msg);
-        const fallback = buildDiscoveryFallbackResponse();
+        const fallback = buildDiscoveryFallbackResponse({
+          cacheWarning: "OAuth token unavailable — using cached catalog",
+          localWarning: "OAuth token unavailable — using local catalog",
+        });
         if (fallback) return fallback;
-        return NextResponse.json({ error: "Failed to fetch Gemini CLI models" }, { status: 500 });
+        return buildResponse({
+          provider,
+          connectionId,
+          models: staticModels,
+          source: "local_catalog",
+          warning: "OAuth token unavailable — using local catalog",
+        });
       }
+
+      const remoteModels = await fetchAntigravityDiscoveryModelsCached(
+        accessToken,
+        connectionId,
+        proxy,
+        connection.providerSpecificData
+      );
+      if (remoteModels.length > 0) {
+        return buildApiDiscoveryResponse(remoteModels);
+      }
+
+      const fallback = buildDiscoveryFallbackResponse();
+      if (fallback) return fallback;
+
+      return buildResponse({
+        provider,
+        connectionId,
+        models: staticModels,
+        source: "local_catalog",
+        warning: "API unavailable — using local catalog",
+      });
   return null;
 }

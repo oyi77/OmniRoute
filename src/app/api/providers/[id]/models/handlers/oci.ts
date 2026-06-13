@@ -81,7 +81,7 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { getProviderBaseUrl, buildOptionalBearerHeaders, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
+import { asRecord, toNonEmptyString, getProviderBaseUrl, buildOptionalBearerHeaders, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
 import { GET } from "../route.ts";
 
 export async function handleOciModels(ctx: ModelsRequestContext): Promise<any> {
@@ -108,22 +108,27 @@ export async function handleOciModels(ctx: ModelsRequestContext): Promise<any> {
         );
       }
 
-      const baseUrl =
-        getProviderBaseUrl(connection.providerSpecificData) || WATSONX_DEFAULT_BASE_URL;
+      const psd = asRecord(connection.providerSpecificData);
+      const baseUrl = getProviderBaseUrl(psd) || OCI_DEFAULT_BASE_URL;
+      const projectId =
+        connection.projectId || toNonEmptyString(psd.projectId) || toNonEmptyString(psd.project);
 
       let response: Response;
       try {
-        response = await safeOutboundFetch(buildWatsonxModelsUrl(baseUrl), {
+        response = await safeOutboundFetch(buildOciModelsUrl(baseUrl), {
           ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
           guard: getProviderOutboundGuard(),
           proxyConfig: proxy,
           method: "GET",
-          headers: buildOptionalBearerHeaders(token),
+          headers: {
+            ...buildOptionalBearerHeaders(token),
+            ...(projectId ? { "OpenAI-Project": projectId } : {}),
+          },
         });
       } catch (error) {
         const fallback = buildDiscoveryErrorFallbackResponse(error, {
-          cacheWarning: "watsonx models API unavailable — using cached catalog",
-          localWarning: "watsonx models API unavailable — using local catalog",
+          cacheWarning: "OCI models API unavailable — using cached catalog",
+          localWarning: "OCI models API unavailable — using local catalog",
         });
         if (fallback) return fallback;
         throw error;
@@ -142,7 +147,7 @@ export async function handleOciModels(ctx: ModelsRequestContext): Promise<any> {
       }
 
       return buildApiDiscoveryResponse(
-        normalizeOpenAiLikeModelsResponse(await response.json(), "watsonx")
+        normalizeOpenAiLikeModelsResponse(await response.json(), "oci")
       );
   return null;
 }

@@ -81,6 +81,8 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
+import { asRecord } from "../utils.ts";
+import { GET } from "../route.ts";
 
 export async function handleGlmModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;
@@ -90,103 +92,72 @@ export async function handleGlmModels(ctx: ModelsRequestContext): Promise<any> {
       const autoFetchDisabledResponse = maybeReturnAutoFetchDisabled();
       if (autoFetchDisabledResponse) return autoFetchDisabledResponse;
 
+      const token = apiKey || accessToken;
+      const glmProviderSpecificData = {
+        ...asRecord(connection.providerSpecificData),
+        ...(provider === "glm-cn" ? { apiRegion: "china" } : {}),
+      };
+      const discoveredTargets = [
+        {
+          transport: "openai" as const,
+          url: buildGlmModelsUrl(glmProviderSpecificData, "openai"),
+        },
+        {
+          transport: "anthropic" as const,
+          url: buildGlmModelsUrl(glmProviderSpecificData, "anthropic"),
+        },
+      ];
+      const discoveryTargets = discoveredTargets.filter(
+        (target, index, all) => all.findIndex((other) => other.url === target.url) === index
+      );
+
+      let response: Response | null = null;
       try {
-        // Parse "TOKEN EMAIL" credential format
-        const raw = apiKey.trim();
-        const eqIdx = raw.indexOf("=");
-        const stripped = eqIdx > 0 && !raw.startsWith("eyJ") ? raw.slice(eqIdx + 1).trim() : raw;
-        const lastSpace = stripped.lastIndexOf(" ");
-        let innerAiToken = stripped;
-        let innerAiEmail = "";
-        if (lastSpace > 0) {
-          const possibleEmail = stripped.slice(lastSpace + 1).trim();
-          if (possibleEmail.includes("@")) {
-            innerAiToken = stripped.slice(0, lastSpace).trim();
-            innerAiEmail = possibleEmail;
-          }
+        for (const target of discoveryTargets) {
+          response = await safeOutboundFetch(target.url, {
+            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
+            guard: getProviderOutboundGuard(),
+            proxyConfig: proxy,
+            method: "GET",
+            headers:
+              target.transport === "openai"
+                ? token
+                  ? buildGlmCodingHeaders(token, false)
+                  : { "Content-Type": "application/json", Accept: "application/json" }
+                : {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                    ...(token ? { "x-api-key": token } : {}),
+                    "anthropic-version": "2023-06-01",
+                  },
+          });
+          if (response.ok) break;
+          if (response.status === 401 || response.status === 403) break;
         }
+      } catch (error) {
+        const fallback = buildDiscoveryErrorFallbackResponse(error);
+        if (fallback) return fallback;
+        throw error;
+      }
 
-        // Decode device_id from JWT payload
-        let innerAiDeviceId = "";
-        try {
-          const parts = innerAiToken.split(".");
-          if (parts.length >= 2) {
-            const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-            const payload = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
-            innerAiDeviceId = String(
-              payload?.device_id ??
-                payload?.deviceId ??
-                payload?.["device-id"] ??
-                payload?.did ??
-                ""
-            ).trim();
-          }
-        } catch {
-          /* ignore */
+      if (!response?.ok) {
+        if (response?.status === 401 || response?.status === 403) {
+          return NextResponse.json(
+            { error: `Failed to fetch models: ${response.status}` },
+            { status: response.status }
+          );
         }
-
-        const innerAiHeaders: Record<string, string> = {
-          "USER-TOKEN": innerAiToken,
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          Origin: "https://app.innerai.com",
-          Referer: "https://app.innerai.com/",
-        };
-        if (innerAiEmail) innerAiHeaders["USER-EMAIL"] = innerAiEmail;
-        if (innerAiDeviceId) innerAiHeaders["DEVICE-ID"] = innerAiDeviceId;
-
-        const modelsResp = await safeOutboundFetch(
-          "https://platformapi.innerai.com/api/v1/ai_models",
-          { headers: innerAiHeaders },
-          getProviderOutboundGuard(provider)
-        );
-        if (!modelsResp.ok) {
-          throw new Error(`Inner.ai models API returned HTTP ${modelsResp.status}`);
-        }
-
-        const modelsBody = await modelsResp.json().catch(() => null);
-        const rawModels: Array<Record<string, unknown>> = Array.isArray(modelsBody?.ai_models)
-          ? modelsBody.ai_models
-          : Array.isArray(modelsBody)
-            ? modelsBody
-            : [];
-
-        // Filter: enabled, available, text/chat category only.
-        // Use ai_model_categories[].unique_identifier === "text" when available;
-        // fall back to llm_model name heuristic for models without categories.
-        const nonTextPattern =
-          /image|video|audio|img|vid|sound|music|voice|tts|stt|track|clip|avatar|cartoon|flux|stable.diff|recraft|ideogram|leonardo|magnific|bria|seedream|luma|kling|pika|veo|wan-|heygen|did-|vidu|pixverse|sora-|gen-[0-9]|playground|gemini-fal|gamma|lyria|clothes|whisper/i;
-        const textModels = rawModels.filter((m) => {
-          if (m.enable === false || m.unavailable_api) return false;
-          if (typeof m.llm_model !== "string") return false;
-          const cats = Array.isArray(m.ai_model_categories) ? m.ai_model_categories : null;
-          if (cats && cats.length > 0) {
-            return cats.some(
-              (c: Record<string, unknown>) =>
-                String(c.unique_identifier ?? c.name ?? "").toLowerCase() === "text"
-            );
-          }
-          // No categories field — fall back to name heuristic
-          return !nonTextPattern.test(m.llm_model as string);
-        });
-
-        const models = textModels.map((m) => ({
-          id: String(m.llm_model),
-          name: String(m.name || m.llm_model),
-        }));
-
-        return buildApiDiscoveryResponse(models);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: `Inner.ai models unavailable (${message}) — using cached catalog`,
-          localWarning: `Inner.ai models unavailable (${message}) — using local catalog`,
-        });
+        const fallback = buildDiscoveryFallbackResponse();
         if (fallback) return fallback;
         return NextResponse.json(
-          { error: `Failed to fetch Inner.ai models: ${message}` },
-          { status: 502 }
+          { error: `Failed to fetch models: ${response?.status || 502}` },
+          { status: response?.status || 502 }
         );
       }
+
+      const data = await response.json();
+      const models = data.data || data.models || [];
+
+      return buildApiDiscoveryResponse(models);
   return null;
 }

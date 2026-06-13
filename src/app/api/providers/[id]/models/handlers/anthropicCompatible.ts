@@ -81,65 +81,129 @@ import { getSyncedAvailableModels } from "@/lib/db/models";
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
-import { asRecord, toNonEmptyString, mergeLocalCatalogModels } from "../utils.ts";
+import { getProviderBaseUrl, isLocalOpenAIStyleProvider, isNamedOpenAIStyleProvider, buildOptionalBearerHeaders, buildNamedOpenAiStyleHeaders, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
+import { GET } from "../route.ts";
 
 export async function handleAnthropicCompatibleModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;
-  // #3120/#3121 — GitHub Copilot's catalog is per-account and dynamic. The
-      // registry static list never refreshes and advertises non-entitled models
-      // (e.g. gemini previews) that fail upstream when tested. Discover the live
-      // catalog from api.githubcopilot.com/models with the Copilot bearer +
-      // Copilot chat headers; fall back to the static registry catalog when the
-      // live fetch is unavailable (offline/unauthed/error) so import never breaks.
-      const cachedResponse = maybeReturnCachedDiscovery();
+  const cachedResponse = maybeReturnCachedDiscovery();
       if (cachedResponse) return cachedResponse;
 
       const autoFetchDisabledResponse = maybeReturnAutoFetchDisabled();
       if (autoFetchDisabledResponse) return autoFetchDisabledResponse;
 
-      const psd = asRecord(connection.providerSpecificData);
-      // The /models endpoint requires the short-lived Copilot token (same as the
-      // chat executor), not the raw GitHub OAuth access token.
-      const copilotToken =
-        toNonEmptyString(psd.copilotToken) || toNonEmptyString(accessToken) || null;
-
-      // Compute local catalog models for fallback within the handler
-      const catalogModels = getModelsByProviderId(ctx.provider) || [];
-      const staticModels = getStaticModelsForProvider(ctx.provider) || [];
-      const mergedCatalog = mergeLocalCatalogModels(catalogModels, staticModels);
-      const fallbackModels = mergedCatalog.map((model) => ({
-        id: model.id,
-        name: model.name || model.id,
-        ...(catalogModels.length > 0 ? { owned_by: ctx.provider } : {}),
-      }));
-
-      const discovery = await fetchGitHubCopilotModels({
-        token: copilotToken,
-        fetchImpl: (url, init) =>
-          safeOutboundFetch(url as string, {
-            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsDiscovery,
-            guard: getProviderOutboundGuard(),
-            proxyConfig: proxy,
-            ...(init as Record<string, unknown>),
-          }),
-        fallbackModels,
-      });
-      if (discovery.source === "api") {
-        return buildApiDiscoveryResponse(discovery.models);
+      const registryEntry =
+        isLocalOpenAIStyleProvider(provider) || isNamedOpenAIStyleProvider(provider)
+          ? getRegistryEntry(provider)
+          : null;
+      const rawBaseUrl =
+        getProviderBaseUrl(connection.providerSpecificData) ||
+        (typeof registryEntry?.baseUrl === "string" ? registryEntry.baseUrl : null);
+      const baseUrl = rawBaseUrl;
+      if (!baseUrl) {
+        const fallback = buildDiscoveryFallbackResponse({
+          cacheWarning: "Base URL unavailable — using cached catalog",
+          localWarning: "Base URL unavailable — using local catalog",
+        });
+        if (fallback) return fallback;
+        return NextResponse.json(
+          {
+            error: isOpenAICompatibleProvider(provider)
+              ? "No base URL configured for OpenAI compatible provider"
+              : isLocalOpenAIStyleProvider(provider)
+                ? "No base URL configured for local provider"
+                : "No base URL configured for provider",
+          },
+          { status: 400 }
+        );
       }
 
-      // Live discovery unavailable — preserve cached/static catalog behavior.
-      const fallback = buildDiscoveryFallbackResponse({
-        cacheWarning: "Copilot models API unavailable — using cached catalog",
-        localWarning: "Copilot models API unavailable — using local catalog",
-      });
-      if (fallback) return fallback;
-      return buildResponse({
-        provider,
-        connectionId,
-        models: discovery.models,
-        source: "local_catalog",
-        warning: "Copilot models API unavailable — using local catalog",
-      });
+      let base = baseUrl.replace(/\/$/, "");
+      if (base.endsWith("/chat/completions")) {
+        base = base.slice(0, -17);
+      } else if (base.endsWith("/completions")) {
+        base = base.slice(0, -12);
+      } else if (base.endsWith("/v1")) {
+        base = base.slice(0, -3);
+      }
+
+      // T39: Try multiple endpoint formats
+      const endpoints = [
+        `${base}/v1/models`,
+        `${base}/models`,
+        `${baseUrl.replace(/\/$/, "")}/models`, // Original fallback
+      ];
+
+      // Remove duplicates
+      const uniqueEndpoints = [...new Set(endpoints)];
+      let models = null;
+      let lastErrorStatus = null;
+      const token = apiKey || accessToken;
+
+      for (const modelsUrl of uniqueEndpoints) {
+        try {
+          const response = await safeOutboundFetch(modelsUrl, {
+            ...SAFE_OUTBOUND_FETCH_PRESETS.modelsProbe,
+            guard: getProviderOutboundGuard(),
+            proxyConfig: proxy,
+            method: "GET",
+            headers: isNamedOpenAIStyleProvider(provider)
+              ? buildNamedOpenAiStyleHeaders(provider, token)
+              : buildOptionalBearerHeaders(token),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            models = isNamedOpenAIStyleProvider(provider)
+              ? normalizeOpenAiLikeModelsResponse(data, provider)
+              : data.data || data.models || [];
+            break; // Success!
+          }
+
+          if (response.status === 401 || response.status === 403) {
+            lastErrorStatus = response.status;
+            throw new Error("auth_failed");
+          }
+        } catch (err: any) {
+          if (err.message === "auth_failed") break; // Don't try other endpoints if auth failed
+          const status = getSafeOutboundFetchErrorStatus(err);
+          if (status) {
+            throw err;
+          }
+        }
+      }
+
+      // If all endpoints failed (but not because of auth), fallback to local catalog
+      if (!models) {
+        const fallback = buildDiscoveryFallbackResponse({
+          cacheWarning:
+            lastErrorStatus === 401 || lastErrorStatus === 403
+              ? `Auth failed (${lastErrorStatus}) — using cached catalog`
+              : "API unavailable — using cached catalog",
+          localWarning:
+            lastErrorStatus === 401 || lastErrorStatus === 403
+              ? `Auth failed (${lastErrorStatus}) — using local catalog`
+              : "API unavailable — using local catalog",
+        });
+        if (fallback) return fallback;
+
+        if (lastErrorStatus === 401 || lastErrorStatus === 403) {
+          return NextResponse.json(
+            { error: `Auth failed: ${lastErrorStatus}` },
+            { status: lastErrorStatus }
+          );
+        }
+
+        console.warn(`[models] All endpoints failed for ${provider}, using local catalog`);
+        models = toLocalCatalogModels();
+        return buildResponse({
+          provider,
+          connectionId,
+          models,
+          source: "local_catalog",
+          warning: "API unavailable — using local catalog",
+        });
+      }
+      return buildApiDiscoveryResponse(models);
   return null;
 }
