@@ -1,5 +1,4 @@
-import { convertOpenAIToResponsesToolCall } from "../handlers/responseTranslator.ts";
-import { v4 as uuidv4 } from "uuid";
+import { initState } from "../../translator/index.ts";
 
 export type JsonRecord = Record<string, unknown>;
 
