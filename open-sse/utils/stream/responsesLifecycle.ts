@@ -1,6 +1,3 @@
-import { convertOpenAIToResponsesToolCall } from "../handlers/responseTranslator.ts";
-import { v4 as uuidv4 } from "uuid";
-
 import { stringifyIdValue } from "./utils.ts";
 import { JsonRecord } from "./types.ts";
 
