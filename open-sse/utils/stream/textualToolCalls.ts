@@ -1,8 +1,6 @@
-import { convertOpenAIToResponsesToolCall } from "../handlers/responseTranslator.ts";
-import { v4 as uuidv4 } from "uuid";
-
 import { asRecord } from "./utils.ts";
 import { JsonRecord, ToolCall } from "./types.ts";
+import { parseTextualToolCallCandidate, isValidToolCallHeaderPrefix } from "../textualToolCall.ts";
 
 export function parseTextualToolCallFromContent(
   text: unknown
