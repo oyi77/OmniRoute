@@ -1,5 +1,22 @@
 import { convertOpenAIToResponsesToolCall } from "../handlers/responseTranslator.ts";
+import { translateResponse, initState } from "../../translator/index.ts";
 import { v4 as uuidv4 } from "uuid";
+import { FORMATS } from "../../translator/formats.ts";
+import { generateSessionId } from "../../services/sessionManager.ts";
+import { trackPendingRequest, appendRequestLog } from "@/lib/usage/usageHistory.ts";
+import { calculateCost } from "@/lib/usage/costCalculator";
+import { buildOmniRouteSseMetadataComment } from "@/domain/omnirouteResponseMeta";
+import { createStructuredSSECollector } from "../streamPayloadCollector.ts";
+import {
+  STREAM_IDLE_TIMEOUT_MS,
+  FETCH_BODY_TIMEOUT_MS,
+  HTTP_STATUS,
+} from "../../config/constants.ts";
+import { parseSSELine } from "../streamHelpers.ts";
+import { recordToolLatency } from "../../services/toolLatencyTracker.ts";
+import { processBufferedPassthroughLine } from "../passthroughTailProcessor.ts";
+import { normalizeStreamFailurePayload } from "./errors.ts";
+import { buildErrorBody } from "../error.ts";
 import { SSEStreamContext } from "./types.ts";
 
 import {
@@ -47,6 +64,7 @@ import {
   UsageTokenRecord,
 } from "./types.ts";
 import { normalizeStreamFailurePayload } from "./errors.ts";
+import { buildErrorBody } from "../error.ts";
 
 // Module-level helpers extracted from createSSEStream closures to keep
 // cyclomatic complexity of individual functions under the 15-node gate.

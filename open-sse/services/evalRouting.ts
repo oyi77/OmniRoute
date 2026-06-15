@@ -185,27 +185,29 @@ function calculateTargetScore(
   };
 }
 
-function buildRankedEvalEntries<T extends EvalRoutingTarget>(
+export function orderTargetsByEvalScores<T extends EvalRoutingTarget>(
   targets: T[],
-  aliasesByIndex: string[][],
-  config: EvalRoutingConfig
-): {
-  entries: Array<{
-    target: T;
-    index: number;
-    score: ReturnType<typeof calculateTargetScore> | null;
-  }>;
-} | null {
+  rawConfig: unknown,
+  log: EvalRoutingLogger = {}
+): T[] {
+  const config = normalizeEvalRoutingConfig(rawConfig);
+  if (!config.enabled || targets.length <= 1) return targets;
+
+  const aliasesByIndex = targets.map((target) => getTargetAliases(target.modelStr));
+  const targetIds = [...new Set(aliasesByIndex.flat())];
+  if (targetIds.length === 0) return targets;
+
   let runs: PersistedEvalRun[];
   try {
-    const targetIds = [...new Set(aliasesByIndex.flat())];
-    if (targetIds.length === 0) return null;
     runs = getEvalRuns(targetIds, config);
-  } catch {
-    return null;
+  } catch (error) {
+    log.warn?.("COMBO", "Eval-driven routing skipped because eval history could not be loaded", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return targets;
   }
 
-  if (runs.length === 0) return null;
+  if (runs.length === 0) return targets;
 
   const runsByTargetId = new Map<string, PersistedEvalRun[]>();
   for (const run of runs) {
@@ -237,8 +239,8 @@ function buildRankedEvalEntries<T extends EvalRoutingTarget>(
     index,
     score: calculateTargetScore(runsByIndex[index] || [], config, bestLatencyMs),
   }));
-
-  if (entries.filter((entry) => entry.score).length === 0) return null;
+  const scoredCount = entries.filter((entry) => entry.score).length;
+  if (scoredCount === 0) return targets;
 
   entries.sort((left, right) => {
     if (left.score && right.score) {
@@ -250,24 +252,6 @@ function buildRankedEvalEntries<T extends EvalRoutingTarget>(
     if (right.score) return 1;
     return left.index - right.index;
   });
-
-  return { entries };
-}
-
-export function orderTargetsByEvalScores<T extends EvalRoutingTarget>(
-  targets: T[],
-  rawConfig: unknown,
-  log: EvalRoutingLogger = {}
-): T[] {
-  const config = normalizeEvalRoutingConfig(rawConfig);
-  if (!config.enabled || targets.length <= 1) return targets;
-
-  const aliasesByIndex = targets.map((target) => getTargetAliases(target.modelStr));
-  const result = buildRankedEvalEntries(targets, aliasesByIndex, config);
-  if (!result) return targets;
-
-  const { entries } = result;
-  const scoredCount = entries.filter((entry) => entry.score).length;
 
   log.info?.(
     "COMBO",

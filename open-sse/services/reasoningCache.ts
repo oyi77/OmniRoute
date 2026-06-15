@@ -232,35 +232,6 @@ export function cacheReasoningBatch(
   }
 }
 
-function extractReasoningOrEmpty(message: AssistantMessageLike): string {
-  return typeof message.reasoning_content === "string" && message.reasoning_content.length > 0
-    ? message.reasoning_content
-    : typeof message.reasoning === "string" && message.reasoning.length > 0
-      ? message.reasoning
-      : "";
-}
-
-function cacheReasoningByMessageIndex(
-  context: AssistantMessageCacheContext | undefined,
-  provider: string,
-  model: string,
-  reasoning: string
-): number | null {
-  const requestId = context?.requestId?.trim();
-  const messageIndex = context?.messageIndex;
-  if (!requestId || typeof messageIndex !== "number" || !Number.isInteger(messageIndex)) {
-    return null;
-  }
-
-  cacheReasoningByKey(
-    buildAssistantMessageCacheKey(requestId, messageIndex),
-    provider,
-    model,
-    reasoning
-  );
-  return 1;
-}
-
 /**
  * Capture reasoning_content from an assistant message.
  * Returns the number of cache keys written.
@@ -275,7 +246,12 @@ export function cacheReasoningFromAssistantMessage(
     return 0;
   }
 
-  const reasoning = extractReasoningOrEmpty(message);
+  const reasoning =
+    typeof message.reasoning_content === "string" && message.reasoning_content.length > 0
+      ? message.reasoning_content
+      : typeof message.reasoning === "string" && message.reasoning.length > 0
+        ? message.reasoning
+        : "";
   if (!reasoning) return 0;
 
   const toolCallIds = Array.isArray(message.tool_calls)
@@ -283,10 +259,20 @@ export function cacheReasoningFromAssistantMessage(
         .map((toolCall) => (typeof toolCall.id === "string" ? toolCall.id : ""))
         .filter((id) => id.length > 0)
     : [];
-
   if (toolCallIds.length === 0) {
-    const cached = cacheReasoningByMessageIndex(context, provider, model, reasoning);
-    return cached ?? 0;
+    const requestId = context?.requestId?.trim();
+    const messageIndex = context?.messageIndex;
+    if (!requestId || typeof messageIndex !== "number" || !Number.isInteger(messageIndex)) {
+      return 0;
+    }
+
+    cacheReasoningByKey(
+      buildAssistantMessageCacheKey(requestId, messageIndex),
+      provider,
+      model,
+      reasoning
+    );
+    return 1;
   }
 
   cacheReasoningBatch(toolCallIds, provider, model, reasoning);
