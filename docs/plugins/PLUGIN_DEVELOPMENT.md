@@ -186,9 +186,11 @@ export function startDevMode(pluginDir: string, reloadFn: ReloadFn): void {
 
 ```ts
 import { testPlugin } from "omniroute/plugins/testRunner";
+import { validateManifest } from "omniroute/plugins/manifest";
 import { readFileSync } from "fs";
 
-const manifest = JSON.parse(readFileSync("./plugin.json", "utf-8"));
+const raw = JSON.parse(readFileSync("./plugin.json", "utf-8"));
+const manifest = validateManifest(raw);
 const results = await testPlugin("./index.js", manifest);
 
 for (const r of results) {

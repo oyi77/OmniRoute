@@ -91,27 +91,14 @@ onRequest: (ctx) => {
 
 ## Plugin Context (`PluginContext`)
 
-<<<<<<< HEAD
-| Field | Type | Description |
-| ----------- | ------------------------- | ------------------------- |
-| `requestId` | `string` | Unique request identifier |
-| `model` | `string` | Requested model name |
-| `provider` | `string` | Target provider ID |
-| `body` | `Record<string, unknown>` | Request body |
-| `headers` | `Record<string, string>` | Request headers |
-| `metadata` | `Record<string, unknown>` | Mutable metadata |
-| `timestamp` | `number` | Request timestamp |
-=======
-| Field | Type | Description |
+| Field        | Type                      | Description                     |
 | ------------ | ------------------------- | ------------------------------- |
-| `requestId` | `string` | Unique request identifier |
-| `model` | `string` | Requested model name |
-| `provider` | `string` | Target provider ID |
-| `body` | `Record<string, unknown>` | Request body |
-| `apiKeyInfo` | `unknown` | API key info (if authenticated) |
-| `metadata` | `Record<string, unknown>` | Mutable metadata |
-
-> > > > > > > ee98825b5 (docs(plugins): add plugin docs — dev guide, marketplace, SDK reference)
+| `requestId`  | `string`                  | Unique request identifier       |
+| `model`      | `string`                  | Requested model name            |
+| `provider`   | `string`                  | Target provider ID              |
+| `body`       | `Record<string, unknown>` | Request body                    |
+| `apiKeyInfo` | `unknown`                 | API key info (if authenticated) |
+| `metadata`   | `Record<string, unknown>` | Mutable metadata                |
 
 ## Manifest (`plugin.json`)
 
@@ -170,26 +157,15 @@ Or as simple booleans (default priority 100):
 
 Plugins run in an isolated child process. Access to external resources requires explicit permissions:
 
-<<<<<<< HEAD
-| Permission | Grants |
+| Permission   | Grants                                                                                     |
 | ------------ | ------------------------------------------------------------------------------------------ |
-| `network` | `fetch`, `AbortController`, `Headers`, `Request`, `Response` |
-| `file-read` | `fs.readFile`, `fs.readdir`, `fs.stat` (scoped to plugin's directory) |
-| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm` (scoped to plugin's directory) |
-| `env` | Read-only `process.env` proxy |
-| `exec` | `child_process.exec`, `child_process.execSync` (requires `OMNIROUTE_PLUGINS_ALLOW_EXEC=1`) |
-| `db` | `__omniroute.db` — persistent key-value store (SQLite-backed, isolated per plugin) |
-| `ipc` | `__omniroute.broadcast()` / `__omniroute.sendTo()` — cross-plugin messaging |
-=======
-| Permission | Grants |
-| ------------ | ------------------------------------------------------------ |
-| `network` | `fetch`, `AbortController`, `Headers`, `Request`, `Response` |
-| `file-read` | `fs.readFile`, `fs.readdir`, `fs.stat` |
-| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm` |
-| `env` | Read-only `process.env` proxy |
-| `exec` | `child_process.exec`, `child_process.execSync` |
-
-> > > > > > > ee98825b5 (docs(plugins): add plugin docs — dev guide, marketplace, SDK reference)
+| `network`    | `fetch`, `AbortController`, `Headers`, `Request`, `Response`                               |
+| `file-read`  | `fs.readFile`, `fs.readdir`, `fs.stat` (scoped to plugin's directory)                      |
+| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm` (scoped to plugin's directory)                         |
+| `env`        | Read-only `process.env` proxy                                                              |
+| `exec`       | `child_process.exec`, `child_process.execSync` (requires `OMNIROUTE_PLUGINS_ALLOW_EXEC=1`) |
+| `db`         | `__omniroute.db` — persistent key-value store (SQLite-backed, isolated per plugin)         |
+| `ipc`        | `__omniroute.broadcast()` / `__omniroute.sendTo()` — cross-plugin messaging                |
 
 Without a permission, the corresponding globals are simply not available.
 
@@ -286,46 +262,24 @@ Config values are persisted in the database and accessible via the dashboard con
 
 ## Built-in Events
 
-<<<<<<< HEAD
-| Event | When | Payload |
+| Event             | When                                      | Payload                                                |
 | ----------------- | ----------------------------------------- | ------------------------------------------------------ |
-| `onRequest` | Before chat handler | Request context |
-| `onResponse` | After chat handler | Response data |
-| `onError` | On handler error | Error object |
-| `onModelSelect` | Model selected for routing | Model info |
-| `onComboResolve` | Combo routing resolved | Combo targets |
-| `onRateLimit` | Rate limit hit | Limit info |
-| `onQuotaExhaust` | Quota exhausted | Quota info |
-| `onProviderError` | Provider returned error | Error details |
-| `onStreamStart` | SSE stream started | Stream info |
-| `onStreamEnd` | SSE stream ended | Stream stats |
-| `onInstall` | Plugin installed | `{ name, version, manifest }` |
-| `onActivate` | Plugin activated | `{ name, version, manifest }` |
-| `onDeactivate` | Plugin deactivated | `{ name, version, manifest }` |
-| `onUninstall` | Plugin uninstalled (before files deleted) | `{ name, version, manifest }` |
-| `onPluginMessage` | IPC message from another plugin | `{ source, event, data }` |
-| `onRender` | Dashboard page requested | `{ slug, params }` — return HTML or structured content |
-=======
-| Event | When | Payload |
-| ----------------- | -------------------------- | ----------------------------- |
-| `onRequest` | Before chat handler | Request context |
-| `onResponse` | After chat handler | Response data |
-| `onError` | On handler error | Error object |
-| `onModelSelect` | Model selected for routing | Model info |
-| `onComboResolve` | Combo routing resolved | Combo targets |
-| `onRateLimit` | Rate limit hit | Limit info |
-| `onQuotaExhaust` | Quota exhausted | Quota info |
-| `onProviderError` | Provider returned error | Error details |
-| `onStreamStart` | SSE stream started | Stream info |
-| `onStreamEnd` | SSE stream ended | Stream stats |
-| `onInstall` | Plugin installed | `{ name, version, manifest }` |
-| `onActivate` | Plugin activated | `{ name, version, manifest }` |
-| `onDeactivate` | Plugin deactivated | `{ name, version, manifest }` |
-| `onUninstall` | Plugin uninstalled | `{ name, version, manifest }` |
-
-> **Note:** Lifecycle events (`onInstall`, `onActivate`, `onDeactivate`, `onUninstall`) are **fired internally by PluginManager** during state transitions. They are declared in the manifest's `hooks` field (e.g. `"onInstall": true`) and cannot be registered via `definePlugin()`.
->
-> > > > > > > ee98825b5 (docs(plugins): add plugin docs — dev guide, marketplace, SDK reference)
+| `onRequest`       | Before chat handler                       | Request context                                        |
+| `onResponse`      | After chat handler                        | Response data                                          |
+| `onError`         | On handler error                          | Error object                                           |
+| `onModelSelect`   | Model selected for routing                | Model info                                             |
+| `onComboResolve`  | Combo routing resolved                    | Combo targets                                          |
+| `onRateLimit`     | Rate limit hit                            | Limit info                                             |
+| `onQuotaExhaust`  | Quota exhausted                           | Quota info                                             |
+| `onProviderError` | Provider returned error                   | Error details                                          |
+| `onStreamStart`   | SSE stream started                        | Stream info                                            |
+| `onStreamEnd`     | SSE stream ended                          | Stream stats                                           |
+| `onInstall`       | Plugin installed                          | `{ name, version, manifest }`                          |
+| `onActivate`      | Plugin activated                          | `{ name, version, manifest }`                          |
+| `onDeactivate`    | Plugin deactivated                        | `{ name, version, manifest }`                          |
+| `onUninstall`     | Plugin uninstalled (before files deleted) | `{ name, version, manifest }`                          |
+| `onPluginMessage` | IPC message from another plugin           | `{ source, event, data }`                              |
+| `onRender`        | Dashboard page requested                  | `{ slug, params }` — return HTML or structured content |
 
 ## Examples
 

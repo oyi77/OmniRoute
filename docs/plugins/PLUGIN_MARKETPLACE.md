@@ -181,11 +181,11 @@ const allPlugins = await listMarketplacePlugins();
 console.log(allPlugins); // [request-logger, rate-limiter, cost-tracker, theme-manager]
 
 // Search by tag
-const loggingPlugins = await searchMarketplace({ tags: ["logging"] });
+const loggingPlugins = await searchMarketplace("logging");
 console.log(loggingPlugins); // [request-logger]
 
 // Search by name
-const tracker = await searchMarketplace({ query: "cost" });
+const tracker = await searchMarketplace("cost");
 console.log(tracker); // [cost-tracker]
 ```
 
