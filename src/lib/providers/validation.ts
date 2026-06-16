@@ -20,6 +20,7 @@ import {
   isOpenAICompatibleProvider,
   isSelfHostedChatProvider,
   providerAllowsOptionalApiKey,
+  WEB_COOKIE_PROVIDERS,
 } from "@/shared/constants/providers";
 import {
   SAFE_OUTBOUND_FETCH_PRESETS,
@@ -3889,6 +3890,55 @@ async function validateInnerAiProvider({ apiKey, providerSpecificData = {} }: an
     return toValidationErrorResult(error);
   }
 }
+/**
+ * Validates web-cookie providers by performing a ping request to check if the session is still valid.
+ * Returns SESSION_EXPIRED error code if the upstream returns 401/403.
+ */
+async function validateWebCookieProvider({ provider, apiKey, providerSpecificData = {} }: any) {
+  try {
+    const entry = getRegistryEntry(provider);
+    if (!entry) {
+      return { valid: false, error: "Provider not found in registry", unsupported: true };
+    }
+
+    // For web-cookie providers, apiKey contains the cookie string
+    const cookie = (apiKey || "").trim();
+    if (!cookie) {
+      return { valid: false, error: "Cookie required for web-cookie provider", unsupported: false };
+    }
+
+    // Attempt a minimal request to check if the session is valid
+    // Use /models endpoint or a minimal completion request depending on the provider
+    const baseUrl = entry.baseUrl || "";
+    const testUrl = `${baseUrl}/models`;
+
+    const res = await directHttpsRequest(
+      testUrl,
+      {
+        method: "GET",
+        headers: {
+          Cookie: cookie,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      },
+      10_000
+    );
+
+    if (res.status === 401 || res.status === 403) {
+      return {
+        valid: false,
+        error: "SESSION_EXPIRED",
+        errorCode: "AUTH_007",
+        unsupported: false,
+      };
+    }
+
+    // Any other response (200, 404, 429) suggests the session is valid
+    return { valid: true, error: null, unsupported: false };
+  } catch (error: any) {
+    return toValidationErrorResult(error);
+  }
+}
 
 export async function validateProviderApiKey({ provider, apiKey, providerSpecificData = {} }: any) {
   const requiresApiKey = !providerAllowsOptionalApiKey(provider);
@@ -3896,6 +3946,15 @@ export async function validateProviderApiKey({ provider, apiKey, providerSpecifi
 
   if (!provider || (requiresApiKey && !apiKey)) {
     return { valid: false, error: "Provider and API key required", unsupported: false };
+  }
+
+  // Web-cookie providers (session-based authentication)
+  if (WEB_COOKIE_PROVIDERS[provider]) {
+    try {
+      return await validateWebCookieProvider({ provider, apiKey, providerSpecificData });
+    } catch (error: any) {
+      return toValidationErrorResult(error);
+    }
   }
 
   if (isOpenAICompatibleProvider(provider)) {

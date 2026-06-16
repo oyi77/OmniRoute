@@ -1,7 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { BaseExecutor, type ExecuteInput } from "./base.ts";
+import { BaseExecutor, STANDARD_USER_AGENT, type ExecuteInput } from "./base.ts";
 import type { ProviderCredentials } from "./base.ts";
+import type { WebSocket } from "ws";
 import { sanitizeErrorMessage } from "../utils/error.ts";
 
 const BASE_URL = "https://amelia.chipotle.com";
@@ -27,7 +28,7 @@ interface AmeliaSession {
 
 class AmeliaClient {
   private session: AmeliaSession | null = null;
-  private ws: import("ws").WebSocket | null = null;
+  private ws: WebSocket | null = null;
   private stompConnected = false;
   private messageCallbacks: Map<string, (msg: string) => void> = new Map();
   private connectPromise: Promise<void> | null = null;
@@ -35,8 +36,7 @@ class AmeliaClient {
   async init(): Promise<void> {
     const res = await fetch(`${BASE_URL}/Amelia/api/init`, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": STANDARD_USER_AGENT,
         Origin: BASE_URL,
         Referer: `${BASE_URL}/Amelia/ui/chipotle/chat?embed=iframe`,
       },
@@ -73,23 +73,20 @@ class AmeliaClient {
   }
 
   private async _connect(): Promise<void> {
-    const { WebSocket } = await import("ws");
+    // Dynamic import: ws is Node-only and not available in browser environments
+    const { WebSocket: WSImpl } = await import("ws");
     const server = randomServerId();
     const sessionId = randomSessionId();
     const wsUrl = `wss://amelia.chipotle.com/Amelia/api/sock/${server}/${sessionId}/websocket`;
 
     return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error("WS connect timeout")),
-        15_000,
-      );
+      const timeout = setTimeout(() => reject(new Error("WS connect timeout")), 15_000);
 
-      const ws = new WebSocket(wsUrl, {
+      const ws = new WSImpl(wsUrl, {
         headers: {
           Cookie: this.session!.cookieHeader,
           Origin: BASE_URL,
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         },
       });
 
@@ -118,7 +115,7 @@ class AmeliaClient {
     frame: string,
     resolveConnect: () => void,
     rejectConnect: (e: Error) => void,
-    timeout: NodeJS.Timeout,
+    timeout: NodeJS.Timeout
   ): void {
     if (frame === "o") {
       this.sendSockJS(this.buildStompConnect());
@@ -141,21 +138,14 @@ class AmeliaClient {
     frame: string,
     resolveConnect: () => void,
     rejectConnect: (e: Error) => void,
-    timeout: NodeJS.Timeout,
+    timeout: NodeJS.Timeout
   ): void {
     const command = frame.split("\n")[0].replace(/\r$/, "");
 
     if (command === "CONNECTED") {
       this.stompConnected = true;
-      this.sendSockJS(
-        this.buildStompSubscribe(
-          `/queue/session.${this.session!.userId}`,
-          "sub-0",
-        ),
-      );
-      this.sendSockJS(
-        this.buildStompSubscribe("/user/queue/session", "sub-1"),
-      );
+      this.sendSockJS(this.buildStompSubscribe(`/queue/session.${this.session!.userId}`, "sub-0"));
+      this.sendSockJS(this.buildStompSubscribe("/user/queue/session", "sub-1"));
       clearTimeout(timeout);
       resolveConnect();
       return;
@@ -176,9 +166,7 @@ class AmeliaClient {
     const nullIdx = frame.indexOf("\0");
     let bodyStart = frame.indexOf("\n\n");
     if (bodyStart === -1) bodyStart = frame.indexOf("\r\n\r\n");
-    const headerLen = bodyStart !== -1
-      ? (frame[bodyStart + 2] === "\r" ? 4 : 2)
-      : 0;
+    const headerLen = bodyStart !== -1 ? (frame[bodyStart + 2] === "\r" ? 4 : 2) : 0;
     let body = "";
     if (bodyStart !== -1) {
       body = frame
@@ -343,9 +331,9 @@ export class ChipotleExecutor extends BaseExecutor {
                 type: "abort",
                 code: "ABORTED",
               },
-            }),
+            })
           ),
-          { status: 499, headers: { "Content-Type": "application/json" } },
+          { status: 499, headers: { "Content-Type": "application/json" } }
         ),
         url: this.buildUrl(model, stream),
         headers: this.buildHeaders(input.credentials),
@@ -353,8 +341,8 @@ export class ChipotleExecutor extends BaseExecutor {
       };
     }
 
-    const messages = (body as { messages?: Array<{ role: string; content: string }> })
-      ?.messages ?? [];
+    const messages =
+      (body as { messages?: Array<{ role: string; content: string }> })?.messages ?? [];
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const prompt = lastUser?.content ?? "";
 
@@ -430,9 +418,9 @@ export class ChipotleExecutor extends BaseExecutor {
                 type: "upstream_error",
                 code: "CHIPOTLE_ERROR",
               },
-            }),
+            })
           ),
-          { status: 502, headers: { "Content-Type": "application/json" } },
+          { status: 502, headers: { "Content-Type": "application/json" } }
         ),
         url: this.buildUrl(model, stream),
         headers: this.buildHeaders(input.credentials),

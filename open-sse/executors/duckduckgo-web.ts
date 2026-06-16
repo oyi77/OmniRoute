@@ -1,7 +1,12 @@
 import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
 import vm from "node:vm";
 import { parseFragment, serialize } from "parse5";
-import { BaseExecutor, type ExecuteInput } from "./base.ts";
+import {
+  BaseExecutor,
+  STANDARD_USER_AGENT,
+  type ExecuteInput,
+  type ProviderCredentials,
+} from "./base.ts";
 import { FETCH_TIMEOUT_MS } from "../config/constants.ts";
 import { prepareToolMessages, buildToolAwareResult } from "../translator/webTools.ts";
 import type { Session } from "../services/sessionPool/session.ts";
@@ -16,9 +21,7 @@ const STATUS_URL = `${DUCKAI_BASE}/duckchat/v1/status`;
 const CHAT_URL = `${DUCKAI_BASE}/duckchat/v1/chat`;
 const DEFAULT_FE_VERSION = "serp_20260424_180649_ET-0bdc33b2a02ebf8f235def65d887787f694720a1";
 const FE_VERSION_PATTERN = /serp_\d{8}_\d{6}_[A-Z]{2}-[0-9a-f]{40}/;
-const DEFAULT_USER_AGENT =
-  "Mozilla/5.0 (X11; Linux x86_64) " +
-  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+const DEFAULT_USER_AGENT = STANDARD_USER_AGENT;
 
 const FAKE_HEADERS: Record<string, string> = {
   Accept: "*/*",

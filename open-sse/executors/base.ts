@@ -59,6 +59,13 @@ import {
 } from "./claudeIdentity.ts";
 
 /**
+ * Standardized User-Agent for no-auth providers to minimize anti-abuse detection.
+ * Uses a recent stable Chrome version on Windows.
+ */
+export const STANDARD_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/**
  * Sanitizes a custom API path to prevent path traversal attacks.
  * Valid paths must start with '/', contain no '..' segments,
  * no null bytes, and be reasonable in length.
@@ -352,7 +359,7 @@ export class BaseExecutor {
 
   // Session pool support — subclasses can set poolConfig to opt in
   protected poolConfig?: PoolConfig;
-  private _pool: import("../services/sessionPool/sessionPool.ts").SessionPool | null = null;
+  private _pool: SessionPool | null = null;
 
   constructor(provider: string, config: ProviderConfig) {
     this.provider = provider;

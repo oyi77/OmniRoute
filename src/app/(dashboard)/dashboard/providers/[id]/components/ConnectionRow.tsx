@@ -14,11 +14,7 @@ import {
   getCodexEffectiveServiceTier,
   type CodexGlobalServiceMode,
 } from "@/lib/providers/codexFastTier";
-import {
-  normalizeCodexLimitPolicy,
-  providerText,
-  ERROR_TYPE_LABELS,
-} from "../providerPageHelpers";
+import { normalizeCodexLimitPolicy, providerText, ERROR_TYPE_LABELS } from "../providerPageHelpers";
 
 // ---------------------------------------------------------------------------
 // Types (exported so the client can reference them without re-importing)
@@ -167,6 +163,7 @@ function inferErrorType(connection: ConnectionRowConnection, isCooldown: boolean
   )
     return "runtime_error";
   if (msg.includes("refresh failed")) return "token_refresh_failed";
+  if (msg.includes("session_expired") || msg.includes("session expired")) return "session_expired";
   if (msg.includes("token expired") || msg.includes("expired")) return "token_expired";
   if (
     msg.includes("invalid api key") ||

@@ -6,14 +6,13 @@
  *
  * No auth required. Rate limited to 6 requests/hour per IP.
  */
-import { BaseExecutor, type ExecuteInput } from "./base.ts";
+import { BaseExecutor, STANDARD_USER_AGENT, type ExecuteInput } from "./base.ts";
 import { sanitizeErrorMessage } from "../utils/error.ts";
 
 const BASE_URL = "https://veoaifree.com";
 const AJAX_URL = `${BASE_URL}/wp-admin/admin-ajax.php`;
 const TTS_URL = `${BASE_URL}/video/googletts.php`;
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const USER_AGENT = STANDARD_USER_AGENT;
 const POLL_INTERVAL_MS = 20_000;
 const MAX_POLLS = 30; // 10 minutes max
 const FETCH_TIMEOUT_MS = 30_000;
@@ -363,7 +362,12 @@ export class VeoAIFreeWebExecutor extends BaseExecutor {
       nonce = await fetchNonce(input.signal);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to get nonce";
-      return { response: errResp(sanitizeErrorMessage(msg)), url: BASE_URL, headers: {}, transformedBody: null };
+      return {
+        response: errResp(sanitizeErrorMessage(msg)),
+        url: BASE_URL,
+        headers: {},
+        transformedBody: null,
+      };
     }
 
     // Extract aspect ratio from system prompt or default

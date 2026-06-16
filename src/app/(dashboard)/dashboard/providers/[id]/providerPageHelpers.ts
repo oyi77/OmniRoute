@@ -816,6 +816,7 @@ export const ERROR_TYPE_LABELS: Record<string, { labelKey: string; variant: stri
   auth_missing: { labelKey: "errorTypeMissingCredential", variant: "warning" },
   token_refresh_failed: { labelKey: "errorTypeRefreshFailed", variant: "warning" },
   token_expired: { labelKey: "errorTypeTokenExpired", variant: "warning" },
+  session_expired: { labelKey: "errorTypeSessionExpired", variant: "warning" },
   upstream_rate_limited: { labelKey: "errorTypeRateLimited", variant: "warning" },
   upstream_unavailable: { labelKey: "errorTypeUpstreamUnavailable", variant: "error" },
   network_error: { labelKey: "errorTypeNetworkError", variant: "warning" },

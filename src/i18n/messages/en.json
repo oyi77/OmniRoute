@@ -4178,6 +4178,7 @@
     "errorTypeMissingCredential": "Missing credential",
     "errorTypeRefreshFailed": "Refresh failed",
     "errorTypeTokenExpired": "Token expired",
+    "errorTypeSessionExpired": "Re-login required",
     "errorTypeRateLimited": "Rate limited",
     "errorTypeUpstreamUnavailable": "Upstream unavailable",
     "errorTypeNetworkError": "Network error",
