@@ -166,7 +166,7 @@ function createSandbox(
   if (permissions.includes("exec")) {
     if (process.env.OMNIROUTE_PLUGINS_ALLOW_EXEC !== "1") {
       throw new Error(
-        `Plugin '${name}' requested the 'exec' permission, which is disabled. Set OMNIROUTE_PLUGINS_ALLOW_EXEC=1 to enable (local operator only).`
+        `Plugin '${pluginName}' requested the 'exec' permission, which is disabled. Set OMNIROUTE_PLUGINS_ALLOW_EXEC=1 to enable (local operator only).`
       );
     }
     sandbox.child_process = {
