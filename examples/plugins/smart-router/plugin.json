@@ -22,6 +22,7 @@
     },
     "maxTokensForExpensiveModel": {
       "type": "number",
+      "minimum": 1,
       "default": 1000,
       "description": "If request > this length, route to fallback"
     }

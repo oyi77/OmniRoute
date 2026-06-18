@@ -13,7 +13,7 @@ import { parentPort, workerData } from "worker_threads";
 import { readFile, readdir, stat, writeFile, mkdir, rm } from "fs/promises";
 import { resolve } from "path";
 import * as vm from "vm";
-import { getDbInstance } from "../db/core";
+import { pluginKvGet, pluginKvSet, pluginKvDelete, pluginKvListKeys } from "../db/pluginKv";
 
 if (!parentPort) {
   throw new Error("pluginWorker must be run as a Worker thread");
@@ -100,26 +100,10 @@ function createSandbox(permissions: string[], pluginDir: string, pluginName: str
 
   if (permissions.includes("db")) {
     sandbox.db = {
-      get: (key: string) => {
-        const db = getDbInstance();
-        const row = db.prepare("SELECT value FROM key_value WHERE namespace = ? AND key = ?").get(`plugin:${pluginName}`, key) as any;
-        if (!row) return undefined;
-        try { return JSON.parse(row.value); } catch { return row.value; }
-      },
-      set: (key: string, value: any) => {
-        const db = getDbInstance();
-        const str = typeof value === "string" ? value : JSON.stringify(value);
-        db.prepare("INSERT INTO key_value (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value").run(`plugin:${pluginName}`, key, str);
-      },
-      delete: (key: string) => {
-        const db = getDbInstance();
-        db.prepare("DELETE FROM key_value WHERE namespace = ? AND key = ?").run(`plugin:${pluginName}`, key);
-      },
-      list: () => {
-        const db = getDbInstance();
-        const rows = db.prepare("SELECT key FROM key_value WHERE namespace = ?").all(`plugin:${pluginName}`) as any[];
-        return rows.map((r: any) => r.key);
-      }
+      get: (key: string) => pluginKvGet(pluginName, key),
+      set: (key: string, value: any) => pluginKvSet(pluginName, key, value),
+      delete: (key: string) => pluginKvDelete(pluginName, key),
+      list: () => pluginKvListKeys(pluginName),
     };
   }
 
@@ -158,7 +142,7 @@ function createSandbox(permissions: string[], pluginDir: string, pluginName: str
   if (permissions.includes("exec")) {
     if (process.env.OMNIROUTE_PLUGINS_ALLOW_EXEC !== "1") {
       throw new Error(
-        `Plugin '${name}' requested the 'exec' permission, which is disabled. Set OMNIROUTE_PLUGINS_ALLOW_EXEC=1 to enable (local operator only).`
+        `Plugin '${pluginName}' requested the 'exec' permission, which is disabled. Set OMNIROUTE_PLUGINS_ALLOW_EXEC=1 to enable (local operator only).`
       );
     }
     sandbox.child_process = {

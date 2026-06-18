@@ -15,10 +15,15 @@
 export function onRequest(ctx) {
   const config = ctx?.config || {};
   const fallback = config.fallbackModel || "gpt-3.5-turbo";
-  const maxChars = (config.maxTokensForExpensiveModel || 1000) * 4;
+  const maxChars = (config.maxTokensForExpensiveModel ?? 1000) * 4;
   const body = ctx?.body || {};
   const messages = body.messages || [];
-  const promptText = messages.map((m) => m.content || "").join(" ");
+  const promptText = messages.reduce((acc, m) => {
+    const content = m?.content;
+    if (typeof content === "string") return acc + " " + content;
+    if (Array.isArray(content)) return acc + " " + content.filter((p: any) => p?.type === "text").map((p: any) => p.text || "").join(" ");
+    return acc;
+  }, "").trim();
   const originalModel = body.model || "unknown";
 
   // Skip if body already targets the fallback model
