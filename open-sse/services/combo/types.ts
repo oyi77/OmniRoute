@@ -1,22 +1,81 @@
 /**
- * Shared combo (model combo) types extracted from combo.ts.
- *
- * Pure type aliases / interfaces and the RESET_WINDOW_NAMES runtime constant.
- * Moving these out of the 5k-LOC combo.ts god-file (Quality Gate v2 / Fase 9)
- * — logic unchanged, re-exported from combo.ts for backward compatibility.
+ * Shared combo (model combo) handling with fallback support
+ * Supports: priority, weighted, round-robin, random, least-used, cost-optimized,
+ * reset-aware, reset-window, strict-random, auto, fill-first, p2c, lkgp,
+ * context-optimized, and context-relay strategies
  */
 
-import type { ProviderCandidate } from "../autoCombo/scoring.ts";
+import {
+  checkFallbackError,
+  classifyErrorText,
+  formatRetryAfter,
+  getRuntimeProviderProfile,
+  recordProviderFailure,
+  isProviderFailureCode,
+  isProviderExhaustedReason,
+  type ProviderProfile,
+} from "../accountFallback.ts";
+
+import { FETCH_TIMEOUT_MS, RateLimitReason } from "../../config/constants.ts";
+
+import { errorResponse, unavailableResponse } from "../../utils/error.ts";
+
+import { clamp01 } from "../../utils/number.ts";
+
+import { parseModel } from "../model.ts";
+
+import {
+  calculateFactors,
+  calculateScore,
+  DEFAULT_WEIGHTS,
+  type ProviderCandidate,
+  type ScoringWeights,
+} from "../autoCombo/scoring.ts";
+
+import { getProviderModels } from "../../config/providerModels.ts";
+
+import {
+  getComboModelString,
+  getComboStepTarget,
+  getComboStepWeight,
+  normalizeComboStep,
+} from "../../../src/lib/combos/steps.ts";
+
+import {
+  resolveResilienceSettings,
+  type ResilienceSettings,
+} from "../../../src/lib/resilience/settings";
+
+import { resolveResetWindowConfig } from "./quota.ts";
+import { QUOTA_SOFT_DEPRIORITIZE_FACTOR } from "./constants.ts";
+
+
 
 export const RESET_WINDOW_NAMES = ["weekly", "session", "monthly"] as const;
 
+
+export type ResetWindowName = (typeof RESET_WINDOW_NAMES)[number];
+
+
+export type QuotaFetchCacheConfig = {
+  quotaCacheTtlMs: number;
+  quotaCacheMaxStaleMs: number;
+};
+
+
+export type ResetWindowConfig = ReturnType<typeof resolveResetWindowConfig>;
+
+
 export type ComboRetryAfter = string | number | Date;
+
 
 export type ComboErrorBody = {
   error?: { code?: string | null; message?: string | null } | string;
   message?: string | null;
   retryAfter?: ComboRetryAfter | null;
 } | null;
+
+
 
 export type ComboLike = {
   id?: string;
@@ -30,9 +89,15 @@ export type ComboLike = {
   [key: string]: unknown;
 };
 
+
+
 export type ComboInput = ComboLike | Record<string, unknown>;
 
+
+
 export type ComboCollectionLike = ComboInput[] | { combos?: ComboInput[] } | null | undefined;
+
+
 
 export type ComboLogger = {
   info: (...args: unknown[]) => void;
@@ -41,6 +106,8 @@ export type ComboLogger = {
   debug: (...args: unknown[]) => void;
 };
 
+
+
 export type SingleModelTarget =
   | (ResolvedComboTarget & {
       allowRateLimitedConnection?: boolean;
@@ -48,22 +115,30 @@ export type SingleModelTarget =
     })
   | { modelAbortSignal: AbortSignal };
 
+
+
 export type HandleSingleModel = (
   body: Record<string, unknown>,
   modelStr: string,
   target?: SingleModelTarget
 ) => Promise<Response>;
 
+
+
 export type IsModelAvailable = (
   modelStr: string,
   target?: ResolvedComboTarget & { allowRateLimitedConnection?: boolean }
 ) => Promise<boolean> | boolean;
 
-export type ComboRelayOptions = {
+
+
+type ComboRelayOptions = {
   sessionId?: string | null;
   config?: Record<string, unknown> | null;
   [key: string]: unknown;
 };
+
+
 
 export type HandleComboChatOptions = {
   body: Record<string, unknown>;
@@ -78,10 +153,14 @@ export type HandleComboChatOptions = {
   apiKeyAllowedConnections?: string[] | null;
 };
 
+
+
 export type HandleRoundRobinOptions = Omit<
   HandleComboChatOptions,
   "relayOptions" | "apiKeyAllowedConnections"
 >;
+
+
 
 export type HistoricalLatencyStatsEntry = {
   totalRequests?: number;
@@ -89,6 +168,8 @@ export type HistoricalLatencyStatsEntry = {
   latencyStdDev?: number;
   successRate?: number;
 };
+
+
 
 export type AutoProviderCandidate = ProviderCandidate & {
   stepId: string;
@@ -102,6 +183,8 @@ export type AutoProviderCandidate = ProviderCandidate & {
    */
   quotaSoftPenalty?: boolean;
 };
+
+
 
 export type ResolvedComboTarget = {
   kind: "model";
@@ -118,6 +201,8 @@ export type ResolvedComboTarget = {
   trafficType?: "production" | "shadow";
 };
 
+
+
 export type ShadowRoutingConfig = {
   enabled: boolean;
   targets: unknown[];
@@ -125,6 +210,8 @@ export type ShadowRoutingConfig = {
   maxTargets: number;
   timeoutMs: number;
 };
+
+
 
 export type ComboRuntimeStep =
   | ResolvedComboTarget
@@ -136,3 +223,19 @@ export type ComboRuntimeStep =
       weight: number;
       label: string | null;
     };
+
+
+
+export type RequestCompatibilityRequirements = {
+  requiresTools: boolean;
+  requiresVision: boolean;
+  requiresStructuredOutput: boolean;
+  estimatedInputTokens: number;
+  requestedOutputTokens: number;
+  requiredContextTokens: number;
+};
+
+
+
+export type PreScreenResult = { profile: ProviderProfile | null; available: boolean };
+
