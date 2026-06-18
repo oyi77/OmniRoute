@@ -65,7 +65,7 @@ export function extractAllowedToolNames(body: unknown): Set<string> | null {
   const names = new Set<string>();
   for (const tool of tools) {
     if (tool && typeof tool === "object") {
-      const name = (tool as Record<string, unknown>).function as Record<string, unknown>?.name;
+      const name = ((tool as Record<string, unknown>).function as Record<string, unknown>)?.name;
       if (typeof name === "string") names.add(name);
     }
   }
