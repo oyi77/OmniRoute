@@ -1,33 +1,21 @@
 import { FETCH_BODY_TIMEOUT_MS } from "../../config/constants";
 
-const STREAM_SUMMARY_TEXT_LIMIT = 500;
+const STREAM_SUMMARY_TEXT_LIMIT = 64 * 1024;
 export { STREAM_SUMMARY_TEXT_LIMIT };
 
-export function stringifyIdValue(value: unknown): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value === "string") return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return undefined;
+export function stringifyIdValue(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
 }
 
 export function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-export function appendBoundedText(
-  existing: string[],
-  text: string,
-  limit: number = STREAM_SUMMARY_TEXT_LIMIT
-): void {
-  if (existing.length === 0) {
-    existing.push(text.slice(0, limit));
-  } else {
-    const current = existing[0];
-    if (current.length < limit) {
-      const remaining = limit - current.length;
-      existing[0] = current + text.slice(0, remaining);
-    }
-  }
+export function appendBoundedText(current: string, next: string): string {
+  if (!next) return current;
+  const combined = current + next;
+  if (combined.length <= STREAM_SUMMARY_TEXT_LIMIT) return combined;
+  return combined.slice(-STREAM_SUMMARY_TEXT_LIMIT);
 }
 
 export const STREAM_MODE = {
@@ -36,6 +24,22 @@ export const STREAM_MODE = {
   SSE: "sse",
 } as const;
 
-export function withBodyTimeout(bodyTimeout: number = FETCH_BODY_TIMEOUT_MS): { bodyTimeout: number } {
-  return { bodyTimeout };
+/**
+ * Race a response body read against a timeout.
+ * Prevents indefinite hangs when the upstream sends headers but stalls on the body.
+ */
+export function withBodyTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number = FETCH_BODY_TIMEOUT_MS
+): Promise<T> {
+  if (timeoutMs <= 0) return promise;
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`Response body read timeout after ${timeoutMs}ms`);
+      err.name = "BodyTimeoutError";
+      reject(err);
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
 }

@@ -7,3 +7,4 @@ export * from "./errors.ts";
 export * from "./claudeLifecycle.ts";
 export * from "./openaiChunks.ts";
 export * from "./streamCore.ts";
+export { default } from "./streamCore.ts";

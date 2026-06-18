@@ -1,8 +1,4 @@
-import { convertOpenAIToResponsesToolCall } from "../handlers/responseTranslator.ts";
-import { v4 as uuidv4 } from "uuid";
-
-import { asRecord } from "./utils.ts";
-import { JsonRecord, ToolCall } from "./types.ts";
+import { ToolCall } from "./types.ts";
 
 // Local helpers for textual tool call parsing (extracted from monolithic stream.ts)
 function parseTextualToolCallCandidate(text: unknown): { kind: string; name: string; args: unknown } | null {
@@ -38,7 +34,27 @@ export function containsMalformedTextualToolCall(
   allowedToolNames?: Set<string> | null
 ): boolean {
   if (typeof text !== "string") return false;
-  // ... uses helper
+  const normalized = text.replace(/[\u200B-\u200D\uFEFF]/g, "");
+
+  let searchIdx = 0;
+  while (true) {
+    const idx = normalized.indexOf("[Tool call:", searchIdx);
+    if (idx === -1) break;
+
+    const candidate = normalized.slice(idx);
+    if (isValidToolCallHeaderPrefix(candidate)) {
+      const parsed = parseTextualToolCallFromContent(candidate);
+      if (parsed) {
+        if (allowedToolNames?.size && !allowedToolNames.has(parsed.name)) {
+          return true;
+        }
+      } else {
+        return true;
+      }
+    }
+
+    searchIdx = idx + 1;
+  }
   return false;
 }
 
@@ -57,13 +73,23 @@ export function extractAllowedToolNames(body: unknown): Set<string> | null {
 }
 
 export function collectPassthroughTextualToolCall(
-  contentBuffer: string[],
-  allowedToolNames: Set<string> | null
+  text: string,
+  toolCalls: Map<string, ToolCall>,
+  allowedToolNames?: Set<string> | null
 ): ToolCall | null {
-  const joined = contentBuffer.join("");
-  const candidate = parseTextualToolCallCandidate(joined);
-  if (!candidate || candidate.kind !== "complete") return null;
-  if (allowedToolNames && !allowedToolNames.has(candidate.name)) return null;
-  contentBuffer.length = 0;
-  return { name: candidate.name, arguments: candidate.args };
+  const parsed = parseTextualToolCallFromContent(text);
+  if (!parsed) return null;
+  if (allowedToolNames?.size && !allowedToolNames.has(parsed.name)) return null;
+  const key = `textual:${toolCalls.size}`;
+  const toolCall: ToolCall = {
+    id: `call_${Date.now()}_${toolCalls.size}`,
+    index: toolCalls.size,
+    type: "function",
+    function: {
+      name: parsed.name,
+      arguments: JSON.stringify(parsed.args || {}),
+    },
+  };
+  toolCalls.set(key, toolCall);
+  return toolCall;
 }

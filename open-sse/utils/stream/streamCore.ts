@@ -1,4 +1,3 @@
-import { convertOpenAIToResponsesToolCall } from "../handlers/responseTranslator.ts";
 import { v4 as uuidv4 } from "uuid";
 import { FORMATS, initState } from "../../translator/formats";
 
@@ -1946,3 +1945,4 @@ export function createPassthroughStreamWithLogger(
     clientResponseFormat,
   });
 }
+export default createSSEStream;
