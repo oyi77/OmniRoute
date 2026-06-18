@@ -82,7 +82,6 @@ import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
 import { getProviderBaseUrl, normalizeAzureOpenAIBaseUrl, getAzureOpenAIApiVersion, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
-import { GET } from "../route.ts";
 
 export async function handleAzureOpenaiModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;

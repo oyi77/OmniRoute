@@ -82,7 +82,6 @@ import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ProviderModelsConfigEntry } from "./types.ts";
 import { normalizeOpenAiLikeModelsResponse } from "./utils.ts";
-import { GET } from "./route.ts";
 
 export const KIMI_CODING_MODELS_CONFIG: ProviderModelsConfigEntry = {
   url: "https://api.kimi.com/coding/v1/models",

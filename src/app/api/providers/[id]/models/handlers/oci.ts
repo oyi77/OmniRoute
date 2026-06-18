@@ -82,7 +82,6 @@ import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 
 import { ModelsRequestContext } from "../types.ts";
 import { asRecord, toNonEmptyString, getProviderBaseUrl, buildOptionalBearerHeaders, normalizeOpenAiLikeModelsResponse } from "../utils.ts";
-import { GET } from "../route.ts";
 
 export async function handleOciModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;

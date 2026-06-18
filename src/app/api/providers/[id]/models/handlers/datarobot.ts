@@ -83,7 +83,6 @@ import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 import { ModelsRequestContext } from "../types.ts";
 import { getProviderBaseUrl, buildOptionalBearerHeaders } from "../utils.ts";
 import { normalizeDataRobotCatalogResponse } from "../customNormalizers.ts";
-import { GET } from "../route.ts";
 
 export async function handleDatarobotModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;

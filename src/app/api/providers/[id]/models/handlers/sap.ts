@@ -83,7 +83,6 @@ import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 import { ModelsRequestContext } from "../types.ts";
 import { asRecord, getProviderBaseUrl, buildOptionalBearerHeaders } from "../utils.ts";
 import { normalizeSapModelsResponse } from "../customNormalizers.ts";
-import { GET } from "../route.ts";
 
 export async function handleSapModels(ctx: ModelsRequestContext): Promise<any> {
   const { provider, connectionId, connection, apiKey, accessToken, proxy, id, maybeReturnCachedDiscovery, maybeReturnAutoFetchDisabled, buildDiscoveryFallbackResponse, buildDiscoveryErrorFallbackResponse, buildApiDiscoveryResponse, buildResponse, buildLocalCatalogResponse } = ctx;

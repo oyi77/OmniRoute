@@ -43,7 +43,7 @@ export interface ModelsRequestContext {
     localWarning?: string;
     error?: unknown;
   }) => NextResponse | null;
-  buildDiscoveryErrorFallbackResponse: (error: unknown, message: string) => NextResponse | null;
+  buildDiscoveryErrorFallbackResponse: (error: unknown, warnings?: { cacheWarning?: string; localWarning?: string }) => NextResponse | null;
   buildApiDiscoveryResponse: (models: unknown[], warning?: string) => Promise<NextResponse>;
   buildResponse: (payload: unknown, statusConfig?: ResponseInit) => NextResponse;
   buildLocalCatalogResponse: (warning?: string) => NextResponse;
