@@ -87,7 +87,7 @@ import {
   CooldownTimer
 } from "./utils";
 
-function ConnectionRow({
+export function ConnectionRow({
   connection,
   isOAuth,
   isClaude,
@@ -692,7 +692,7 @@ function ConnectionRow({
   );
 }
 
-function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnectionModalProps) {
+export function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnectionModalProps) {
   const t = useTranslations("providers");
   const notify = useNotificationStore();
   const [formData, setFormData] = useState({
@@ -1784,7 +1784,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
   );
 }
 
-function EditCompatibleNodeModal({
+export function EditCompatibleNodeModal({
   isOpen,
   node,
   onSave,

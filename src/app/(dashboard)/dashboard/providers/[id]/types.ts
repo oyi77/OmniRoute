@@ -7,7 +7,7 @@ import {
 } from "@/lib/providers/codexFastTier";
 
 
-type CompatByProtocolMap = Partial<
+export type CompatByProtocolMap = Partial<
   Record<
     ModelCompatProtocolKey,
     {
@@ -19,7 +19,7 @@ type CompatByProtocolMap = Partial<
 >;
 
 /** PATCH fields for provider model compat (matches API + `ModelCompatPerProtocol` shape). */
-type ModelCompatSavePatch = {
+export type ModelCompatSavePatch = {
   normalizeToolCallId?: boolean;
   preserveOpenAIDeveloperRole?: boolean;
   upstreamHeaders?: Record<string, string>;
@@ -27,7 +27,7 @@ type ModelCompatSavePatch = {
   isHidden?: boolean;
 };
 
-type CompatModelRow = {
+export type CompatModelRow = {
   id?: string;
   name?: string;
   source?: string;
@@ -40,14 +40,14 @@ type CompatModelRow = {
   compatByProtocol?: CompatByProtocolMap;
 };
 
-type CompatModelMap = Map<string, CompatModelRow>;
-type LocalProviderMetadata = {
+export type CompatModelMap = Map<string, CompatModelRow>;
+export type LocalProviderMetadata = {
   name?: string;
   localDefault?: string;
   [key: string]: unknown;
 };
 
-interface ModelRowProps {
+export interface ModelRowProps {
   model: { id: string; name?: string; source?: string; isHidden?: boolean };
   fullModel: string;
   provider: string;
@@ -67,7 +67,7 @@ interface ModelRowProps {
   testingModel?: boolean;
 }
 
-interface PassthroughModelRowProps {
+export interface PassthroughModelRowProps {
   modelId: string;
   fullModel: string;
   source?: string;
@@ -90,7 +90,7 @@ interface PassthroughModelRowProps {
   testingModel?: boolean;
 }
 
-interface PassthroughModelsSectionProps {
+export interface PassthroughModelsSectionProps {
   providerAlias: string;
   modelAliases: Record<string, string>;
   availableModels?: CompatModelRow[];
@@ -127,7 +127,7 @@ interface PassthroughModelsSectionProps {
   connectionId: string;
 }
 
-interface CustomModelsSectionProps {
+export interface CustomModelsSectionProps {
   providerId: string;
   providerAlias: string;
   copied?: string;
@@ -135,7 +135,7 @@ interface CustomModelsSectionProps {
   onModelsChanged?: () => void;
 }
 
-interface CompatibleModelsSectionProps {
+export interface CompatibleModelsSectionProps {
   providerStorageAlias: string;
   providerDisplayAlias: string;
   modelAliases: Record<string, string>;
@@ -183,11 +183,11 @@ interface CompatibleModelsSectionProps {
   onAutoHideFailedChange?: (v: boolean) => void;
 }
 
-type ProviderMessageTranslator = ((key: string, values?: Record<string, unknown>) => string) & {
+export type ProviderMessageTranslator = ((key: string, values?: Record<string, unknown>) => string) & {
   has?: (key: string) => boolean;
 };
 
-type HeaderDraftRow = { id: string; name: string; value: string };
+export type HeaderDraftRow = { id: string; name: string; value: string };
 
 const UPSTREAM_HEADERS_UI_MAX = 16;
 
@@ -197,14 +197,14 @@ function recordToHeaderRows(rec: Record<string, string>, genId: () => string): H
   return entries.map(([name, value]) => ({ id: genId(), name, value }));
 }
 
-type ProviderModelsApiErrorBody = {
+export type ProviderModelsApiErrorBody = {
   error?: {
     message?: string;
     details?: Array<{ field?: string; message?: string }>;
   };
 };
 
-type CommandCodeAuthFlowState = {
+export type CommandCodeAuthFlowState = {
   phase:
     | "idle"
     | "starting"
@@ -221,11 +221,11 @@ type CommandCodeAuthFlowState = {
   message?: string;
 };
 
-interface CooldownTimerProps {
+export interface CooldownTimerProps {
   until: string | number | Date;
 }
 
-interface ConnectionRowConnection {
+export interface ConnectionRowConnection {
   id?: string;
   name?: string;
   email?: string;
@@ -249,7 +249,7 @@ interface ConnectionRowConnection {
   perKeyProxyEnabled?: boolean;
 }
 
-interface ConnectionRowProps {
+export interface ConnectionRowProps {
   connection: ConnectionRowConnection;
   isOAuth: boolean;
   isClaude?: boolean;
@@ -299,7 +299,7 @@ interface ConnectionRowProps {
   isExportingGeminiAuthFile?: boolean;
 }
 
-interface AddApiKeyModalProps {
+export interface AddApiKeyModalProps {
   isOpen: boolean;
   provider?: string;
   providerName?: string;
@@ -320,7 +320,7 @@ interface AddApiKeyModalProps {
   onClose: () => void;
 }
 
-interface EditConnectionModalConnection {
+export interface EditConnectionModalConnection {
   id?: string;
   name?: string;
   email?: string;
@@ -335,14 +335,14 @@ interface EditConnectionModalConnection {
   projectId?: string | null;
 }
 
-interface EditConnectionModalProps {
+export interface EditConnectionModalProps {
   isOpen: boolean;
   connection: EditConnectionModalConnection | null;
   onSave: (data: unknown) => Promise<void | unknown>;
   onClose: () => void;
 }
 
-interface EditCompatibleNodeModalNode {
+export interface EditCompatibleNodeModalNode {
   id?: string;
   name?: string;
   prefix?: string;
@@ -352,7 +352,7 @@ interface EditCompatibleNodeModalNode {
   modelsPath?: string;
 }
 
-interface EditCompatibleNodeModalProps {
+export interface EditCompatibleNodeModalProps {
   isOpen: boolean;
   node: EditCompatibleNodeModalNode | null;
   onSave: (data: unknown) => Promise<void>;
@@ -361,30 +361,30 @@ interface EditCompatibleNodeModalProps {
   isCcCompatible?: boolean;
 }
 
-type ImportTopTab = "single" | "bulk";
-type BulkSubMode = "upload" | "paste" | "zip";
+export type ImportTopTab = "single" | "bulk";
+export type BulkSubMode = "upload" | "paste" | "zip";
 
-interface BulkEntry {
+export interface BulkEntry {
   name: string;
   json: unknown;
   parseError: string | null;
   email: string | null;
 }
 
-type ClaudeImportTopTab = "single" | "bulk";
-type ClaudeBulkSubMode = "upload" | "paste" | "zip";
+export type ClaudeImportTopTab = "single" | "bulk";
+export type ClaudeBulkSubMode = "upload" | "paste" | "zip";
 
-interface ClaudeBulkEntry {
+export interface ClaudeBulkEntry {
   name: string;
   json: unknown;
   parseError: string | null;
   email: string | null;
 }
 
-type GeminiImportTopTab = "single" | "bulk";
-type GeminiBulkSubMode = "upload" | "paste" | "zip";
+export type GeminiImportTopTab = "single" | "bulk";
+export type GeminiBulkSubMode = "upload" | "paste" | "zip";
 
-interface GeminiBulkEntry {
+export interface GeminiBulkEntry {
   name: string;
   json: unknown;
   parseError: string | null;

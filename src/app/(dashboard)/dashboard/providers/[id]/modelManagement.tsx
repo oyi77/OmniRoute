@@ -55,7 +55,7 @@ import {
   ModelCompatPopover
 } from "./utils";
 
-function ModelRow({
+export function ModelRow({
   model,
   fullModel,
   provider,
@@ -163,7 +163,7 @@ function ModelRow({
   );
 }
 
-function ModelVisibilityToolbar({
+export function ModelVisibilityToolbar({
   t,
   filterValue,
   onFilterChange,
@@ -285,7 +285,7 @@ function ModelVisibilityToolbar({
   );
 }
 
-function PassthroughModelsSection({
+export function PassthroughModelsSection({
   providerAlias,
   modelAliases,
   availableModels = [],
@@ -615,7 +615,7 @@ function PassthroughModelsSection({
   );
 }
 
-function PassthroughModelRow({
+export function PassthroughModelRow({
   modelId,
   fullModel,
   source,
@@ -747,7 +747,7 @@ function PassthroughModelRow({
   );
 }
 
-function CustomModelsSection({
+export function CustomModelsSection({
   providerId,
   providerAlias,
   copied,
@@ -1264,7 +1264,7 @@ function CustomModelsSection({
   );
 }
 
-function CompatibleModelsSection({
+export function CompatibleModelsSection({
   providerStorageAlias,
   providerDisplayAlias,
   modelAliases,

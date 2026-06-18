@@ -71,7 +71,7 @@ import {
   previewGeminiJson
 } from "./utils";
 
-function AddApiKeyModal({
+export function AddApiKeyModal({
   isOpen,
   provider,
   providerName,
@@ -859,7 +859,7 @@ function AddApiKeyModal({
   );
 }
 
-function SiliconFlowEndpointModal({
+export function SiliconFlowEndpointModal({
   isOpen,
   onSelect,
   onClose,
@@ -908,7 +908,7 @@ function SiliconFlowEndpointModal({
   );
 }
 
-function ImportCodexAuthModal({ onClose, onSuccess }: ImportCodexAuthModalProps) {
+export function ImportCodexAuthModal({ onClose, onSuccess }: ImportCodexAuthModalProps) {
   const t = useTranslations("providers");
   const notify = useNotificationStore();
 
@@ -1472,7 +1472,7 @@ function ImportCodexAuthModal({ onClose, onSuccess }: ImportCodexAuthModalProps)
   );
 }
 
-function ApplyCodexAuthModal({
+export function ApplyCodexAuthModal({
   connectionId,
   inProgress,
   onConfirm,
@@ -1568,7 +1568,7 @@ function ApplyCodexAuthModal({
   );
 }
 
-function ImportClaudeAuthModal({ onClose, onSuccess }: ImportClaudeAuthModalProps) {
+export function ImportClaudeAuthModal({ onClose, onSuccess }: ImportClaudeAuthModalProps) {
   const t = useTranslations("providers");
   const notify = useNotificationStore();
 
@@ -2158,7 +2158,7 @@ function ImportClaudeAuthModal({ onClose, onSuccess }: ImportClaudeAuthModalProp
   );
 }
 
-function ApplyClaudeAuthModal({
+export function ApplyClaudeAuthModal({
   connectionId,
   inProgress,
   onConfirm,
@@ -2247,7 +2247,7 @@ function ApplyClaudeAuthModal({
   );
 }
 
-function ImportGeminiAuthModal({ onClose, onSuccess }: ImportGeminiAuthModalProps) {
+export function ImportGeminiAuthModal({ onClose, onSuccess }: ImportGeminiAuthModalProps) {
   const t = useTranslations("providers");
   const notify = useNotificationStore();
 
@@ -2819,7 +2819,7 @@ function ImportGeminiAuthModal({ onClose, onSuccess }: ImportGeminiAuthModalProp
   );
 }
 
-function ApplyGeminiAuthModal({
+export function ApplyGeminiAuthModal({
   connectionId,
   inProgress,
   onConfirm,
