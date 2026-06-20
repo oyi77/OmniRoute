@@ -1,24 +1,10 @@
-# OmniRoute Plugin SDK
-
 > **Related guides:**
 >
 > - [Plugin Development Guide](./PLUGIN_DEVELOPMENT.md) — dev mode, testing, doctor, signing, lifecycle
 > - [Plugin Marketplace](./PLUGIN_MARKETPLACE.md) — discover, install, and publish plugins
 > - [CLI Plugin System](../dev/plugins.md) — extend the `omniroute` CLI
 
-## Two Plugin Systems
-
-OmniRoute has **two parallel plugin systems** that serve different purposes:
-
-| System                     | Where it runs                                              | Purpose                                                                   | Reference                                 |
-| -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------- |
-| **SDK plugins** (this doc) | In-process sandboxed VM inside the OmniRoute server        | Hook-based request/response interception (onRequest, onResponse, onError) | Below                                     |
-| **CLI plugins**            | Separate Node.js process invoked by the `omniroute` binary | Add new subcommands to the CLI (like `gh extension` or `kubectl plugin`)  | [CLI Plugin Reference](../dev/plugins.md) |
-
-You can use either or both. A typical setup might have:
-
-- An **SDK plugin** that adds rate limiting to incoming requests
-- A **CLI plugin** that extends the `omniroute health` subcommand with custom health checks
+# OmniRoute Plugin SDK
 
 ## Quick Start
 
@@ -51,6 +37,7 @@ Factory function that creates a Plugin object with defaults.
 
 - `name` (string, required) — Plugin name in kebab-case
 - `priority` (number, optional, default: 100) — Lower runs first
+- `enabled` (boolean, optional, default: true) — Start enabled?
 - `onRequest` (function, optional) — Runs before chat handler
 - `onResponse` (function, optional) — Runs after chat handler
 - `onError` (function, optional) — Runs on handler error
@@ -61,7 +48,7 @@ Block the request and optionally return a custom response.
 
 ```ts
 onRequest: (ctx) => {
-  if (!ctx.apiKeyInfo) {
+  if (!ctx.headers["authorization"]) {
     return blockRequest({ error: "Unauthorized", status: 401 });
   }
 };
@@ -89,14 +76,15 @@ onRequest: (ctx) => {
 
 ## Plugin Context (`PluginContext`)
 
-| Field        | Type                      | Description                     |
-| ------------ | ------------------------- | ------------------------------- |
-| `requestId`  | `string`                  | Unique request identifier       |
-| `model`      | `string`                  | Requested model name            |
-| `provider`   | `string`                  | Target provider ID              |
-| `body`       | `Record<string, unknown>` | Request body                    |
-| `apiKeyInfo` | `unknown`                 | API key info (if authenticated) |
-| `metadata`   | `Record<string, unknown>` | Mutable metadata                |
+| Field       | Type                      | Description               |
+| ----------- | ------------------------- | ------------------------- |
+| `requestId` | `string`                  | Unique request identifier |
+| `model`     | `string`                  | Requested model name      |
+| `provider`  | `string`                  | Target provider ID        |
+| `body`      | `Record<string, unknown>` | Request body              |
+| `headers`   | `Record<string, string>`  | Request headers           |
+| `metadata`  | `Record<string, unknown>` | Mutable metadata          |
+| `timestamp` | `number`                  | Request timestamp         |
 
 ## Manifest (`plugin.json`)
 
@@ -110,9 +98,7 @@ onRequest: (ctx) => {
   "hooks": {
     "onRequest": { "enabled": true, "priority": 50 },
     "onResponse": true,
-    "onError": false,
-    "onActivate": true,
-    "onDeactivate": true
+    "onError": false
   },
   "requires": {
     "permissions": ["network", "file-read"]
@@ -153,17 +139,17 @@ Or as simple booleans (default priority 100):
 
 ## Permission System
 
-Plugins run in an isolated child process. Access to external resources requires explicit permissions:
+Plugins run in a sandboxed VM context. Access to external resources requires explicit permissions:
 
-| Permission   | Grants                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------ |
-| `network`    | `fetch`, `AbortController`, `Headers`, `Request`, `Response`                               |
-| `file-read`  | `fs.readFile`, `fs.readdir`, `fs.stat` (scoped to plugin's directory)                      |
-| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm` (scoped to plugin's directory)                         |
-| `env`        | Read-only `process.env` proxy                                                              |
-| `exec`       | `child_process.exec`, `child_process.execSync` (requires `OMNIROUTE_PLUGINS_ALLOW_EXEC=1`) |
+| Permission   | Grants                                                       |
+| ------------ | ------------------------------------------------------------ |
+| `network`    | `fetch`, `AbortController`, `Headers`, `Request`, `Response` |
+| `file-read`  | `fs.readFile`, `fs.readdir`, `fs.stat`                       |
+| `file-write` | `fs.writeFile`, `fs.mkdir`, `fs.rm`                          |
+| `env`        | Read-only `process.env` proxy                                |
+| `exec`       | `child_process.exec`, `child_process.execSync`               |
 
-Without a permission, the corresponding globals are simply not available.
+Without a permission, the corresponding globals are simply not available in the sandbox.
 
 ## Config Schema
 
@@ -188,19 +174,22 @@ Config values are persisted in the database and accessible via the dashboard con
 
 ## Built-in Events
 
-Current supported hooks (see `src/lib/plugins/hooks.ts` `BUILTIN_EVENTS`):
-
 | Event             | When                                      | Payload                       |
 | ----------------- | ----------------------------------------- | ----------------------------- |
 | `onRequest`       | Before chat handler                       | Request context               |
 | `onResponse`      | After chat handler                        | Response data                 |
 | `onError`         | On handler error                          | Error object                  |
+| `onModelSelect`   | Model selected for routing                | Model info                    |
+| `onComboResolve`  | Combo routing resolved                    | Combo targets                 |
+| `onRateLimit`     | Rate limit hit                            | Limit info                    |
+| `onQuotaExhaust`  | Quota exhausted                           | Quota info                    |
+| `onProviderError` | Provider returned error                   | Error details                 |
+| `onStreamStart`   | SSE stream started                        | Stream info                   |
+| `onStreamEnd`     | SSE stream ended                          | Stream stats                  |
 | `onInstall`       | Plugin installed                          | `{ name, version, manifest }` |
 | `onActivate`      | Plugin activated                          | `{ name, version, manifest }` |
 | `onDeactivate`    | Plugin deactivated                        | `{ name, version, manifest }` |
 | `onUninstall`     | Plugin uninstalled (before files deleted) | `{ name, version, manifest }` |
-
-> **Note:** Routing and stream events (`onModelSelect`, `onComboResolve`, `onRateLimit`, `onStreamStart`, `onStreamEnd`) are planned for future releases but are not yet wired into the plugin pipeline. Use `onRequest` and `onResponse` for request-level interception today.
 
 ## Examples
 
@@ -212,7 +201,7 @@ import { definePlugin } from "omniroute/plugins/sdk";
 export default definePlugin({
   name: "request-logger",
   onRequest: async (ctx) => {
-    console.log(`[${new Date().toISOString()}] ${ctx.model} -> ${ctx.provider || "unknown"}`);
+    console.log(`[${new Date().toISOString()}] ${ctx.method} ${ctx.model} -> ${ctx.provider}`);
   },
 });
 ```
@@ -228,9 +217,9 @@ export default definePlugin({
   name: "rate-limiter",
   priority: 10,
   onRequest: async (ctx) => {
-    const key = ctx.requestId || "anonymous";
+    const key = ctx.headers["x-api-key"] || "anonymous";
     const now = Date.now();
-    const window = 60000;
+    const window = 60000; // 1 minute
     const maxRequests = 100;
 
     const timestamps = (requests.get(key) || []).filter((t) => t > now - window);
@@ -240,6 +229,25 @@ export default definePlugin({
     if (timestamps.length > maxRequests) {
       return blockRequest({ error: "Rate limit exceeded", status: 429 });
     }
+  },
+});
+```
+
+### Response Transformer
+
+```ts
+import { definePlugin } from "omniroute/plugins/sdk";
+
+export default definePlugin({
+  name: "response-transformer",
+  onResponse: async (ctx, response) => {
+    if (response.choices) {
+      response.choices = response.choices.map((c: any) => ({
+        ...c,
+        message: { ...c.message, content: c.message.content.trim() },
+      }));
+    }
+    return response;
   },
 });
 ```

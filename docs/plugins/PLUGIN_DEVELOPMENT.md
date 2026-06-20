@@ -88,7 +88,7 @@ For the complete list of supported built-in events and their signatures, refer t
 
 ---
 
-## Dev Mode: Hot Reload on File Changes
+## Dev Mode: Hot Reload on File Changes (Planned)
 
 **`src/lib/plugins/devMode.ts`** exports `startDevMode(pluginDir, reloadFn)` and `stopDevMode()` for hot-reloading plugins when their files change on disk. The watcher is debounced at 500ms per source change.
 
@@ -222,7 +222,7 @@ For full integration testing, use the [OmniRoute test harness](#integration-test
 
 ---
 
-## Plugin Doctor: Diagnostic Health Checks
+## Plugin Doctor: Diagnostic Health Checks (Planned)
 
 **`src/lib/plugins/doctor.ts`** runs **5 health checks** on a plugin to help you diagnose common issues.
 
@@ -276,7 +276,7 @@ interface DoctorResult {
 
 ---
 
-## Plugin Signing & Verification
+## Plugin Signing & Verification (Planned)
 
 **`src/lib/plugins/signing.ts`** provides Ed25519-based code signing so users can verify that a plugin came from a trusted source.
 
