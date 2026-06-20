@@ -1,7 +1,7 @@
 > **Related guides:**
 >
 > - [Plugin Development Guide](./PLUGIN_DEVELOPMENT.md) — dev mode, testing, doctor, signing, lifecycle
-> - [Plugin Marketplace](./PLUGIN_MARKETPLACE.md) — discover, install, and publish plugins
+> - [Plugin Marketplace](../frameworks/PLUGIN_MARKETPLACE.md) — discover, install, and publish plugins
 > - [CLI Plugin System](../dev/plugins.md) — extend the `omniroute` CLI
 
 # OmniRoute Plugin SDK

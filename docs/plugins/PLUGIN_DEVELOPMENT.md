@@ -6,7 +6,7 @@ lastUpdated: 2026-06-08
 
 # Plugin Development Guide
 
-> **TL;DR**: This guide covers the **day-to-day workflow** for building, testing, signing, and debugging OmniRoute plugins. For the SDK API surface, see the [Plugin SDK Reference](./PLUGIN_SDK.md). For the marketplace, see [Plugin Marketplace](./PLUGIN_MARKETPLACE.md).
+> **TL;DR**: This guide covers the **day-to-day workflow** for building, testing, signing, and debugging OmniRoute plugins. For the SDK API surface, see the [Plugin SDK Reference](./PLUGIN_SDK.md). For the marketplace, see [Plugin Marketplace](../frameworks/PLUGIN_MARKETPLACE.md).
 
 ---
 
@@ -548,6 +548,6 @@ Dev mode has a 500ms debounce. Wait a moment, then check the server log for `dev
 ## What's Next?
 
 - **[Plugin SDK Reference](./PLUGIN_SDK.md)** — Full API surface, manifest schema, built-in events
-- **[Plugin Marketplace](./PLUGIN_MARKETPLACE.md)** — Discover, install, and publish plugins
+- **[Plugin Marketplace](../frameworks/PLUGIN_MARKETPLACE.md)** — Discover, install, and publish plugins
 - **[CLI Plugin Reference](../dev/plugins.md)** — Extend the `omniroute` CLI
 - **[Source code](../../src/lib/plugins/)** — Implementation reference (17 files in `src/lib/plugins/`)
