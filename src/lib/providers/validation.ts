@@ -4000,6 +4000,15 @@ export async function validateProviderApiKey({ provider, apiKey, providerSpecifi
     return { valid: false, error: "Provider and API key required", unsupported: false };
   }
 
+  // Web-cookie providers (session-based authentication)
+  if (WEB_COOKIE_PROVIDERS[provider]) {
+    try {
+      return await validateWebCookieProvider({ provider, apiKey, providerSpecificData });
+    } catch (error: any) {
+      return toValidationErrorResult(error);
+    }
+  }
+
   if (isOpenAICompatibleProvider(provider)) {
     try {
       return await validateOpenAICompatibleProvider({ apiKey, providerSpecificData });

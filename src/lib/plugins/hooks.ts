@@ -47,6 +47,7 @@ export const BUILTIN_EVENTS = [
   "onActivate",
   "onDeactivate",
   "onUninstall",
+  "onPluginMessage",
 ] as const;
 
 export type BuiltinEvent = (typeof BUILTIN_EVENTS)[number];
@@ -173,6 +174,10 @@ export async function emitHook(event: string, payload: unknown): Promise<void> {
  * Returns blocking result from the first handler that blocks, or merged body/metadata.
  * Used for onRequest and onResponse where plugins can modify or block the request.
  */
+export async function emitPluginMessage(event: string, data: unknown): Promise<void> {
+  await emitHook("onPluginMessage", { event, data });
+}
+
 export async function emitHookBlocking(
   event: string,
   payload: unknown
@@ -244,8 +249,6 @@ export interface PluginResult {
   metadata?: Record<string, unknown>;
 }
 
-// ── Plugin interface (for loader/manager compatibility) ──
-
 export interface Plugin {
   name: string;
   priority?: number;
@@ -253,11 +256,8 @@ export interface Plugin {
   onRequest?: (ctx: PluginContext) => Promise<PluginResult | void> | PluginResult | void;
   onResponse?: (ctx: PluginContext, response: unknown) => Promise<unknown | void> | unknown | void;
   onError?: (ctx: PluginContext, error: Error) => Promise<unknown | void> | unknown | void;
-  // ── Lifecycle hooks (fire-and-forget, non-blocking) ──
-  onInstall?: (payload: unknown) => Promise<void> | void;
-  onActivate?: (payload: unknown) => Promise<void> | void;
-  onDeactivate?: (payload: unknown) => Promise<void> | void;
-  onUninstall?: (payload: unknown) => Promise<void> | void;
+  onRender?: (payload: unknown) => Promise<Record<string, unknown>> | Record<string, unknown>;
+  onPluginMessage?: (payload: unknown) => Promise<void> | void;
 }
 
 /**

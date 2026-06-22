@@ -8,7 +8,15 @@ import { z } from "zod";
 
 // ── Permission enum ──
 
-export const PermissionSchema = z.enum(["network", "file-read", "file-write", "env", "exec"]);
+export const PermissionSchema = z.enum([
+  "network",
+  "file-read",
+  "file-write",
+  "env",
+  "exec",
+  "db",
+  "ipc",
+]);
 export type Permission = z.infer<typeof PermissionSchema>;
 
 // ── Skill definition in manifest ──
@@ -43,6 +51,8 @@ export const HooksSchema = z.object({
   onActivate: z.boolean().optional(),
   onDeactivate: z.boolean().optional(),
   onUninstall: z.boolean().optional(),
+  onPluginMessage: z.boolean().optional(),
+  onRender: z.boolean().optional(),
 });
 
 // ── Requires ──
@@ -71,6 +81,27 @@ export const PluginManifestSchema = z.object({
   hooks: HooksSchema.optional(),
   skills: z.array(ManifestSkillSchema).optional(),
   enabledByDefault: z.boolean().optional(),
+  adminPages: z
+    .array(
+      z.object({
+        slug: z.string().min(1),
+        title: z.string().min(1),
+        icon: z.string().optional(),
+        parent: z.string().optional(),
+        position: z.number().int().optional(),
+      })
+    )
+    .optional(),
+  dashboardWidgets: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1),
+        position: z.string().optional(),
+        width: z.string().optional(),
+      })
+    )
+    .optional(),
   configSchema: z.record(z.string(), ConfigFieldSchema).optional(),
   /**
    * OPT-IN tamper-detection: `sha256-<base64>` of the plugin's entry file.
@@ -105,10 +136,20 @@ export interface PluginManifestWithDefaults extends PluginManifest {
     onActivate: boolean;
     onDeactivate: boolean;
     onUninstall: boolean;
+    onPluginMessage: boolean;
+    onRender: boolean;
   };
   skills: ManifestSkill[];
   enabledByDefault: boolean;
   configSchema: Record<string, ConfigField>;
+  adminPages: Array<{
+    slug: string;
+    title: string;
+    icon?: string;
+    parent?: string;
+    position?: number;
+  }>;
+  dashboardWidgets: Array<{ id: string; title: string; position?: string; width?: string }>;
 }
 
 export function applyDefaults(manifest: PluginManifest): PluginManifestWithDefaults {
@@ -130,7 +171,11 @@ export function applyDefaults(manifest: PluginManifest): PluginManifestWithDefau
       onActivate: manifest.hooks?.onActivate ?? false,
       onDeactivate: manifest.hooks?.onDeactivate ?? false,
       onUninstall: manifest.hooks?.onUninstall ?? false,
+      onPluginMessage: manifest.hooks?.onPluginMessage ?? false,
+      onRender: manifest.hooks?.onRender ?? false,
     },
+    adminPages: manifest.adminPages ?? [],
+    dashboardWidgets: manifest.dashboardWidgets ?? [],
     skills: manifest.skills ?? [],
     enabledByDefault: manifest.enabledByDefault ?? false,
     configSchema: manifest.configSchema ?? {},
@@ -159,9 +204,7 @@ export function safeValidateManifest(
 
 // ── Config validation ──
 
-export type ValidatePluginConfigResult =
-  | { valid: true }
-  | { valid: false; errors: string[] };
+export type ValidatePluginConfigResult = { valid: true } | { valid: false; errors: string[] };
 
 /**
  * Validate a config object against a ConfigField schema map.

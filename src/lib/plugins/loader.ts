@@ -13,6 +13,7 @@ import { writeFile, rm, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID, createHash } from "crypto";
+import { getDbInstance } from "../db/core";
 import { logger } from "../../../open-sse/utils/logger.ts";
 import type { PluginManifestWithDefaults, Permission } from "./manifest";
 import type { Plugin, PluginContext, PluginResult } from "./index";
@@ -36,49 +37,162 @@ export interface LoadedPlugin {
   manifest: PluginManifestWithDefaults;
   plugin: Plugin;
   cleanup: () => void;
+  sendMessage?: (payload: unknown) => void;
 }
 
 // ── Plugin host script (runs in child process over IPC) ──
 // Uses process.send()/process.on("message") — NOT worker_threads.
 // Written as .mjs to force ESM execution regardless of package.json.
 
-const PLUGIN_HOST_SCRIPT = `
-import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
+export function buildHostScript(hasDb: boolean, permissions: string[]): string {
+  const hasNetwork = permissions.includes("network");
+  const hasFileRead = permissions.includes("file-read");
+  const hasFileWrite = permissions.includes("file-write");
+  const hasEnv = permissions.includes("env");
+  const hasIpc = permissions.includes("ipc");
 
-const pluginPath = process.argv[2];
-const plugin = await import(pluginPath);
-const exports = plugin.default || plugin;
+  const sandboxGlobals = [
+    'const vm = require("vm");',
+    'const fs = require("fs");',
+    'const path = require("path");',
+    "const pluginDir = path.dirname(process.argv[2]);",
+    'const pluginCode = fs.readFileSync(process.argv[2], "utf-8");',
+    "const ipcSend = process.send.bind(process);",
+    "const ipcOn = process.on.bind(process);",
+    "const ipcOff = process.off.bind(process);",
+    "const sandbox = {",
+    '  console: { log: (...a) => ipcSend({type:"log",level:"info",args:a}), warn: (...a) => ipcSend({type:"log",level:"warn",args:a}), error: (...a) => ipcSend({type:"log",level:"error",args:a}) },',
+    "  setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout,",
+    "  setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval,",
+    "  Promise: globalThis.Promise, JSON: globalThis.JSON, Math: globalThis.Math, Date: globalThis.Date,",
+    "  Array: globalThis.Array, Object: globalThis.Object, String: globalThis.String, Number: globalThis.Number,",
+    "  Boolean: globalThis.Boolean, RegExp: globalThis.RegExp, Error: globalThis.Error,",
+    "  TypeError: globalThis.TypeError, RangeError: globalThis.RangeError, SyntaxError: globalThis.SyntaxError, URIError: globalThis.URIError,",
+    "  Map: globalThis.Map, Set: globalThis.Set, WeakMap: globalThis.WeakMap, WeakSet: globalThis.WeakSet, Symbol: globalThis.Symbol,",
+    "  parseInt: globalThis.parseInt, parseFloat: globalThis.parseFloat, isNaN: globalThis.isNaN, isFinite: globalThis.isFinite,",
+    "  URL: globalThis.URL, URLSearchParams: globalThis.URLSearchParams, Buffer: globalThis.Buffer,",
+  ];
 
-// Send ready signal
-process.send({ type: "ready", hooks: Object.keys(exports).filter(k => typeof exports[k] === "function") });
-
-// Handle messages from parent
-process.on("message", async (msg) => {
-  if (msg.type === "call") {
-    try {
-      const handler = exports[msg.hook];
-      if (typeof handler !== "function") {
-        process.send({ type: "result", id: msg.id, error: "Hook not found" });
-        return;
-      }
-      const result = await handler(msg.payload);
-      process.send({ type: "result", id: msg.id, result });
-    } catch (err) {
-      process.send({ type: "result", id: msg.id, error: err.message });
-    }
+  if (hasIpc) {
+    sandboxGlobals.push(
+      "  __omniroute: {",
+      '    broadcast: (e,d) => ipcSend({type:"ipc",kind:"broadcast",event:e,data:d}),',
+      '    sendTo: (t,e,d) => ipcSend({type:"ipc",kind:"targeted",target:t,event:e,data:d}),'
+    );
+  } else {
+    sandboxGlobals.push("  __omniroute: {},");
   }
-});
-`;
+
+  if (hasDb) {
+    sandboxGlobals.push(
+      "    db: {",
+      "      get: (k) => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOff('message',h); if(m.error) rej(Error(m.error)); else res(m.value); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'get',key:k}); }),",
+      "      set: (k,v) => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOff('message',h); if(m.error) rej(Error(m.error)); else res(undefined); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'set',key:k,value:v}); }),",
+      "      delete: (k) => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOff('message',h); if(m.error) rej(Error(m.error)); else res(undefined); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'delete',key:k}); }),",
+      "      list: () => new Promise((res,rej) => { const id=String(Math.random()); const h=(m)=>{ if(m.type==='db_result'&&m.id===id){ ipcOff('message',h); if(m.error) rej(Error(m.error)); else res(m.value); } }; ipcOn('message',h); ipcSend({type:'db',id,op:'list'}); }),",
+      "    },"
+    );
+  }
+
+  if (hasNetwork) {
+    sandboxGlobals.push(
+      "  fetch: globalThis.fetch, AbortController: globalThis.AbortController,",
+      "  Headers: globalThis.Headers, Request: globalThis.Request, Response: globalThis.Response,"
+    );
+  }
+
+  if (hasFileRead || hasFileWrite) {
+    sandboxGlobals.push("  fs: {");
+    if (hasFileRead) {
+      sandboxGlobals.push(
+        "    readFile: (p,e) => fs.promises.readFile(path.resolve(pluginDir,p),e),"
+      );
+      sandboxGlobals.push("    readdir: (p) => fs.promises.readdir(path.resolve(pluginDir,p)),");
+      sandboxGlobals.push("    stat: (p) => fs.promises.stat(path.resolve(pluginDir,p)),");
+    }
+    if (hasFileWrite) {
+      sandboxGlobals.push(
+        "    writeFile: (p,d) => fs.promises.writeFile(path.resolve(pluginDir,p),d),"
+      );
+      sandboxGlobals.push(
+        "    mkdir: (p) => fs.promises.mkdir(path.resolve(pluginDir,p),{recursive:true}),"
+      );
+      sandboxGlobals.push(
+        "    rm: (p) => fs.promises.rm(path.resolve(pluginDir,p),{recursive:true,force:true}),"
+      );
+    }
+    sandboxGlobals.push("  },");
+  }
+
+  if (hasEnv) {
+    sandboxGlobals.push(
+      '  process: { env: new Proxy({}, { get: (t,k) => typeof k==="string"?process.env[k]:undefined, set: () => false, has: (t,k) => typeof k==="string"?k in process.env:false }) },'
+    );
+  }
+
+  sandboxGlobals.push(
+    "  },",
+    "};",
+    "",
+    "const transformedCode = pluginCode",
+    '  .replace(/^export\\s+function\\s+/gm, "function ")',
+    '  .replace(/^export\\s+(const|let|var)\\s+/gm, "$1 ")',
+    '  .replace(/^export\\s+default\\s+/gm, "");',
+    "",
+    "// vm is NOT a security boundary (Node.js docs) — same V8 heap, prototype-chain escapes are possible.",
+    "// contextCodeGeneration disables eval()/new Function() to block constructor-chain sandbox escapes.",
+    "// Use runInNewContext with a timeout so plugin code cannot hang the host, and so the",
+    "// sandbox does not persist a reusable context that leaks global state across invocations.",
+    "vm.runInNewContext(transformedCode, sandbox, { filename: process.argv[2], timeout: 5000, microtaskMode: 'afterEvaluate', contextCodeGeneration: { strings: false, wasm: false } });",
+    "const exports = sandbox;",
+    "",
+    'process.send({ type: "ready", hooks: Object.keys(exports).filter(k => typeof exports[k] === "function") });',
+    "",
+    'process.on("message", async (msg) => {',
+    '  if (msg.type === "call") {',
+    "    try {",
+    "      const handler = exports[msg.hook];",
+    '      if (typeof handler !== "function") { process.send({ type: "result", id: msg.id, error: "Hook not found" }); return; }',
+    "      const result = await handler(msg.payload);",
+    '      process.send({ type: "result", id: msg.id, result });',
+    '    } catch (err) { process.send({ type: "result", id: msg.id, error: err.message }); }',
+    '  } else if (msg.type === "notify") {',
+    "    try {",
+    '      const handler = exports["onPluginMessage"];',
+    '      if (typeof handler === "function") { await handler(msg.payload); }',
+    '    } catch (err) { process.send({ type: "log", level: "error", args: ["notify handler failed: " + err.message] }); }',
+    "  }",
+    "});"
+  );
+
+  return sandboxGlobals.join("\n");
+}
+
+export interface LoadPluginOptions {
+  entryPoint: string;
+  manifest: PluginManifestWithDefaults;
+  onIpcMessage?: (msg: {
+    source: string;
+    kind: "broadcast" | "targeted";
+    target?: string;
+    event: string;
+    data: unknown;
+  }) => void;
+}
 
 /**
  * Load a plugin in an isolated child process.
  * Returns the plugin interface with hooks that communicate via IPC.
  */
 export async function loadPlugin(
-  entryPoint: string,
-  manifest: PluginManifestWithDefaults
+  entryPointOrOpts: string | LoadPluginOptions,
+  manifestArg?: PluginManifestWithDefaults
 ): Promise<LoadedPlugin> {
+  const entryPoint =
+    typeof entryPointOrOpts === "string" ? entryPointOrOpts : entryPointOrOpts.entryPoint;
+  const manifest = typeof entryPointOrOpts === "string" ? manifestArg! : entryPointOrOpts.manifest;
+  const onIpcMessage =
+    typeof entryPointOrOpts === "string" ? undefined : entryPointOrOpts.onIpcMessage;
   // Integrity check: if the manifest declares an integrity field, verify the entry point.
   // Missing integrity is OK for backward compatibility; mismatched integrity is a fatal error.
   const integrityField = (manifest as unknown as Record<string, unknown>).integrity;
@@ -108,10 +222,10 @@ export async function loadPlugin(
   // retry once with a fresh UUID.
   let hostScriptPath: string;
   {
-    // .mjs extension forces ESM execution regardless of package.json type field
     const tryWrite = async (id: string): Promise<string> => {
+      const script = buildHostScript(permissions.includes("db"), permissions);
       const p = join(tmpdir(), `omniroute-plugin-host-${id}.mjs`);
-      await writeFile(p, PLUGIN_HOST_SCRIPT, { encoding: "utf-8", mode: 0o600, flag: "wx" });
+      await writeFile(p, script, { encoding: "utf-8", mode: 0o600, flag: "wx" });
       return p;
     };
     try {
@@ -148,25 +262,73 @@ export async function loadPlugin(
   > = new Map();
   let callCounter = 0;
 
-  child.on(
-    "message",
-    (msg: { type: string; id?: string; hooks?: string[]; result?: unknown; error?: string }) => {
-      if (msg.type === "ready") {
-        log.info("loader.process_ready", { name: manifest.name, hooks: msg.hooks });
-      } else if (msg.type === "result" && msg.id) {
-        const pending = pendingCalls.get(msg.id);
-        if (pending) {
-          clearTimeout(pending.timer);
-          pendingCalls.delete(msg.id);
-          if (msg.error) {
-            pending.reject(new Error(msg.error));
-          } else {
-            pending.resolve(msg.result);
-          }
+  child.on("message", (msg: any) => {
+    if (msg.type === "ready") {
+      log.info("loader.process_ready", { name: manifest.name, hooks: msg.hooks });
+    } else if (msg.type === "result" && msg.id) {
+      const pending = pendingCalls.get(msg.id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        pendingCalls.delete(msg.id);
+        if (msg.error) {
+          pending.reject(new Error(msg.error));
+        } else {
+          pending.resolve(msg.result);
         }
       }
+    } else if (msg.type === "ipc" && onIpcMessage) {
+      onIpcMessage({
+        source: manifest.name,
+        kind: msg.kind,
+        target: msg.target,
+        event: msg.event,
+        data: msg.data,
+      });
+    } else if (msg.type === "log") {
+      const level = msg.level || "info";
+      const args = msg.args || [];
+      log[level]("plugin." + manifest.name, ...args);
+    } else if (msg.type === "db") {
+      try {
+        const db = getDbInstance();
+        const namespace = `plugin:${manifest.name}`;
+        if (msg.op === "get") {
+          const row = db
+            .prepare("SELECT value FROM key_value WHERE namespace = ? AND key = ?")
+            .get(namespace, msg.key) as any;
+          const value = row
+            ? (() => {
+                try {
+                  return JSON.parse(row.value);
+                } catch {
+                  return row.value;
+                }
+              })()
+            : undefined;
+          child.send({ type: "db_result", id: msg.id, value });
+        } else if (msg.op === "set") {
+          const str = JSON.stringify(msg.value);
+          db.prepare(
+            "INSERT INTO key_value (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value"
+          ).run(namespace, msg.key, str);
+          child.send({ type: "db_result", id: msg.id });
+        } else if (msg.op === "delete") {
+          db.prepare("DELETE FROM key_value WHERE namespace = ? AND key = ?").run(
+            namespace,
+            msg.key
+          );
+          child.send({ type: "db_result", id: msg.id });
+        } else if (msg.op === "list") {
+          const rows = db
+            .prepare("SELECT key FROM key_value WHERE namespace = ?")
+            .all(namespace) as any[];
+          child.send({ type: "db_result", id: msg.id, value: rows.map((r: any) => r.key) });
+        }
+      } catch (err: any) {
+        child.send({ type: "db_result", id: msg.id, error: err.message });
+      }
     }
-  );
+  });
 
   child.on("error", (err) => {
     log.error("loader.process_error", { name: manifest.name, error: err.message });
@@ -286,15 +448,31 @@ export async function loadPlugin(
     }
   }
 
-  log.info("loader.loaded", {
-    name: manifest.name,
-    hooks: registeredHooks,
-    pid: child.pid,
-  });
+  // Forward broadcast messages to the child process via the "notify" channel.
+  // Declared before the onPluginMessage closure so the handler can reference it.
+  const sendMessage = (payload: unknown) => {
+    child.send({ type: "notify", payload });
+  };
+
+  if (manifest.hooks.onRender) {
+    plugin.onRender = async (payload) => {
+      const result = await callHook("onRender", payload);
+      return (result ?? {}) as Record<string, unknown>;
+    };
+    registeredHooks.push("onRender");
+  }
+
+  if (manifest.hooks.onPluginMessage) {
+    plugin.onPluginMessage = async (payload: unknown): Promise<void> => {
+      // Forward broadcast messages to the child process via the "notify" channel.
+      // The child host script dispatches notify messages to the plugin's onPluginMessage handler.
+      sendMessage(payload);
+    };
+    registeredHooks.push("onPluginMessage");
+  }
 
   const cleanup = () => {
     child.kill("SIGTERM");
-    // Escalate to SIGKILL after grace period
     const killTimer = setTimeout(() => {
       try {
         child.kill("SIGKILL");
@@ -305,13 +483,8 @@ export async function loadPlugin(
     log.info("loader.cleanup", { name: manifest.name });
   };
 
-  return { name: manifest.name, manifest, plugin, cleanup };
+  return { name: manifest.name, manifest, plugin, cleanup, sendMessage };
 }
-
-/**
- * Filter environment variables based on permissions.
- * Uses allowlist approach — only pass explicitly safe vars.
- */
 function getFilteredEnv(permissions: Permission[]): Record<string, string> {
   const safeKeys = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "NODE_ENV"];
   const extendedSafeKeys = [...safeKeys, "PORT", "HOSTNAME", "TZ", "TMPDIR"];
