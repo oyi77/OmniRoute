@@ -2976,6 +2976,8 @@ export function providerAllowsOptionalApiKey(providerId: unknown): boolean {
     providerId === "duckduckgo-web" ||
     providerId === "veoaifree-web" ||
     providerId === "hackclub" ||
+    providerId === "theoldllm" ||
+    providerId === "chipotle" ||
     providerId === "huggingchat" ||
     providerId === "gitlawb" ||
     providerId === "gitlawb-gmi" ||
