@@ -19,9 +19,11 @@ export const llm7Provider: RegistryEntry = {
     requestJitter: 50,
   },
   models: [
-    { id: "gpt-4o-mini-2024-07-18", name: "GPT-4o mini (LLM7)" },
-    { id: "gpt-4.1-nano-2025-04-14", name: "GPT-4.1 nano (LLM7)" },
-    { id: "deepseek-r1-0528", name: "DeepSeek R1 (LLM7)" },
-    { id: "qwen2.5-coder-32b-instruct", name: "Qwen2.5 Coder 32B (LLM7)" },
+    { id: "codestral-latest", name: "Codestral (LLM7)", contextLength: 32000, toolCalling: true },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash (LLM7)", contextLength: 1000000, toolCalling: true, supportsReasoning: true },
+    { id: "devstral-small-2:24b", name: "Devstral Small 24B (LLM7)", contextLength: 384000, toolCalling: true },
+    { id: "kimi-k2.6", name: "Kimi K2.6 (LLM7)", contextLength: 240000, toolCalling: true, supportsReasoning: true },
+    { id: "minimax-m2.7", name: "MiniMax M2.7 (LLM7)", contextLength: 180000, toolCalling: true },
+    { id: "qwen3-235b", name: "Qwen3 235B (LLM7)", contextLength: 240000, toolCalling: true },
   ],
 };
