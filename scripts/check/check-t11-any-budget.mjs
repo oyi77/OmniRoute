@@ -40,7 +40,7 @@ const budget = [
   { file: "open-sse/services/wildcardRouter.ts", maxAny: 0 },
   { file: "open-sse/services/rateLimitSemaphore.ts", maxAny: 0 },
   { file: "open-sse/services/roleNormalizer.ts", maxAny: 0 },
-  { file: "open-sse/services/usage.ts", maxAny: 0 },
+  { file: "open-sse/services/usage/index.ts", maxAny: 0 },
   { file: "open-sse/services/rateLimitManager.ts", maxAny: 0 },
   { file: "open-sse/services/tokenRefresh.ts", maxAny: 0 },
   { file: "open-sse/services/backgroundTaskDetector.ts", maxAny: 0 },
