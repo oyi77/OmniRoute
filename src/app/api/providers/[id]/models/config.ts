@@ -170,6 +170,22 @@ export const PROVIDER_MODELS_CONFIG: Record<string, ProviderModelsConfigEntry> =
     authPrefix: "Bearer ",
     parseResponse: (data) => data.data || [],
   },
+  // #3931: qwen-web (cookie provider) was missing here, so its discovery page
+  // showed nothing. chat.qwen.ai/api/v2/models is public (no auth needed).
+  "qwen-web": {
+    url: "https://chat.qwen.ai/api/v2/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    parseResponse: (data: any) => {
+      const innerData = data?.data?.data || data?.data || [];
+      return (Array.isArray(innerData) ? innerData : [])
+        .map((item: any) => ({
+          id: item.id || item.name,
+          name: item.name || item.id,
+          owned_by: item.owned_by || "qwen",
+        }));
+    },
+  },
   antigravity: {
     url: getAntigravityModelsDiscoveryUrls()[0],
     method: "POST",

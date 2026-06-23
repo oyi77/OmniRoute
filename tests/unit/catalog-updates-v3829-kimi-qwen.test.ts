@@ -43,7 +43,7 @@ test("kmca still exposes kimi-k2.6 and kimi-k2.6-thinking alongside the new mode
 
 // ── Bug #3 / issue #3931: qwen-web in PROVIDER_MODELS_CONFIG ──────────────────
 
-const ROUTE_FILE = path.join("src", "app", "api", "providers", "[id]", "models", "route.ts");
+const ROUTE_FILE = path.join("src", "app", "api", "providers", "[id]", "models", "config.ts");
 
 test("PROVIDER_MODELS_CONFIG contains a qwen-web entry (issue #3931 bug #3)", () => {
   const src = fs.readFileSync(ROUTE_FILE, "utf-8");
