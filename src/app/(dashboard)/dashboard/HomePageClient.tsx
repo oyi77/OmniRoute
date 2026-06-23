@@ -13,6 +13,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { copyToClipboard } from "@/shared/utils/clipboard";
 import { getProviderDisplayLabel } from "@/shared/utils/providerDisplayLabel";
 import { useIsElectron, useOpenExternal } from "@/shared/hooks/useElectron";
+import { useLiveRequests } from "@/hooks/useLiveDashboard";
 import { HomeProviderTopologySection } from "./HomeProviderTopologySection";
 
 const ProviderQuotaWidget = dynamic(() => import("../home/ProviderQuotaWidget"), { ssr: false });
