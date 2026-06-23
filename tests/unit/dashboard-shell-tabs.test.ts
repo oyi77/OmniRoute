@@ -36,9 +36,12 @@ test("analytics page exposes the restored analytics tab shell", () => {
 test("endpoint page keeps APIs, MCP, and A2A as in-page tabs", () => {
   const source = readSource("src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.tsx");
 
-  assert.ok(source.includes('type EndpointTab = "apis" | "mcp" | "a2a"'));
+  // EndpointTab type extracted to helpers.ts (#3594); check there too
+  const helpers = readSource("src/app/(dashboard)/dashboard/endpoint/helpers.ts");
+  assert.ok(helpers.includes('type EndpointTab = "apis" | "mcp" | "a2a"') || source.includes('type EndpointTab = "apis" | "mcp" | "a2a"'));
+  assert.ok(source.includes('EndpointTab') || helpers.includes('EndpointTab'));
   for (const label of ["APIs", "MCP", "A2A"]) {
-    assert.ok(source.includes('label: "' + label + '"'));
+    assert.ok(source.includes('label: "' + label + '"') || helpers.includes('label: "' + label + '"'));
   }
   assert.ok(source.includes('useState<EndpointTab>("apis")'));
   assert.ok(source.includes('activeEndpointTab === "mcp" ? <McpDashboardPage /> : null'));
