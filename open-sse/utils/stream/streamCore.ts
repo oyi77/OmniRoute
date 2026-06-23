@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import { FORMATS, initState } from "../../translator/formats";
+import { FORMATS } from "../../translator/formats";
+import { initState } from "../../translator/index.ts";
 
 import { parseTextualToolCallFromContent, containsTextualToolCallCandidate, containsMalformedTextualToolCall, extractAllowedToolNames, collectPassthroughTextualToolCall } from "./textualToolCalls.ts";
 import { getOpenAIIntermediateChunks } from "./openaiChunks.ts";
