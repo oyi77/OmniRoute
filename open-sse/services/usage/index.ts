@@ -2,47 +2,75 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
-import { PROVIDERS } from "../config/constants.ts";
+import { PROVIDERS } from "../../config/constants.ts";
 import {
   getAntigravityFetchAvailableModelsUrls,
   ANTIGRAVITY_BASE_URLS,
-} from "../config/antigravityUpstream.ts";
+} from "../../config/antigravityUpstream.ts";
 import {
   isUserCallableAntigravityModelId,
   toClientAntigravityQuotaModelId,
-} from "../config/antigravityModelAliases.ts";
-import { isUserCallableAgyModelId } from "../config/agyModels.ts";
-import { buildCodexUsageQuotas } from "./codexUsageQuotas.ts";
-import { getGlmQuotaUrl } from "../config/glmProvider.ts";
-import { getGitHubCopilotInternalUserHeaders } from "../config/providerHeaderProfiles.ts";
+} from "../../config/antigravityModelAliases.ts";
+import { isUserCallableAgyModelId } from "../../config/agyModels.ts";
+import { buildCodexUsageQuotas } from "../codexUsageQuotas.ts";
+import { getGlmQuotaUrl } from "../../config/glmProvider.ts";
+import { getGitHubCopilotInternalUserHeaders } from "../../config/providerHeaderProfiles.ts";
 import { safePercentage } from "@/shared/utils/formatting";
 import { getDbInstance } from "@/lib/db/core";
-import { fetchBailianQuota, type BailianTripleWindowQuota } from "./bailianQuotaFetcher.ts";
-import { fetchDeepseekQuota, type DeepseekQuota } from "./deepseekQuotaFetcher.ts";
-import { fetchOpencodeQuota, type OpencodeTripleWindowQuota } from "./opencodeQuotaFetcher.ts";
-import { getOllamaCloudUsage, getOpenCodeGoUsage } from "./opencodeOllamaUsage.ts";
+export { getDbInstance } from "@/lib/db/core";
+import {
+  JsonRecord,
+  UsageQuota,
+  UsageProviderConnection,
+  SubscriptionCacheEntry,
+  AntigravityUsageOptions,
+  toRecord,
+  toNumber,
+  getFieldValue,
+  clampPercentage,
+  parseResetTime,
+  pickFirstNonEmptyString,
+} from "./shared.ts";
+export {
+  JsonRecord,
+  UsageQuota,
+  UsageProviderConnection,
+  SubscriptionCacheEntry,
+  AntigravityUsageOptions,
+  toRecord,
+  toNumber,
+  getFieldValue,
+  clampPercentage,
+  parseResetTime,
+  pickFirstNonEmptyString,
+} from "./shared.ts";
+import { fetchBailianQuota, type BailianTripleWindowQuota } from "../bailianQuotaFetcher.ts";
+import { fetchDeepseekQuota, type DeepseekQuota } from "../deepseekQuotaFetcher.ts";
+import { fetchOpencodeQuota, type OpencodeTripleWindowQuota } from "../opencodeQuotaFetcher.ts";
+import { getOllamaCloudUsage, getOpenCodeGoUsage } from "../opencodeOllamaUsage.ts";
 import {
   applyAntigravityClientProfileHeaders,
   getAntigravityBootstrapHeaders,
   getAntigravityClientProfile,
-} from "./antigravityClientProfile.ts";
+} from "../antigravityClientProfile.ts";
+import { getClaudePlanLabel } from "./minimax.ts";
 import {
   antigravityUserAgent,
   getAntigravityHeaders,
   getAntigravityLoadCodeAssistMetadata,
-} from "./antigravityHeaders.ts";
+} from "../antigravityHeaders.ts";
 import {
   getAntigravityRemainingCredits,
   updateAntigravityRemainingCredits,
-} from "../executors/antigravity.ts";
-import { getCreditsMode } from "./antigravityCredits.ts";
-import { CLAUDE_CODE_VERSION, fetchClaudeBootstrap } from "../executors/claudeIdentity.ts";
-import { generateAntigravityRequestId, getAntigravitySessionId } from "./antigravityIdentity.ts";
+} from "../../executors/antigravity.ts";
+import { getCreditsMode } from "../antigravityCredits.ts";
+import { CLAUDE_CODE_VERSION, fetchClaudeBootstrap } from "../../executors/claudeIdentity.ts";
+import { generateAntigravityRequestId, getAntigravitySessionId } from "../antigravityIdentity.ts";
 import {
   extractCodeAssistOnboardTierId,
   extractCodeAssistSubscriptionTier,
-} from "./codeAssistSubscription.ts";
-import { sanitizeErrorMessage } from "../utils/error.ts";
+} from "../codeAssistSubscription.ts";
+import { sanitizeErrorMessage } from "../../utils/error.ts";
 
 // Quota / usage upstream URLs (overridable for testing or relays).
 const CROF_USAGE_URL = process.env.OMNIROUTE_CROF_USAGE_URL ?? "https://crof.ai/usage_api/";
@@ -53,7 +81,7 @@ const CODEWHISPERER_BASE_URL =
   process.env.OMNIROUTE_CODEWHISPERER_BASE_URL ?? "https://codewhisperer.us-east-1.amazonaws.com";
 
 // Antigravity API config (credentials from PROVIDERS via credential loader)
-const ANTIGRAVITY_CONFIG = {
+export const ANTIGRAVITY_CONFIG = {
   quotaApiUrls: getAntigravityFetchAvailableModelsUrls(),
   loadProjectApiUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist",
   tokenUrl: "https://oauth2.googleapis.com/token",
@@ -104,73 +132,6 @@ const CURSOR_USAGE_CONFIG = {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
 };
 
-const MINIMAX_USAGE_CONFIG = {
-  minimax: {
-    usageUrls: [
-      "https://www.minimax.io/v1/token_plan/remains",
-      "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
-    ],
-  },
-  "minimax-cn": {
-    usageUrls: [
-      "https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains",
-      "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
-    ],
-  },
-} as const;
-
-type JsonRecord = Record<string, unknown>;
-type UsageQuota = {
-  used: number;
-  total: number;
-  remaining?: number;
-  remainingPercentage?: number;
-  resetAt: string | null;
-  unlimited: boolean;
-  /**
-   * True when the upstream provider reported the remaining fraction. False
-   * means the API didn't include the field and the 0 value here is a sentinel,
-   * NOT a confirmed-exhausted state. Antigravity-specific.
-   */
-  fractionReported?: boolean;
-  quotaSource?: "retrieveUserQuota" | "fetchAvailableModels" | "localUsageHistory";
-  displayName?: string;
-  details?: Array<{
-    name: string;
-    used: number;
-  }>;
-  currency?: string;
-  grantedBalance?: number;
-  toppedUpBalance?: number;
-};
-type UsageProviderConnection = JsonRecord & {
-  id?: string;
-  provider?: string;
-  accessToken?: string;
-  apiKey?: string;
-  providerSpecificData?: JsonRecord;
-  projectId?: string;
-  email?: string;
-};
-type SubscriptionCacheEntry = {
-  data: unknown;
-  fetchedAt: number;
-};
-
-export function toRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
-}
-
-export function toNumber(value: unknown, fallback = 0): number {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && value.trim().length > 0
-        ? Number(value)
-        : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function toPercentage(value: unknown): number {
   return Math.max(0, Math.min(100, toNumber(value, 0)));
 }
@@ -202,14 +163,7 @@ function getGlmQuotaDisplayName(quotaName: string): string {
   if (quotaName === "weekly") return "Weekly Quota";
   return quotaName;
 }
-function getFieldValue(source: unknown, snakeKey: string, camelKey: string): unknown {
-  const obj = toRecord(source);
-  return obj[snakeKey] ?? obj[camelKey] ?? null;
-}
 
-function clampPercentage(value: number): number {
-  return Math.max(0, Math.min(100, value));
-}
 
 function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100;
@@ -271,22 +225,43 @@ function buildKiroQuota(
   };
 }
 
-export function pickFirstNonEmptyString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    const trimmed = value.trim();
-    if (trimmed) return trimmed;
-  }
-  return undefined;
-}
-
 // MiniMax usage functions extracted to minimax.ts
-export { getMiniMaxPlanLabel, getMiniMaxQuotaResetAt, isMiniMaxTextQuotaModel, getMiniMaxSessionTotal, getMiniMaxWeeklyTotal, pickMiniMaxRepresentativeModel, createMiniMaxQuotaFromCount, getMiniMaxRemainingPercent, createMiniMaxQuotaFromPercent, buildMiniMaxWindow, getMiniMaxAuthErrorMessage, getMiniMaxErrorSummary, getMiniMaxUsage, inferMiniMaxPlanLabelFromTotals } from "./minimax.ts";
-async function getCrofUsage(apiKey: string) {
-  if (!apiKey) {
-    return { message: "CrofAI API key not available. Add a key to view usage." };
-  }
+import {
+  getMiniMaxPlanLabel,
+  getMiniMaxQuotaResetAt,
+  isMiniMaxTextQuotaModel,
+  getMiniMaxSessionTotal,
+  getMiniMaxWeeklyTotal,
+  pickMiniMaxRepresentativeModel,
+  createMiniMaxQuotaFromCount,
+  getMiniMaxRemainingPercent,
+  createMiniMaxQuotaFromPercent,
+  buildMiniMaxWindow,
+  getMiniMaxAuthErrorMessage,
+  getMiniMaxErrorSummary,
+  getMiniMaxUsage,
+  inferMiniMaxPlanLabelFromTotals,
+  createQuotaFromUsage,
+} from "./minimax.ts";
+export {
+  getMiniMaxPlanLabel,
+  getMiniMaxQuotaResetAt,
+  isMiniMaxTextQuotaModel,
+  getMiniMaxSessionTotal,
+  getMiniMaxWeeklyTotal,
+  pickMiniMaxRepresentativeModel,
+  createMiniMaxQuotaFromCount,
+  getMiniMaxRemainingPercent,
+  createMiniMaxQuotaFromPercent,
+  buildMiniMaxWindow,
+  getMiniMaxAuthErrorMessage,
+  getMiniMaxErrorSummary,
+  getMiniMaxUsage,
+  inferMiniMaxPlanLabelFromTotals,
+  createQuotaFromUsage,
+};
 
+async function getCrofUsage(apiKey: string) {
   let response: Response;
   try {
     response = await fetch(CROF_USAGE_URL, {
@@ -1062,41 +1037,6 @@ export async function getUsageForProvider(
 }
 
 /**
- * Parse reset date/time to ISO string
- * Handles multiple formats: Unix timestamp (ms), ISO date string, etc.
- */
-function parseResetTime(resetValue: unknown): string | null {
-  if (!resetValue) return null;
-
-  try {
-    let date: Date;
-    if (resetValue instanceof Date) {
-      date = resetValue;
-    } else if (typeof resetValue === "number") {
-      date = new Date(resetValue < 1e12 ? resetValue * 1000 : resetValue);
-    } else if (typeof resetValue === "string") {
-      // Numeric strings are Unix timestamps too (seconds or milliseconds).
-      // `new Date("1700000000")` otherwise returns Invalid Date.
-      if (/^\d+$/.test(resetValue)) {
-        const ts = Number(resetValue);
-        date = new Date(ts < 1e12 ? ts * 1000 : ts);
-      } else {
-        date = new Date(resetValue);
-      }
-    } else {
-      return null;
-    }
-
-    // Epoch-zero (1970-01-01) means no scheduled reset — treat as null
-    if (date.getTime() <= 0) return null;
-
-    return date.toISOString();
-  } catch (error) {
-    return null;
-  }
-}
-
-/**
  * GitHub Copilot Usage
  * Uses GitHub accessToken (not copilotToken) to call copilot_internal/user API
  */
@@ -1468,16 +1408,16 @@ function getGeminiCliPlanLabel(subscriptionInfo: unknown): string {
 // ── Antigravity subscription info cache ──────────────────────────────────────
 // Prevents duplicate loadCodeAssist calls within the same quota cycle.
 // Key: truncated accessToken → { data, fetchedAt }
-const _antigravitySubCache = new Map<string, SubscriptionCacheEntry>();
-const ANTIGRAVITY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const ANTIGRAVITY_MODELS_CACHE_TTL_MS = 60 * 1000;
-const ANTIGRAVITY_CREDIT_PROBE_TTL_MS = 5 * 60 * 1000;
-const _antigravityAvailableModelsCache = new Map<string, { data: unknown; fetchedAt: number }>();
-const _antigravityAvailableModelsInflight = new Map<string, Promise<unknown>>();
-const _antigravityUserQuotaCache = new Map<string, { data: unknown; fetchedAt: number }>();
-const _antigravityUserQuotaInflight = new Map<string, Promise<unknown>>();
-const _antigravityCreditProbeCache = new Map<string, { data: number | null; fetchedAt: number }>();
-const _antigravityCreditProbeInflight = new Map<string, Promise<number | null>>();
+export const _antigravitySubCache = new Map<string, SubscriptionCacheEntry>();
+export const ANTIGRAVITY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+export const ANTIGRAVITY_MODELS_CACHE_TTL_MS = 60 * 1000;
+export const ANTIGRAVITY_CREDIT_PROBE_TTL_MS = 5 * 60 * 1000;
+export const _antigravityAvailableModelsCache = new Map<string, { data: unknown; fetchedAt: number }>();
+export const _antigravityAvailableModelsInflight = new Map<string, Promise<unknown>>();
+export const _antigravityUserQuotaCache = new Map<string, { data: unknown; fetchedAt: number }>();
+export const _antigravityUserQuotaInflight = new Map<string, Promise<unknown>>();
+export const _antigravityCreditProbeCache = new Map<string, { data: number | null; fetchedAt: number }>();
+export const _antigravityCreditProbeInflight = new Map<string, Promise<number | null>>();
 
 // ── Proactive TTL purging for module-level caches ──────────────────────────
 // All 4 data caches only evict on read (passive TTL). This interval proactively
@@ -1510,19 +1450,46 @@ const _usageCacheCleanupTimer = setInterval(
 ); // every 5 minutes
 _usageCacheCleanupTimer.unref?.(); // Don't prevent process exit
 
-interface AntigravityUsageOptions {
-  forceRefresh?: boolean;
-}
-
-const ANTIGRAVITY_LOCAL_USAGE_WINDOW_MS = 5 * 60 * 60 * 1000;
-const ANTIGRAVITY_LOCAL_USAGE_TOKENS_PER_UNIT = 1000;
+export const ANTIGRAVITY_LOCAL_USAGE_WINDOW_MS = 5 * 60 * 60 * 1000;
+export const ANTIGRAVITY_LOCAL_USAGE_TOKENS_PER_UNIT = 1000;
 
 // `toClientAntigravityQuotaModelId` was an inline if-ladder here; it is now the single
 // source of truth in open-sse/config/antigravityModelAliases.ts (imported above), shared
 // with the provider-limits cache sanitizer. (#3821-review LEDGER-5)
 
 // Antigravity usage functions extracted to antigravity.ts
-export { getAntigravityUsage, getAntigravitySubscriptionInfoCached, getAntigravitySubscriptionInfo, getAntigravityPlanLabel, probeAntigravityCreditBalance, buildAntigravityUsageCacheKey, getAntigravityLocalUsageUnits, applyLocalUsageFallback, fetchAntigravityAvailableModelsCached, fetchAntigravityUserQuotaCached, extractCodeAssistTierId, mapCodeAssistTierIdToLabel, mapSubscriptionTierStringToPlanLabel, mapCodeAssistSubscriptionToPlanLabel } from "./antigravity.ts";
+import {
+  getAntigravityUsage,
+  getAntigravitySubscriptionInfoCached,
+  getAntigravitySubscriptionInfo,
+  getAntigravityPlanLabel,
+  probeAntigravityCreditBalance,
+  buildAntigravityUsageCacheKey,
+  getAntigravityLocalUsageUnits,
+  applyLocalUsageFallback,
+  fetchAntigravityAvailableModelsCached,
+  fetchAntigravityUserQuotaCached,
+  extractCodeAssistTierId,
+  mapCodeAssistTierIdToLabel,
+  mapSubscriptionTierStringToPlanLabel,
+  mapCodeAssistSubscriptionToPlanLabel,
+} from "./antigravity.ts";
+export {
+  getAntigravityUsage,
+  getAntigravitySubscriptionInfoCached,
+  getAntigravitySubscriptionInfo,
+  getAntigravityPlanLabel,
+  probeAntigravityCreditBalance,
+  buildAntigravityUsageCacheKey,
+  getAntigravityLocalUsageUnits,
+  applyLocalUsageFallback,
+  fetchAntigravityAvailableModelsCached,
+  fetchAntigravityUserQuotaCached,
+  extractCodeAssistTierId,
+  mapCodeAssistTierIdToLabel,
+  mapSubscriptionTierStringToPlanLabel,
+  mapCodeAssistSubscriptionToPlanLabel,
+};
 async function getClaudeUsage(accessToken?: string) {
   if (!accessToken) {
     return { message: "Claude connected. Access token not available.", bootstrap: null };

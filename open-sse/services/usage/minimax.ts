@@ -1,5 +1,46 @@
-import type { UsageQuota, JsonRecord } from "./index.ts";
-import { toRecord, toNumber, createQuotaFromUsage, pickFirstNonEmptyString } from "./index.ts";
+import type { UsageQuota, JsonRecord } from "./shared.ts";
+import {
+  toRecord,
+  toNumber,
+  pickFirstNonEmptyString,
+  getFieldValue,
+  clampPercentage,
+  parseResetTime,
+} from "./shared.ts";
+
+const MINIMAX_USAGE_CONFIG = {
+  minimax: {
+    usageUrls: [
+      "https://www.minimax.io/v1/token_plan/remains",
+      "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+    ],
+  },
+  "minimax-cn": {
+    usageUrls: [
+      "https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+      "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
+    ],
+  },
+} as const;
+
+export function createQuotaFromUsage(
+  usedValue: unknown,
+  totalValue: unknown,
+  resetValue: unknown
+): UsageQuota {
+  const total = Math.max(0, toNumber(totalValue, 0));
+  const used = total > 0 ? Math.min(Math.max(0, toNumber(usedValue, 0)), total) : 0;
+  const remaining = total > 0 ? Math.max(total - used, 0) : 0;
+
+  return {
+    used,
+    total,
+    remaining,
+    remainingPercentage: total > 0 ? clampPercentage((remaining / total) * 100) : 0,
+    resetAt: parseResetTime(resetValue),
+    unlimited: false,
+  };
+}
 
 export function inferMiniMaxPlanLabelFromTotals(models: JsonRecord[]): string | null {
   const maxSessionTotal = models.reduce(
@@ -47,25 +88,6 @@ export function getClaudePlanLabel(...candidates: Array<string | null | undefine
     return trimmed;
   }
   return null;
-}
-
-export function createQuotaFromUsage(
-  usedValue: unknown,
-  totalValue: unknown,
-  resetValue: unknown
-): UsageQuota {
-  const total = Math.max(0, toNumber(totalValue, 0));
-  const used = total > 0 ? Math.min(Math.max(0, toNumber(usedValue, 0)), total) : 0;
-  const remaining = total > 0 ? Math.max(total - used, 0) : 0;
-
-  return {
-    used,
-    total,
-    remaining,
-    remainingPercentage: total > 0 ? clampPercentage((remaining / total) * 100) : 0,
-    resetAt: parseResetTime(resetValue),
-    unlimited: false,
-  };
 }
 
 export function getMiniMaxQuotaResetAt(

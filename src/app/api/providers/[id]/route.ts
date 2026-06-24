@@ -127,6 +127,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       lastErrorType,
       lastErrorSource,
       errorCode,
+      authType,
       rateLimitedUntil,
       lastTested,
       healthCheckInterval,
@@ -151,6 +152,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (typeof authType === "string" && authType) updateData.authType = authType;
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;

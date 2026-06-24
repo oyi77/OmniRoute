@@ -1,5 +1,52 @@
-import type { UsageQuota, JsonRecord } from "./index.ts";
-import { toRecord, toNumber } from "./index.ts";
+import type { UsageQuota, JsonRecord, AntigravityUsageOptions, SubscriptionCacheEntry } from "./shared.ts";
+import {
+  toRecord,
+  toNumber,
+  getDbInstance,
+  getFieldValue,
+  parseResetTime,
+  clampPercentage,
+} from "./shared.ts";
+import {
+  ANTIGRAVITY_LOCAL_USAGE_WINDOW_MS,
+  ANTIGRAVITY_LOCAL_USAGE_TOKENS_PER_UNIT,
+  ANTIGRAVITY_CONFIG,
+  _antigravitySubCache,
+  ANTIGRAVITY_CACHE_TTL_MS,
+  ANTIGRAVITY_MODELS_CACHE_TTL_MS,
+  ANTIGRAVITY_CREDIT_PROBE_TTL_MS,
+  _antigravityAvailableModelsCache,
+  _antigravityAvailableModelsInflight,
+  _antigravityUserQuotaCache,
+  _antigravityUserQuotaInflight,
+  _antigravityCreditProbeCache,
+  _antigravityCreditProbeInflight,
+} from "./index.ts";
+import { ANTIGRAVITY_BASE_URLS } from "../../config/antigravityUpstream.ts";
+import {
+  isUserCallableAntigravityModelId,
+  toClientAntigravityQuotaModelId,
+} from "../../config/antigravityModelAliases.ts";
+import { isUserCallableAgyModelId } from "../../config/agyModels.ts";
+import {
+  applyAntigravityClientProfileHeaders,
+  getAntigravityBootstrapHeaders,
+  getAntigravityClientProfile,
+} from "../antigravityClientProfile.ts";
+import {
+  getAntigravityHeaders,
+  getAntigravityLoadCodeAssistMetadata,
+} from "../antigravityHeaders.ts";
+import {
+  getAntigravityRemainingCredits,
+  updateAntigravityRemainingCredits,
+} from "../../executors/antigravity.ts";
+import { getCreditsMode } from "../antigravityCredits.ts";
+import { generateAntigravityRequestId, getAntigravitySessionId } from "../antigravityIdentity.ts";
+import {
+  extractCodeAssistOnboardTierId,
+  extractCodeAssistSubscriptionTier,
+} from "../codeAssistSubscription.ts";
 
 export function getAntigravityLocalUsageUnits(
   provider: "antigravity" | "agy",
