@@ -76,6 +76,28 @@ export async function getProviderConnections(filter: JsonRecord = {}) {
   });
 }
 
+/**
+ * Lightweight variant used by the health endpoint.  Returns only the fields
+ * needed for status reporting (provider, isActive, rateLimitedUntil) without
+ * decrypting token fields — decryption of 2000+ rows is O(n) CPU work that
+ * blocks the event loop and makes the health endpoint slow.
+ */
+export async function getProviderConnectionsHealth(): Promise<
+  Array<{ provider: string; isActive: boolean; rateLimitedUntil: string | null }>
+> {
+  const db = getDbInstance() as unknown as DbLike;
+  const rows = db
+    .prepare(
+      "SELECT provider, is_active, rate_limited_until FROM provider_connections ORDER BY priority ASC"
+    )
+    .all() as Array<{ provider: string; is_active: number; rate_limited_until: string | null }>;
+  return rows.map((r) => ({
+    provider: r.provider,
+    isActive: r.is_active === 1,
+    rateLimitedUntil: r.rate_limited_until ?? null,
+  }));
+}
+
 export async function getProviderConnectionById(id: string) {
   const db = getDbInstance() as unknown as DbLike;
   const row = db.prepare("SELECT * FROM provider_connections WHERE id = ?").get(id);

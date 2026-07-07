@@ -9,6 +9,7 @@
 export {
   // Provider Connections
   getProviderConnections,
+  getProviderConnectionsHealth,
   getProviderConnectionById,
   createProviderConnection,
   updateProviderConnection,

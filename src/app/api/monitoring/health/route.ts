@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, getSettings } from "@/lib/localDb";
+import { getProviderConnectionsHealth, getSettings } from "@/lib/localDb";
 import { buildHealthPayload } from "@/lib/monitoring/observability";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
@@ -55,7 +55,7 @@ export async function GET() {
       import("@/lib/credentialHealth/cache"),
       import("@/lib/localHealthCheck"),
       getSettings(),
-      getProviderConnections(),
+      getProviderConnectionsHealth(),
     ]);
 
     const circuitBreakers =

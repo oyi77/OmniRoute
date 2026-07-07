@@ -26,13 +26,56 @@ import {
 } from "@omniroute/open-sse/services/tokenRefresh.ts";
 import { pickMaskedDisplayValue } from "@/shared/utils/maskEmail";
 
-// ── Constants ────────────────────────────────────────────────────────────────
+interface ProviderConnection {
+  id: string;
+  provider: string;
+  name?: string | null;
+  email?: string | null;
+  isActive?: boolean | null;
+  healthCheckInterval?: number | null;
+  lastHealthCheckAt?: string | null;
+  tokenExpiresAt?: string | null;
+  expiresAt?: string | null;
+  testStatus?: string | null;
+  expiredRetryCount?: number | null;
+  expiredRetryAt?: string | null;
+  refreshToken?: string | null;
+  accessToken?: string | null;
+  apiKey?: string | null;
+  errorCode?: string | null;
+  providerSpecificData?: {
+    refreshCircuit?: {
+      streak?: number;
+      until?: string;
+      lastFailAt?: string;
+    };
+    copilotToken?: string;
+    copilotTokenExpiresAt?: string | number;
+    [key: string]: unknown;
+  } | null;
+}
+
 const TICK_MS = 60 * 1000; // sweep interval: every 60 seconds
 const DEFAULT_HEALTH_CHECK_INTERVAL_MIN = 60; // default per-connection interval
 const EXPIRED_RETRY_MAX = 3; // max retry attempts for expired connections before giving up
 const EXPIRED_RETRY_BACKOFF_MIN = 5; // backoff between expired retries (minutes)
+// Max refreshes attempted per sweep tick. Caps wall-time so the sweep always
+// finishes well within TICK_MS even when hundreds of tokens are due at once
+// (e.g. after a cold restart). Remaining connections are picked up on the
+// next tick(s) in a rolling fashion. Override: HEALTHCHECK_BATCH_SIZE env var.
+const DEFAULT_SWEEP_BATCH_SIZE = 20;
 const LOG_PREFIX = "[HealthCheck]";
 const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
+const ROTATING_REFRESH_PROVIDERS = new Set([
+  "codex",
+  "openai",
+  "kimi-coding",
+  "cline",
+  "kiro",
+  "amazon-q",
+  "gitlab-duo",
+  "claude",
+]);
 
 function isBuildProcess(): boolean {
   return typeof process !== "undefined" && process.env.NEXT_PHASE === "phase-production-build";
@@ -64,12 +107,12 @@ export function extractResolvedProxyConfig(resolvedProxy: unknown) {
   return resolvedProxy ?? null;
 }
 
-function getEffectiveTokenExpiryIso(conn: any): string | null {
+function getEffectiveTokenExpiryIso(conn: ProviderConnection): string | null {
   if (!conn || typeof conn !== "object") return null;
   return conn.tokenExpiresAt || conn.expiresAt || null;
 }
 
-function getEffectiveTokenExpiryMs(conn: any): number {
+function getEffectiveTokenExpiryMs(conn: ProviderConnection): number {
   const effectiveExpiry = getEffectiveTokenExpiryIso(conn);
   if (!effectiveExpiry) return 0;
   const expiryMs = new Date(effectiveExpiry).getTime();
@@ -89,7 +132,7 @@ function getCopilotTokenExpiryMs(expiresAt: unknown): number {
   return 0;
 }
 
-function isGitHubAccessTokenOnlyConnection(conn: any): boolean {
+function isGitHubAccessTokenOnlyConnection(conn: ProviderConnection): boolean {
   return (
     String(conn?.provider || "").toLowerCase() === "github" &&
     typeof conn?.accessToken === "string" &&
@@ -97,7 +140,7 @@ function isGitHubAccessTokenOnlyConnection(conn: any): boolean {
   );
 }
 
-function canClearGitHubNoRefreshTokenState(conn: any): boolean {
+function canClearGitHubNoRefreshTokenState(conn: ProviderConnection): boolean {
   return (
     !conn?.testStatus ||
     conn.testStatus === "active" ||
@@ -120,14 +163,14 @@ export function getRefreshBackoffUntil(streak: number, now: string): string {
   return new Date(new Date(now).getTime() + backoffMin * 60 * 1000).toISOString();
 }
 
-export function isInRefreshBackoff(conn: any, nowMs: number): boolean {
+export function isInRefreshBackoff(conn: ProviderConnection, nowMs: number): boolean {
   const until = conn?.providerSpecificData?.refreshCircuit?.until;
   if (typeof until !== "string") return false;
   const untilMs = new Date(until).getTime();
   return Number.isFinite(untilMs) && untilMs > nowMs;
 }
 
-export function buildRefreshFailureUpdate(conn: any, now: string) {
+export function buildRefreshFailureUpdate(conn: ProviderConnection, now: string) {
   const wasExpired = conn.testStatus === "expired";
   const retryCount = (conn.expiredRetryCount ?? 0) + (wasExpired ? 1 : 0);
 
@@ -247,19 +290,19 @@ async function shouldHideLogs(): Promise<boolean> {
   return pendingHideLogs;
 }
 
-function log(message: string, ...args: any[]) {
+function log(message: string, ...args: unknown[]) {
   shouldHideLogs().then((hide) => {
     if (!hide) console.log(message, ...args);
   });
 }
 
-function logWarn(message: string, ...args: any[]) {
+function logWarn(message: string, ...args: unknown[]) {
   shouldHideLogs().then((hide) => {
     if (!hide) console.warn(message, ...args);
   });
 }
 
-function logError(message: string, ...args: any[]) {
+function logError(message: string, ...args: unknown[]) {
   shouldHideLogs().then((hide) => {
     if (!hide) console.error(message, ...args);
   });
@@ -340,8 +383,23 @@ async function sweep() {
     if (!connections || connections.length === 0) return;
 
     const staggerMs = parseInt(process.env.HEALTHCHECK_STAGGER_MS || "3000", 10);
+    const batchSize = parseInt(
+      process.env.HEALTHCHECK_BATCH_SIZE || String(DEFAULT_SWEEP_BATCH_SIZE),
+      10
+    );
 
+    let refreshCount = 0;
     for (let i = 0; i < connections.length; i++) {
+      // Cap the number of refreshes per tick so the sweep always completes in
+      // well under TICK_MS even when hundreds of tokens are due simultaneously
+      // (cold-start scenario). Remaining connections are processed on next tick(s).
+      if (refreshCount >= batchSize) {
+        log(
+          `${LOG_PREFIX} Batch limit reached (${batchSize}/${connections.length}); deferring remainder to next tick.`
+        );
+        break;
+      }
+
       const conn = connections[i];
       let didRefresh = false;
       try {
@@ -351,11 +409,21 @@ async function sweep() {
         logError(`${LOG_PREFIX} Error checking ${conn.name || conn.id}:`, err.message);
       }
 
-      // Stagger delay between checks to prevent bursting (Issue #1220)
-      if (didRefresh && staggerMs > 0 && i < connections.length - 1) {
-        const { promise, resolve } = Promise.withResolvers<void>();
-        setTimeout(resolve, staggerMs);
-        await promise;
+      if (didRefresh) {
+        refreshCount++;
+        // Stagger delay between non-rotating-provider refreshes to prevent
+        // bursting (Issue #1220). Rotating providers (kiro, amazon-q, etc.)
+        // have per-account tokens and tolerate rapid sequential calls; skipping
+        // stagger for them keeps sweep wall-time proportional to network latency
+        // alone rather than O(n*staggerMs).
+        const isRotating = ROTATING_REFRESH_PROVIDERS.has(
+          String(conn.provider || "").toLowerCase()
+        );
+        if (!isRotating && staggerMs > 0 && i < connections.length - 1) {
+          const { promise, resolve } = Promise.withResolvers<void>();
+          setTimeout(resolve, staggerMs);
+          await promise;
+        }
       }
     }
   } catch (err) {
@@ -368,23 +436,58 @@ async function sweep() {
 /**
  * Check a single connection and refresh if due.
  */
-export async function checkConnection(conn: any): Promise<boolean> {
+export async function checkConnection(conn: ProviderConnection): Promise<boolean> {
   if (!conn?.id) return false;
 
-  const latestConnection = (await getProviderConnectionById(conn.id)) || conn;
-  conn = latestConnection;
-
-  // Per-provider opt-out of proactive refresh (e.g. Codex/OpenAI cascade
-  // providers) — their token stays on the reactive, serialized 401 path while
-  // other providers keep being refreshed proactively.
+  const intervalMin = conn.healthCheckInterval ?? DEFAULT_HEALTH_CHECK_INTERVAL_MIN;
+  if (intervalMin <= 0) return false;
+  if (!conn.isActive) return false;
   if (getHealthCheckSkipProviders().has(String(conn.provider || "").toLowerCase())) {
     return false;
   }
 
-  // Determine interval (0 = disabled)
-  const intervalMin = conn.healthCheckInterval ?? DEFAULT_HEALTH_CHECK_INTERVAL_MIN;
-  if (intervalMin <= 0) return false;
+  // Pre-check if a refresh or status update is actually due before querying the database.
+  // This avoids hundreds of concurrent SQLite reads per sweep tick.
+  let lastCheck = conn.lastHealthCheckAt ? new Date(conn.lastHealthCheckAt).getTime() : 0;
+  let tokenExpiresAt = getEffectiveTokenExpiryMs(conn);
+  let hasKnownExpiry = tokenExpiresAt > 0;
+  let isAboutToExpire = hasKnownExpiry && tokenExpiresAt - Date.now() < TOKEN_EXPIRY_BUFFER;
+
+  let isRotatingProvider = ROTATING_REFRESH_PROVIDERS.has(conn.provider);
+  let intervalMs = intervalMin * 60 * 1000;
+  let shouldRefreshByInterval =
+    !hasKnownExpiry && !isRotatingProvider && Date.now() - lastCheck >= intervalMs;
+
+  const isExpired = conn.testStatus === "expired";
+  const maybeDueForExpiredRetry =
+    isExpired &&
+    (conn.expiredRetryCount ?? 0) < EXPIRED_RETRY_MAX &&
+    typeof conn.refreshToken === "string" &&
+    conn.refreshToken.trim().length > 0;
+
+  const refreshCapableNeedsReauth =
+    supportsTokenRefresh(conn.provider) &&
+    (!conn.testStatus || conn.testStatus === "active") &&
+    !(conn.apiKey && conn.apiKey.length > 0) &&
+    (!conn.refreshToken || typeof conn.refreshToken !== "string") &&
+    !isGitHubAccessTokenOnlyConnection(conn);
+
+  const isDue =
+    isAboutToExpire ||
+    shouldRefreshByInterval ||
+    refreshCapableNeedsReauth ||
+    maybeDueForExpiredRetry ||
+    isGitHubAccessTokenOnlyConnection(conn);
+
+  if (!isDue) return false;
+
+  // We are likely due for a refresh/check. Query the database to get the absolute latest state.
+  const latestConnection = (await getProviderConnectionById(conn.id)) || conn;
+  conn = latestConnection;
+
+  // Re-verify flags after database fetch in case of concurrent updates
   if (!conn.isActive) return false;
+  if (conn.healthCheckInterval !== undefined && conn.healthCheckInterval <= 0) return false;
   if (!conn.refreshToken || typeof conn.refreshToken !== "string") {
     if (isGitHubAccessTokenOnlyConnection(conn)) {
       const now = new Date().toISOString();
@@ -494,7 +597,7 @@ export async function checkConnection(conn: any): Promise<boolean> {
         `${LOG_PREFIX} ${conn.provider}/${getConnectionLogLabel(conn)} has no refresh token; marking expired (needs re-auth)`
       );
     }
-    return true;
+    return false;
   }
 
   // Retry expired connections with exponential backoff up to EXPIRED_RETRY_MAX times.
@@ -520,15 +623,15 @@ export async function checkConnection(conn: any): Promise<boolean> {
     return false;
   }
 
-  const intervalMs = intervalMin * 60 * 1000;
-  const lastCheck = conn.lastHealthCheckAt ? new Date(conn.lastHealthCheckAt).getTime() : 0;
+  intervalMs = intervalMin * 60 * 1000;
+  lastCheck = conn.lastHealthCheckAt ? new Date(conn.lastHealthCheckAt).getTime() : 0;
 
   // Prefer expiry-driven refresh when the provider returns a concrete expiry timestamp.
   // Rotating-token providers such as Codex should not be refreshed on a fixed hourly
   // cadence while the access token is still valid for days.
-  const tokenExpiresAt = getEffectiveTokenExpiryMs(conn);
-  const hasKnownExpiry = tokenExpiresAt > 0;
-  const isAboutToExpire = hasKnownExpiry && tokenExpiresAt - Date.now() < TOKEN_EXPIRY_BUFFER;
+  tokenExpiresAt = getEffectiveTokenExpiryMs(conn);
+  hasKnownExpiry = tokenExpiresAt > 0;
+  isAboutToExpire = hasKnownExpiry && tokenExpiresAt - Date.now() < TOKEN_EXPIRY_BUFFER;
 
   // ROTATING_REFRESH_PROVIDERS — providers whose refresh_tokens are SINGLE-USE
   // (each refresh consumes the old one and returns a new one). For these, refreshing
@@ -538,18 +641,8 @@ export async function checkConnection(conn: any): Promise<boolean> {
   // and is the root cause of "adding account B invalidates account A" reports.
   // The interval path is kept ONLY for non-rotating providers where token state can
   // drift silently (e.g. cookie-based, opaque sessions without expires_at).
-  const ROTATING_REFRESH_PROVIDERS = new Set([
-    "codex",
-    "openai",
-    "kimi-coding",
-    "cline",
-    "kiro",
-    "amazon-q",
-    "gitlab-duo",
-    "claude",
-  ]);
-  const isRotatingProvider = ROTATING_REFRESH_PROVIDERS.has(conn.provider);
-  const shouldRefreshByInterval =
+  isRotatingProvider = ROTATING_REFRESH_PROVIDERS.has(conn.provider);
+  shouldRefreshByInterval =
     !hasKnownExpiry && !isRotatingProvider && Date.now() - lastCheck >= intervalMs;
 
   if (!isAboutToExpire && !shouldRefreshByInterval) return false;
@@ -729,7 +822,7 @@ export async function checkConnection(conn: any): Promise<boolean> {
       await updateProviderConnection(conn.id, { lastHealthCheckAt: now });
     } else {
       // No onPersist (e.g. no connectionId — token-hash dedup path). Write all fields.
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         accessToken: result.accessToken,
         lastHealthCheckAt: now,
         testStatus: "active",
