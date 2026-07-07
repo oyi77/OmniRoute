@@ -277,12 +277,17 @@ export function clearHealthCheckLogCache() {
 
 declare global {
   var __omnirouteTokenHC:
-    { initialized: boolean; interval: ReturnType<typeof setInterval> | null } | undefined;
+    | {
+        initialized: boolean;
+        interval: NodeJS.Timeout | null;
+        sweeping?: boolean;
+      }
+    | undefined;
 }
 
 function getHCState() {
   if (!globalThis.__omnirouteTokenHC) {
-    globalThis.__omnirouteTokenHC = { initialized: false, interval: null };
+    globalThis.__omnirouteTokenHC = { initialized: false, interval: null, sweeping: false };
   }
   return globalThis.__omnirouteTokenHC;
 }
@@ -323,6 +328,12 @@ export function stopTokenHealthCheck() {
 
 // ── Core sweep ───────────────────────────────────────────────────────────────
 async function sweep() {
+  const state = getHCState();
+  if (state.sweeping) {
+    log(`${LOG_PREFIX} Previous sweep still in progress, skipping tick.`);
+    return;
+  }
+  state.sweeping = true;
   try {
     const connections = await getProviderConnections({ authType: "oauth" });
 
@@ -332,28 +343,33 @@ async function sweep() {
 
     for (let i = 0; i < connections.length; i++) {
       const conn = connections[i];
+      let didRefresh = false;
       try {
-        await checkConnection(conn);
+        didRefresh = await checkConnection(conn);
       } catch (err) {
         // Per-connection isolation: one failure never blocks others
         logError(`${LOG_PREFIX} Error checking ${conn.name || conn.id}:`, err.message);
       }
 
       // Stagger delay between checks to prevent bursting (Issue #1220)
-      if (staggerMs > 0 && i < connections.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, staggerMs));
+      if (didRefresh && staggerMs > 0 && i < connections.length - 1) {
+        const { promise, resolve } = Promise.withResolvers<void>();
+        setTimeout(resolve, staggerMs);
+        await promise;
       }
     }
   } catch (err) {
     logError(`${LOG_PREFIX} Sweep error:`, err.message);
+  } finally {
+    state.sweeping = false;
   }
 }
 
 /**
  * Check a single connection and refresh if due.
  */
-export async function checkConnection(conn) {
-  if (!conn?.id) return;
+export async function checkConnection(conn: any): Promise<boolean> {
+  if (!conn?.id) return false;
 
   const latestConnection = (await getProviderConnectionById(conn.id)) || conn;
   conn = latestConnection;
@@ -362,13 +378,13 @@ export async function checkConnection(conn) {
   // providers) — their token stays on the reactive, serialized 401 path while
   // other providers keep being refreshed proactively.
   if (getHealthCheckSkipProviders().has(String(conn.provider || "").toLowerCase())) {
-    return;
+    return false;
   }
 
   // Determine interval (0 = disabled)
   const intervalMin = conn.healthCheckInterval ?? DEFAULT_HEALTH_CHECK_INTERVAL_MIN;
-  if (intervalMin <= 0) return;
-  if (!conn.isActive) return;
+  if (intervalMin <= 0) return false;
+  if (!conn.isActive) return false;
   if (!conn.refreshToken || typeof conn.refreshToken !== "string") {
     if (isGitHubAccessTokenOnlyConnection(conn)) {
       const now = new Date().toISOString();
@@ -447,13 +463,13 @@ export async function checkConnection(conn) {
       log(
         `${LOG_PREFIX} ${conn.provider}/${getConnectionLogLabel(conn)} has no refresh token but has a GitHub access token; keeping connection active`
       );
-      return;
+      return copilotAboutToExpire;
     }
 
     // #5326: a refresh-CAPABLE provider (e.g. antigravity/gemini) with no usable
     // refresh token can never self-heal via the sweep — it genuinely needs re-auth.
     // Silently skipping here left the row at testStatus="active" while the dashboard
-    // badge (which derives expiry from tokenExpiresAt||expiresAt) showed a confusing
+    // badge (which derives expiry from tokenExpiresAt||expiresAt) showed a cosmetic
     // cosmetic "Token Expired". Surface reality as a terminal "expired" status instead.
     // Guard tightly so we do NOT clobber:
     //   - providers that simply don't use refresh tokens (supportsTokenRefresh=false)
@@ -478,17 +494,17 @@ export async function checkConnection(conn) {
         `${LOG_PREFIX} ${conn.provider}/${getConnectionLogLabel(conn)} has no refresh token; marking expired (needs re-auth)`
       );
     }
-    return;
+    return true;
   }
 
   // Retry expired connections with exponential backoff up to EXPIRED_RETRY_MAX times.
   if (conn.testStatus === "expired") {
     const retryCount = conn.expiredRetryCount ?? 0;
-    if (retryCount >= EXPIRED_RETRY_MAX) return;
+    if (retryCount >= EXPIRED_RETRY_MAX) return false;
 
     const lastRetry = conn.expiredRetryAt ? new Date(conn.expiredRetryAt).getTime() : 0;
     const backoffMs = EXPIRED_RETRY_BACKOFF_MIN * 60 * 1000 * Math.pow(2, retryCount);
-    if (Date.now() - lastRetry < backoffMs) return;
+    if (Date.now() - lastRetry < backoffMs) return false;
 
     log(
       `${LOG_PREFIX} Retrying expired ${conn.provider}/${getConnectionLogLabel(conn)} (attempt ${retryCount + 1}/${EXPIRED_RETRY_MAX})`
@@ -501,7 +517,7 @@ export async function checkConnection(conn) {
     log(
       `${LOG_PREFIX} Skipping ${conn.provider}/${getConnectionLogLabel(conn)} (refresh unsupported)`
     );
-    return;
+    return false;
   }
 
   const intervalMs = intervalMin * 60 * 1000;
@@ -536,14 +552,14 @@ export async function checkConnection(conn) {
   const shouldRefreshByInterval =
     !hasKnownExpiry && !isRotatingProvider && Date.now() - lastCheck >= intervalMs;
 
-  if (!isAboutToExpire && !shouldRefreshByInterval) return;
+  if (!isAboutToExpire && !shouldRefreshByInterval) return false;
 
   // Circuit breaker: if recent refreshes for this connection failed, wait out
   // the exponential backoff window instead of retrying every 60s tick. This is
   // what stops the refresh loop when getAccessToken keeps returning null
   // (dead proxy / network blip / unclassified upstream error).
   if (isInRefreshBackoff(conn, Date.now())) {
-    return;
+    return false;
   }
 
   const reason = isAboutToExpire ? "token expiring soon" : `interval: ${intervalMin}min`;
@@ -655,7 +671,7 @@ export async function checkConnection(conn) {
       logWarn(
         `${LOG_PREFIX} ! ${conn.provider}/${getConnectionLogLabel(conn)} changed during refresh; skipping stale deactivation`
       );
-      return;
+      return true;
     }
 
     const accessTokenStillValid =
@@ -674,7 +690,7 @@ export async function checkConnection(conn) {
       logWarn(
         `${LOG_PREFIX} ! ${conn.provider}/${getConnectionLogLabel(conn)} refresh token is invalid (${result.error}), but the current access token is still valid; keeping connection active`
       );
-      return;
+      return true;
     }
 
     await updateProviderConnection(conn.id, {
@@ -701,7 +717,7 @@ export async function checkConnection(conn) {
         `Refresh token is permanently invalid (${result.error}). ` +
         `Connection deactivated. Re-authenticate to restore.`
     );
-    return;
+    return true;
   }
 
   if (result && result.accessToken) {
@@ -821,8 +837,8 @@ export async function checkConnection(conn) {
           : "")
     );
   }
+  return true;
 }
-
 // Auto-start when imported
 initTokenHealthCheck();
 

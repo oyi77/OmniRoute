@@ -140,9 +140,9 @@ RUN chown -R node:node /app
 # Install as root, then ensure pipx binaries are accessible to node user
 ENV PIPX_BIN_DIR=/usr/local/bin
 ENV PIPX_HOME=/opt/pipx
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip python3-venv 
-    && python3 -m pip install --no-cache-dir pipx 
-    && python3 -m pipx install --global headroom-ai 
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip python3-venv \
+    && python3 -m pip install --no-cache-dir pipx \
+    && python3 -m pipx install --global headroom-ai \
     && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 20128
