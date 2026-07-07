@@ -177,6 +177,10 @@ export class StreamTracker {
 // ─── Active Stream Registry ─────────────────
 
 const activeStreams = new Map<string, StreamTracker>();
+const OMNI_MAX_CONCURRENT_CONNECTIONS = Math.max(
+  1,
+  parseInt(process.env.OMNI_MAX_CONCURRENT_CONNECTIONS || "100", 10)
+);
 const MAX_COMPLETED_HISTORY = parseInt(process.env.STREAM_HISTORY_MAX || "50", 10);
 const completedStreams: ReturnType<StreamTracker["getSummary"]>[] = [];
 
@@ -215,4 +219,8 @@ export function archiveStream(requestId) {
  */
 export function getActiveStreams() {
   return Array.from(activeStreams.values()).map((t) => t.getSummary());
+}
+
+export function getActiveStreamCount(): number {
+  return activeStreams.size;
 }

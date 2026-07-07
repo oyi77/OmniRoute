@@ -222,6 +222,12 @@ export async function handleChat(
   const reqId = correlationId || generateRequestId();
   const telemetry = new RequestTelemetry(reqId);
 
+  const backpressure = checkConnectionCapacity();
+  if (backpressure.shouldReject) {
+    log.warn("BACKPRESSURE", "Rejecting request: at connection limit");
+    return backpressure.response;
+  }
+
   let body;
   try {
     telemetry.startPhase("parse");
@@ -232,7 +238,6 @@ export async function handleChat(
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
-  // Feature #6241: fold the canonical `effort` / `thinking` request params onto the
   // per-provider reasoning fields (reasoning_effort / reasoning.effort / thinking) that the
   // existing translators already consume. Done here — right after the body is first
   // resolved, before any reasoning field is read below — so it flows uniformly into every
