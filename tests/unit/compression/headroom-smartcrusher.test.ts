@@ -88,6 +88,23 @@ describe("tabular encoder round-trip", () => {
     assert.deepEqual(decoded, original);
   });
 
+  it("round-trips deeply nested rows (multi-level objects + array-of-objects) via v3.2 flattening", async () => {
+    const original: Record<string, unknown>[] = Array.from({ length: 12 }, (_, i) => ({
+      id: i,
+      meta: { owner: { name: `n-${i}`, team: `t-${i % 2}` }, count: i * 2 },
+      items: [
+        { sku: `s-${i}`, qty: i },
+        { sku: `s2-${i}`, qty: i + 1 },
+      ],
+    }));
+    const encoded = encodeTabular(original);
+    // v3.2 nested flattening emits `>`-prefixed path fields for nested objects.
+    assert.match(encoded, /meta>owner>name/);
+    const decoded = decodeTabular(encoded);
+    // Order-insensitive: flattening may reorder object keys, which is semantically irrelevant.
+    assert.deepEqual(decoded, original);
+  });
+
   it("encoded form contains an explicit [N] count marker with field declaration", async () => {
     const original = makeRows(25);
     const encoded = encodeTabular(original);

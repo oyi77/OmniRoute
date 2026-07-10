@@ -1,6 +1,7 @@
 /**
- * Decode GCF generic profile text into a JS value.
- * Vendored from gcf-typescript — generic profile only (graph profile stripped).
+ * GCF generic-profile decoder (decodeGeneric).
+ * Vendored from gcf-typescript — generic profile only. Current with GCF spec v3.2
+ * (nested object flattening) and the [N]: inline-array quoting fix.
  * https://github.com/blackwell-systems/gcf-typescript
  *
  * SPDX-License-Identifier: MIT
@@ -10,12 +11,13 @@ import {
   parseQuotedString,
   splitRespectingQuotes,
   splitFieldDecl,
+  isBareKey,
   MISSING,
   ATTACHMENT,
 } from "./scalar.ts";
 
 /**
- * Decode GCF generic profile text into a JS value.
+ * Decode GCF generic or graph profile text into a JS value.
  */
 export function decodeGeneric(input: string): any {
   input = input.trimEnd();
@@ -28,10 +30,13 @@ export function decodeGeneric(input: string): any {
 
   const profile = parseHeaderProfile(header);
 
-  if (profile !== "generic")
+  if (profile === "graph") {
     throw new Error(
-      `unsupported_profile: ${profile} (only generic profile is supported in this vendored build)`
+      "graph_profile_unsupported: this vendored build supports the generic profile only"
     );
+  }
+
+  if (profile !== "generic") throw new Error(`unknown_profile: ${profile}`);
 
   // Filter body.
   const contentLines: string[] = [];
@@ -139,13 +144,22 @@ function parseObjectBody(
       continue;
     }
 
-    // Inline array. The bracket must be in the KEY position: an inline-array header is
-    // `name[...]: …`, never `key=value` whose value happens to contain `[..]:` (e.g. a
-    // quoted `note="ERR[404]: Not Found"`). Guard on no `=` before the bracket so such
-    // values fall through to the key=value branch instead of throwing (B-GCF-QUOTE).
+    // Key=value. Check this BEFORE inline array detection so that bracket
+    // patterns inside quoted values (e.g. text="ERR[404]: Not Found") are
+    // not misinterpreted as inline array headers.
+    const eqIdx = findKeyValueSplit(content);
+    if (eqIdx > 0) {
+      const name = parseKeyFromHeader(content.slice(0, eqIdx));
+      checkDup(out, name);
+      out[name] = parseScalar(content.slice(eqIdx + 1), false);
+      i++;
+      continue;
+    }
+
+    // Inline array (e.g. items[3]: a,b,c). Only reached if no = found.
     if (!content.startsWith("@") && !content.startsWith("##")) {
       const bracketIdx = content.indexOf("[");
-      if (bracketIdx > 0 && !content.slice(0, bracketIdx).includes("=")) {
+      if (bracketIdx > 0) {
         const rest = content.slice(bracketIdx);
         const closeIdx = rest.indexOf("]");
         if (closeIdx >= 0) {
@@ -162,16 +176,6 @@ function parseObjectBody(
       }
     }
 
-    // Key=value.
-    const eqIdx = findKeyValueSplit(content);
-    if (eqIdx > 0) {
-      const name = parseKeyFromHeader(content.slice(0, eqIdx));
-      checkDup(out, name);
-      out[name] = parseScalar(content.slice(eqIdx + 1), false);
-      i++;
-      continue;
-    }
-
     i++;
   }
   return i - start;
@@ -179,6 +183,7 @@ function parseObjectBody(
 
 function findKeyValueSplit(s: string): number {
   if (!s.length) return -1;
+  // Quoted key: "key"=value
   if (s[0] === '"') {
     for (let i = 1; i < s.length; i++) {
       if (s[i] === "\\") {
@@ -189,7 +194,12 @@ function findKeyValueSplit(s: string): number {
     }
     return -1;
   }
-  return s.indexOf("=");
+  // Bare key: find = but only before [ (to avoid matching = inside inline array values)
+  const eqIdx = s.indexOf("=");
+  if (eqIdx < 0) return -1;
+  const bracketIdx = s.indexOf("[");
+  if (bracketIdx >= 0 && bracketIdx < eqIdx) return -1;
+  return eqIdx;
 }
 
 function parseKeyFromHeader(s: string): string {
@@ -274,6 +284,58 @@ function findClosingBrace(s: string): number {
   return -1;
 }
 
+function unflattenPaths(
+  pathColumns: Map<string, string[]>,
+  flatValues: Map<string, any>,
+  flatAbsent: Set<string>
+): Record<string, any> {
+  // Group by top-level parent.
+  const groups = new Map<string, string[]>();
+  const groupOrder: string[] = [];
+  for (const [fieldName, paths] of pathColumns) {
+    if (paths.length === 0) continue;
+    const top = paths[0];
+    if (!groups.has(top)) {
+      groups.set(top, []);
+      groupOrder.push(top);
+    }
+    groups.get(top)!.push(fieldName);
+  }
+
+  const result: Record<string, any> = {};
+
+  for (const top of groupOrder) {
+    const fieldNames = groups.get(top)!;
+    const allAbsent = fieldNames.every((f) => flatAbsent.has(f));
+    const allNull = fieldNames.every((f) => {
+      if (flatAbsent.has(f)) return false;
+      const val = flatValues.get(f);
+      return val === null;
+    });
+
+    if (allAbsent) continue;
+    if (allNull) {
+      result[top] = null;
+      continue;
+    }
+
+    for (const fieldName of fieldNames) {
+      if (flatAbsent.has(fieldName)) continue;
+      const paths = pathColumns.get(fieldName)!;
+      const val = flatValues.has(fieldName) ? flatValues.get(fieldName) : null;
+
+      let current = result;
+      for (let k = 0; k < paths.length - 1; k++) {
+        if (!(paths[k] in current)) current[paths[k]] = {};
+        current = current[paths[k]];
+      }
+      current[paths[paths.length - 1]] = val;
+    }
+  }
+
+  return result;
+}
+
 function parseTabularBody(
   lines: string[],
   start: number,
@@ -285,6 +347,20 @@ function parseTabularBody(
   const rows: any[] = [];
   let i = start;
 
+  // Detect path columns: fields containing ">".
+  const pathColumnMap = new Map<string, string[]>();
+  for (const f of fields) {
+    if (f.includes(">")) {
+      const parts = f.split(">");
+      // Only treat as a path column if all segments are non-empty.
+      // A literal key like ">" would split into ["", ""].
+      if (parts.every((p) => p.length > 0)) {
+        pathColumnMap.set(f, parts);
+      }
+    }
+  }
+
+  // Track inline schemas and shared array schemas.
   const inlineSchemas = new Map<string, string[]>();
   const sharedArraySchemas = new Map<string, string[]>();
 
@@ -296,10 +372,11 @@ function parseTabularBody(
 
     if (content.length > 0 && content[0] === " ") {
       const trimmed = content.trimStart();
-      if (trimmed.startsWith(".")) break;
+      if (trimmed.startsWith(".")) break; // attachment lines handled below (v2 indented or v3)
       break;
     }
 
+    // Strip @N prefix (must be @digits).
     let rowData = content;
     let rowHasID = false;
     if (rowData.startsWith("@")) {
@@ -317,15 +394,32 @@ function parseTabularBody(
     if (vals.length !== fields.length)
       throw new Error(`row_width_mismatch: expected ${fields.length}, got ${vals.length}`);
 
+    // Parse cells: scalars, traditional attachments, and inline schema attachments.
     const cellValues = new Map<string, any>();
     const traditionalAttFields: string[] = [];
     const inlineAttFields: string[] = [];
     const inlineAttOrder: string[] = [];
     const missingFields = new Set<string>();
 
+    // Collect path column values for unflattening.
+    const flatValues = new Map<string, any>();
+    const flatAbsent = new Set<string>();
+
     for (let j = 0; j < fields.length; j++) {
       const cellVal = vals[j];
 
+      // Path columns: store values for later unflattening.
+      if (pathColumnMap.has(fields[j])) {
+        const parsed = parseScalar(cellVal, true);
+        if (parsed === MISSING) {
+          flatAbsent.add(fields[j]);
+        } else {
+          flatValues.set(fields[j], parsed);
+        }
+        continue;
+      }
+
+      // Check for ^{fields} inline schema declaration.
       if (cellVal.startsWith("^{") && cellVal.endsWith("}")) {
         const schemaStr = cellVal.slice(1);
         const ifs = splitFieldDecl(schemaStr);
@@ -341,6 +435,7 @@ function parseTabularBody(
         continue;
       }
       if (parsed === ATTACHMENT) {
+        // Check if this field has a stored inline schema.
         if (inlineSchemas.has(fields[j])) {
           inlineAttFields.push(fields[j]);
           inlineAttOrder.push(fields[j]);
@@ -349,6 +444,7 @@ function parseTabularBody(
         }
         continue;
       }
+      // Handle inline schema objects returned by parseScalar (for ^{...} that got through).
       if (parsed && typeof parsed === "object" && parsed.__inlineSchema) {
         const ifs = splitFieldDecl(parsed.__inlineSchema);
         inlineSchemas.set(fields[j], ifs);
@@ -360,13 +456,14 @@ function parseTabularBody(
     }
     i++;
 
+    // Parse attachments in line order.
     const allAttFields = [...traditionalAttFields, ...inlineAttFields];
     const attachmentValues = new Map<string, any>();
 
-    if (rowHasID && allAttFields.length > 0) {
+    if (rowHasID) {
       let inlineIdx = 0;
 
-      while (i < lines.length && attachmentValues.size < allAttFields.length) {
+      while (i < lines.length) {
         const aLine = lines[i];
         let aContent: string | null = null;
         if (depth === 0 || aLine.startsWith(ind)) {
@@ -376,14 +473,17 @@ function parseTabularBody(
         }
         if (aContent === null) break;
 
+        // Line starts with ".": traditional or prefixed inline attachment.
+        // Also handle v2-format indented attachments ("  .field ...").
         let attContent = aContent;
         if (!attContent.startsWith(".") && attContent.startsWith("  .")) {
-          attContent = attContent.slice(2);
+          attContent = attContent.slice(2); // strip v2 indent
         }
         if (attContent.startsWith(".")) {
           const rest = attContent.slice(1);
           const [attName, afterName] = parseAttachmentName(rest);
 
+          // Check if this is an inline schema field with pipe-delimited data.
           const ifs = inlineSchemas.get(attName);
           if (
             ifs &&
@@ -407,6 +507,7 @@ function parseTabularBody(
             continue;
           }
 
+          // Traditional attachment.
           const [name, val, consumed, parsedFields] = parseAttachment(
             lines,
             i,
@@ -415,6 +516,7 @@ function parseTabularBody(
             sharedArraySchemas
           );
           if (attachmentValues.has(name)) throw new Error(`duplicate_attachment: ${name}`);
+          // Store shared array schema from first row.
           if (rows.length === 0 && parsedFields) {
             sharedArraySchemas.set(name, parsedFields);
           }
@@ -423,6 +525,7 @@ function parseTabularBody(
           continue;
         }
 
+        // No-prefix line: positional inline data.
         let foundInline = false;
         let nextInlineField = "";
         while (inlineIdx < inlineAttOrder.length) {
@@ -456,6 +559,9 @@ function parseTabularBody(
         if (!attachmentValues.has(f)) throw new Error(`missing_attachment: ${f}`);
       }
 
+      // Check for duplicate attachments: if the next line is also an attachment
+      // line at this depth, it means there's a second attachment for a field
+      // that was already resolved.
       if (i < lines.length) {
         let peekContent: string | null = null;
         if (depth === 0 || lines[i].startsWith(ind)) {
@@ -477,6 +583,7 @@ function parseTabularBody(
       }
     }
 
+    // Build row in field declaration order.
     const row: Record<string, any> = {};
     for (const f of fields) {
       if (missingFields.has(f)) continue;
@@ -490,11 +597,16 @@ function parseTabularBody(
       }
     }
 
-    if (!rowHasID || allAttFields.length === 0) {
-      const attIndent = ind + "  ";
-      if (i < lines.length && lines[i].startsWith(attIndent)) {
-        const peek = lines[i].slice(attIndent.length);
-        if (peek.startsWith(".")) throw new Error(`orphan_attachment: ${peek}`);
+    // Also add any orphan attachment values (fields excluded from column list, e.g. ">" fields).
+    for (const [k, v] of attachmentValues) {
+      if (!(k in row)) row[k] = v;
+    }
+
+    // Unflatten path columns into nested objects.
+    if (pathColumnMap.size > 0) {
+      const nested = unflattenPaths(pathColumnMap, flatValues, flatAbsent);
+      for (const [k, v] of Object.entries(nested)) {
+        row[k] = v;
       }
     }
 
@@ -523,6 +635,7 @@ function parseAttachmentName(rest: string): [string, string] {
   return [rest, ""];
 }
 
+/** Attachment parser: returns [name, value, consumed, parsedFields]. parsedFields is set for tabular arrays with explicit {fields}. */
 function parseAttachment(
   lines: string[],
   lineIdx: number,
@@ -544,6 +657,7 @@ function parseAttachment(
     if (closeBracket < 0) throw new Error("invalid_count: missing ]");
     const afterClose = afterName.slice(closeBracket + 1);
 
+    // [N]{fields}: has its own schema.
     if (afterClose.startsWith("{")) {
       const endBrace = findClosingBrace(afterClose);
       let parsedFields: string[] | null = null;
@@ -556,25 +670,23 @@ function parseAttachment(
       return [name, arr, consumed, parsedFields];
     }
 
+    // [N]: values or [N] (check for inline primitive array first).
     const afterCloseForInline = afterName.slice(closeBracket + 1);
     if (afterCloseForInline.startsWith(": ") || afterCloseForInline === ":") {
+      // Inline primitive array: don't use shared schema.
       const [arr, consumed] = parseArrayFromHeader(lines, lineIdx, depth, afterName);
       return [name, arr, consumed, null];
     }
 
+    // [N] without {fields}: check for shared schema.
     if (sharedSchemas.has(name)) {
       const sf = sharedSchemas.get(name)!;
       const countStr = afterName.slice(1, closeBracket);
       let count = -1;
-      if (countStr !== "?") {
-        try {
-          count = parseCount(countStr);
-        } catch {
-          count = -1;
-        }
-      }
+      if (countStr !== "?") count = parseInt(countStr, 10);
       if (count === 0) return [name, [], 1, null];
 
+      // Peek: if next line starts with @, it's expanded, not tabular.
       const nextIdx = lineIdx + 1;
       const ind = "  ".repeat(depth);
       let useShared = true;
@@ -591,8 +703,17 @@ function parseAttachment(
       }
     }
 
+    // No shared schema: standard parsing.
     const [arr, consumed] = parseArrayFromHeader(lines, lineIdx, depth, afterName);
     return [name, arr, consumed, null];
+  }
+
+  // Scalar: =value (field names containing ">" excluded from tabular columns).
+  if (afterName.startsWith("=")) {
+    const valStr = afterName.slice(1);
+    const parsed = parseScalar(valStr, true);
+    if (parsed === MISSING) return [name, null, 1, null];
+    return [name, parsed, 1, null];
   }
 
   throw new Error(`invalid attachment form: ${afterName}`);
@@ -658,6 +779,7 @@ function validateSummaryCounts(
   deferredCount: number,
   contentLines: string[]
 ): void {
+  // Parse counts from "##! summary counts=N,M,..."
   const parts = summaryLine.split(/\s+/);
   let countsStr = "";
   for (const p of parts) {
@@ -675,6 +797,7 @@ function validateSummaryCounts(
     );
   }
 
+  // Count actual items per deferred section.
   const actualCounts: number[] = [];
   let inDeferred = false;
   let currentCount = 0;
