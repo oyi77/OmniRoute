@@ -130,7 +130,7 @@ function parseObjectBody(
         const name = parseKeyFromHeader(hdr.slice(0, bi));
         checkDup(out, name);
         const [arr, consumed] = parseArrayFromHeader(lines, i, depth, hdr.slice(bi));
-        out[name] = arr;
+        safeAssign(out, name, arr);
         i += consumed;
         continue;
       }
@@ -139,7 +139,7 @@ function parseObjectBody(
       i++;
       const nested: Record<string, any> = {};
       const consumed = parseObjectBody(lines, i, depth + 1, nested);
-      out[name] = nested;
+      safeAssign(out, name, nested);
       i += consumed;
       continue;
     }
@@ -151,7 +151,7 @@ function parseObjectBody(
     if (eqIdx > 0) {
       const name = parseKeyFromHeader(content.slice(0, eqIdx));
       checkDup(out, name);
-      out[name] = parseScalar(content.slice(eqIdx + 1), false);
+      safeAssign(out, name, parseScalar(content.slice(eqIdx + 1), false));
       i++;
       continue;
     }
@@ -168,7 +168,7 @@ function parseObjectBody(
             const name = parseKeyFromHeader(content.slice(0, bracketIdx));
             checkDup(out, name);
             const [arr] = parseArrayFromHeader(lines, i, depth, rest);
-            out[name] = arr;
+            safeAssign(out, name, arr);
             i++;
             continue;
           }
@@ -209,7 +209,9 @@ function parseKeyFromHeader(s: string): string {
 }
 
 function checkDup(obj: Record<string, any>, key: string): void {
-  if (key in obj) throw new Error(`duplicate_key: ${key}`);
+  // Own-property check only: `key in obj` would spuriously fire on inherited
+  // names like "toString"/"constructor" and mislabel them as duplicates.
+  if (Object.prototype.hasOwnProperty.call(obj, key)) throw new Error(`duplicate_key: ${key}`);
 }
 
 function parseArrayFromHeader(
@@ -284,6 +286,28 @@ function findClosingBrace(s: string): number {
   return -1;
 }
 
+// A path segment that would pollute Object.prototype if written through.
+function isUnsafePathKey(k: string): boolean {
+  return k === "__proto__" || k === "constructor" || k === "prototype";
+}
+
+// Assign a decoded key without ever mutating Object.prototype: a literal
+// "__proto__" key is written as an own data property (matching JSON.parse
+// semantics) instead of reassigning the prototype. All other keys, including
+// "constructor"/"prototype", are ordinary own-property writes and safe.
+function safeAssign(obj: Record<string, unknown>, key: string, value: unknown): void {
+  if (key === "__proto__") {
+    Object.defineProperty(obj, key, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  } else {
+    obj[key] = value;
+  }
+}
+
 function unflattenPaths(
   pathColumns: Map<string, string[]>,
   flatValues: Map<string, any>,
@@ -294,6 +318,10 @@ function unflattenPaths(
   const groupOrder: string[] = [];
   for (const [fieldName, paths] of pathColumns) {
     if (paths.length === 0) continue;
+    // Drop any path with a prototype-pollution segment. A conformant encoder
+    // never emits these; their presence means hand-crafted/hostile GCF, so the
+    // safe action is to discard the column rather than write through __proto__.
+    if (paths.some(isUnsafePathKey)) continue;
     const top = paths[0];
     if (!groups.has(top)) {
       groups.set(top, []);
@@ -326,7 +354,7 @@ function unflattenPaths(
 
       let current = result;
       for (let k = 0; k < paths.length - 1; k++) {
-        if (!(paths[k] in current)) current[paths[k]] = {};
+        if (!Object.prototype.hasOwnProperty.call(current, paths[k])) current[paths[k]] = {};
         current = current[paths[k]];
       }
       current[paths[paths.length - 1]] = val;
@@ -588,25 +616,25 @@ function parseTabularBody(
     for (const f of fields) {
       if (missingFields.has(f)) continue;
       if (cellValues.has(f)) {
-        row[f] = cellValues.get(f);
+        safeAssign(row, f, cellValues.get(f));
         continue;
       }
       if (attachmentValues.has(f)) {
-        row[f] = attachmentValues.get(f);
+        safeAssign(row, f, attachmentValues.get(f));
         continue;
       }
     }
 
     // Also add any orphan attachment values (fields excluded from column list, e.g. ">" fields).
     for (const [k, v] of attachmentValues) {
-      if (!(k in row)) row[k] = v;
+      if (!Object.prototype.hasOwnProperty.call(row, k)) safeAssign(row, k, v);
     }
 
     // Unflatten path columns into nested objects.
     if (pathColumnMap.size > 0) {
       const nested = unflattenPaths(pathColumnMap, flatValues, flatAbsent);
       for (const [k, v] of Object.entries(nested)) {
-        row[k] = v;
+        safeAssign(row, k, v);
       }
     }
 

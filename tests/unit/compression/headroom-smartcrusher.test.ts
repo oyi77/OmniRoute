@@ -113,6 +113,45 @@ describe("tabular encoder round-trip", () => {
   });
 });
 
+// ─── 1b. Prototype-pollution safety (v3.2 flatten paths + object parser) ──────
+
+describe("tabular codec — prototype-pollution safety", () => {
+  it("round-trips rows with a literal __proto__ own-key without polluting Object.prototype", async () => {
+    const rows = Array.from({ length: 5 }, (_, i) =>
+      JSON.parse(`{"id":${i},"meta":{"__proto__":{"polluted":true},"real":${i}}}`)
+    );
+    const decoded = decodeTabular(encodeTabular(rows));
+    assert.deepEqual(decoded, rows);
+    assert.equal(({} as Record<string, unknown>).polluted, undefined);
+  });
+
+  it("round-trips a top-level __proto__ column without polluting", async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => JSON.parse(`{"id":${i},"__proto__":"x${i}"}`));
+    const decoded = decodeTabular(encodeTabular(rows));
+    assert.deepEqual(decoded, rows);
+    assert.equal(({} as Record<string, unknown>).x0, undefined);
+  });
+
+  it("does not pollute or throw when decoding hostile GCF with a >__proto__> path column", async () => {
+    const hostile =
+      "```gcf-generic\nGCF profile=generic\n" +
+      '## [1]{id,"a>__proto__>polluted"}\n@0 0|1\n```';
+    decodeTabular(hostile);
+    assert.equal(({} as Record<string, unknown>).polluted, undefined);
+  });
+
+  it("round-trips keys named toString/constructor/valueOf (own-property, not prototype-chain)", async () => {
+    const rows = Array.from({ length: 4 }, (_, i) => ({
+      id: i,
+      toString: `ts${i}`,
+      constructor: `c${i}`,
+      valueOf: i,
+    }));
+    const decoded = decodeTabular(encodeTabular(rows));
+    assert.deepEqual(decoded, rows);
+  });
+});
+
 // ─── 2. engine.apply compresses ≥30% and is reversible ───────────────────────
 
 describe("headroomEngine.apply — compression", () => {

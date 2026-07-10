@@ -176,6 +176,12 @@ interface FlatLeaf {
   keys: string[]; // key chain to traverse from row object
 }
 
+// Keys that would pollute Object.prototype if used as a flatten path segment.
+// An object carrying one of these is never flattened; it round-trips whole.
+function isUnsafeKey(k: string): boolean {
+  return k === "__proto__" || k === "constructor" || k === "prototype";
+}
+
 function analyzeFlattenable(
   arr: unknown[],
   fieldName: string,
@@ -194,9 +200,12 @@ function analyzeFlattenable(
     const keys = Object.keys(v as Record<string, unknown>);
 
     if (!canonicalShape) {
-      canonicalShape = {};
+      // Null-prototype map so `k in canonicalShape` below only sees own keys
+      // (a field literally named "toString"/"constructor" must not match the
+      // Object.prototype chain), and reject prototype-pollution keys outright.
+      canonicalShape = Object.create(null) as Record<string, "scalar" | "nested">;
       for (const k of keys) {
-        if (k.includes(">")) return null;
+        if (k.includes(">") || isUnsafeKey(k)) return null;
         const val = (v as Record<string, unknown>)[k];
         if (val !== null && val !== undefined && typeof val === "object" && !Array.isArray(val)) {
           canonicalShape[k] = "nested";
