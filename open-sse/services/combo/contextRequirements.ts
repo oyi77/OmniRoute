@@ -18,7 +18,7 @@ export interface ContextRequirements {
  * Returns null if unknown.
  */
 function getTargetContextWindow(target: ResolvedComboTarget): number | null {
-  const limit = getModelContextLimit(target.modelStr);
+  const limit = getModelContextLimit(target.provider, target.modelStr);
   return typeof limit === "number" && limit > 0 ? limit : null;
 }
 
