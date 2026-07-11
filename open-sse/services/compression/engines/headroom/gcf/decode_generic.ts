@@ -368,7 +368,7 @@ function unflattenPaths(
         }
         current = current[segment];
       }
-      current[paths[paths.length - 1]] = val;
+      safeAssign(current, paths[paths.length - 1], val);
     }
   }
 
