@@ -283,9 +283,8 @@ npm test tests/unit/combo/context-requirements-integration.test.ts
 
 ## Related
 
-- [Combo Strategies Documentation](./strategies.md)
-- [Model Capabilities Reference](./model-capabilities.md)
-- [Fusion Strategy Tuning](./fusion-tuning.md)
+- [Auto-Combo Routing Strategies](./routing/AUTO-COMBO.md)
+- [Resilience Guide](./architecture/RESILIENCE_GUIDE.md)
 
 ## Version History
 
