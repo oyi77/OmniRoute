@@ -193,7 +193,11 @@ function analyzeFlattenable(
 
   for (const item of arr) {
     const obj = item as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(obj, fieldName) || obj[fieldName] === null || obj[fieldName] === undefined) continue;
+    if (!Object.prototype.hasOwnProperty.call(obj, fieldName) || obj[fieldName] === undefined) continue;
+    // A null nested object cannot be flattened losslessly: its leaves would encode
+    // as absent ("~") and unflatten back to a missing key rather than null. Bail to
+    // the whole-object (attachment) path, which round-trips a null value correctly.
+    if (obj[fieldName] === null) return null;
     const v = obj[fieldName];
     if (typeof v !== "object" || Array.isArray(v)) return null;
 

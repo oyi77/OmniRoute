@@ -105,6 +105,23 @@ describe("tabular encoder round-trip", () => {
     assert.deepEqual(decoded, original);
   });
 
+  it("round-trips a nested object that is null in some rows without losing the null", async () => {
+    // A null nested object must not be flattened (its leaves would encode absent and
+    // unflatten to a missing key). These must all survive as null, not disappear.
+    const cases: Record<string, unknown>[][] = [
+      [{ id: 0, meta: { a: 1, b: 2 } }, { id: 1, meta: null }, { id: 2, meta: { a: 3, b: 4 } }],
+      [
+        { id: 0, meta: { owner: { name: "a" } } },
+        { id: 1, meta: { owner: null } },
+        { id: 2, meta: { owner: { name: "c" } } },
+      ],
+      [{ id: 0, o: { p: { team: { x: 1 } } } }, { id: 1, o: { p: { team: null } } }],
+    ];
+    for (const original of cases) {
+      assert.deepEqual(decodeTabular(encodeTabular(original)), original);
+    }
+  });
+
   it("encoded form contains an explicit [N] count marker with field declaration", async () => {
     const original = makeRows(25);
     const encoded = encodeTabular(original);
