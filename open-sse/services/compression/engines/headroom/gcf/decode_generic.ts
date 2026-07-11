@@ -354,8 +354,19 @@ function unflattenPaths(
 
       let current = result;
       for (let k = 0; k < paths.length - 1; k++) {
-        if (!Object.prototype.hasOwnProperty.call(current, paths[k])) current[paths[k]] = {};
-        current = current[paths[k]];
+        const segment = paths[k];
+        const existing = current[segment];
+        // Overwrite with a fresh object when the slot is missing OR holds a
+        // non-object (null/primitive), so traversal never dereferences a
+        // non-object on malformed input. Conformant output never hits this.
+        if (
+          !Object.prototype.hasOwnProperty.call(current, segment) ||
+          existing === null ||
+          typeof existing !== "object"
+        ) {
+          current[segment] = {};
+        }
+        current = current[segment];
       }
       current[paths[paths.length - 1]] = val;
     }
@@ -711,7 +722,13 @@ function parseAttachment(
       const sf = sharedSchemas.get(name)!;
       const countStr = afterName.slice(1, closeBracket);
       let count = -1;
-      if (countStr !== "?") count = parseInt(countStr, 10);
+      if (countStr !== "?") {
+        try {
+          count = parseCount(countStr);
+        } catch {
+          count = -1;
+        }
+      }
       if (count === 0) return [name, [], 1, null];
 
       // Peek: if next line starts with @, it's expanded, not tabular.
