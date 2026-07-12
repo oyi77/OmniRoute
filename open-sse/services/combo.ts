@@ -2038,6 +2038,19 @@ export async function handleComboChat({
             structuredError
           );
           const { cooldownMs } = fallbackResult;
+          // #6863: a parsed upstream quota reset (e.g. Antigravity "Resets in 92h27m28s")
+          // arrives in `quotaResetHintMs` — it bypasses the operator-gated
+          // `useUpstreamRetryHints` connection-cooldown setting. Mirror the
+          // single-model path (src/sse/services/auth.ts): when the retry hint was
+          // already honored, `cooldownMs` IS the upstream value; otherwise prefer the
+          // parsed quota reset — even when it is SHORTER than the fallback cooldown
+          // (e.g. subscription-quota 1h default vs a real "resets in 10m").
+          // `selectLockoutCooldownMs` still ignores hints at/below the base cooldown,
+          // so absent/tiny hints keep the #1308 exponential-backoff behavior.
+          const lockoutHintMs =
+            fallbackResult.usedUpstreamRetryHint === true
+              ? cooldownMs
+              : (fallbackResult.quotaResetHintMs ?? 0);
           const selectedConnectionId =
             result.headers?.get("X-OmniRoute-Selected-Connection-Id") ||
             result.headers?.get("x-omniroute-selected-connection-id") ||
@@ -2163,9 +2176,9 @@ export async function handleComboChat({
                   mlSettings.baseCooldownMs,
                   profile,
                   {
-                    // #1308: honor a long upstream reset (e.g. "Resets in 160h") over
+                    // #1308/#6863: honor a long upstream reset (e.g. "Resets in 160h") over
                     // the short base cooldown / exponential backoff when present.
-                    exactCooldownMs: selectLockoutCooldownMs(cooldownMs, mlSettings),
+                    exactCooldownMs: selectLockoutCooldownMs(lockoutHintMs, mlSettings),
                     maxCooldownMs: mlSettings.maxCooldownMs,
                   }
                 );
@@ -2206,8 +2219,8 @@ export async function handleComboChat({
                 mlSettings.baseCooldownMs,
                 profile,
                 {
-                  // #1308: honor a long upstream reset over base/exponential cooldown.
-                  exactCooldownMs: selectLockoutCooldownMs(cooldownMs, mlSettings),
+                  // #1308/#6863: honor a long upstream reset over base/exponential cooldown.
+                  exactCooldownMs: selectLockoutCooldownMs(lockoutHintMs, mlSettings),
                   maxCooldownMs: mlSettings.maxCooldownMs,
                 }
               );
