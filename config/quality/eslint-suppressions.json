@@ -131,7 +131,7 @@
   },
   "open-sse/services/compression/engines/headroom/gcf/decode_generic.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 18
+      "count": 22
     }
   },
   "open-sse/services/compression/engines/headroom/gcf/scalar.ts": {
@@ -2304,7 +2304,7 @@
   },
   "tests/unit/vscode-token-routes.test.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 76
+      "count": 65
     }
   },
   "tests/unit/web-runtime-env.test.ts": {
