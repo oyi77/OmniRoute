@@ -154,38 +154,6 @@ This configuration:
 - Sorts by context size (largest first)
 - Useful when large context is preferred but not required
 
-## UI Integration
-
-### Using the Editor Component
-
-```tsx
-import ContextRequirementsEditor from "@/app/(dashboard)/dashboard/combos/ContextRequirementsEditor";
-
-<ContextRequirementsEditor
-  value={combo.config.contextRequirements}
-  onChange={(contextRequirements) => {
-    updateComboConfig({
-      ...combo.config,
-      contextRequirements,
-    });
-  }}
-/>;
-```
-
-### Integration Points
-
-Add the `ContextRequirementsEditor` component to:
-
-- Combo creation form
-- Combo edit form
-- Advanced configuration panel
-
-Place it near other runtime config fields like:
-
-- `fusionTuning`
-- `judgeModel`
-- `evalRouting`
-
 ## API Response
 
 When context requirements filter targets, the combo logger outputs:
@@ -291,5 +259,4 @@ npm test tests/unit/combo/context-requirements-integration.test.ts
 - **v3.8.47**: Initial implementation
   - Added `contextRequirements` config
   - Created backend filtering module
-  - Added UI editor component
-  - Full test coverage
+  - Full test coverage (no dedicated dashboard UI yet — configure via combo JSON)
