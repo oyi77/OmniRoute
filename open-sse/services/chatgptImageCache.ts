@@ -39,11 +39,15 @@ const MAX_ENTRIES = 25;
 // loop of 8 MB images would otherwise pin 1.6 GB of RSS before count
 // eviction kicked in. Tune via OMNIROUTE_CGPT_WEB_IMAGE_CACHE_MAX_MB.
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
+// Absolute ceiling: even with a high OMNIROUTE_CGPT_WEB_IMAGE_CACHE_MAX_MB,
+// the cache will never exceed this many bytes. Prevents accidental OOM from
+// a misconfigured env var.
+const HARD_MAX_BYTES = 256 * 1024 * 1024;
 
 function configuredMaxBytes(): number {
   const raw = Number(process.env.OMNIROUTE_CGPT_WEB_IMAGE_CACHE_MAX_MB);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_MAX_BYTES;
-  return Math.floor(raw * 1024 * 1024);
+  return Math.min(Math.floor(raw * 1024 * 1024), HARD_MAX_BYTES);
 }
 
 export interface ChatGptImageConversationContext {
@@ -140,4 +144,9 @@ export function __resetChatGptImageCacheForTesting(): void {
 /** Test-only: peek at current resident-byte total. */
 export function __getChatGptImageCacheBytesForTesting(): number {
   return cacheBytes;
+}
+
+/** Test-only: return the absolute ceiling (HARD_MAX_BYTES). */
+export function __getChatGptImageCacheHardCapForTesting(): number {
+  return HARD_MAX_BYTES;
 }
