@@ -46,7 +46,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const limit = searchParams.has("limit") ? Number(searchParams.get("limit")) : undefined;
     const offset = searchParams.has("offset") ? Number(searchParams.get("offset")) : 0;
-    const result = getWebhooks(limit !== undefined ? { limit, offset } : undefined);
+    const result = getWebhooks(
+      limit !== undefined || offset !== undefined ? { limit, offset } : undefined
+    );
     // Mask secrets in listing
     const masked = result.webhooks.map((w) => ({
       ...w,

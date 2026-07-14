@@ -95,9 +95,9 @@ export async function getModelComboMappings(options?: {
      LEFT JOIN combos c ON c.id = m.combo_id
      ORDER BY m.priority DESC, m.created_at ASC`;
   const params: unknown[] = [];
-  if (limit !== undefined) {
+  if (limit !== undefined || offset > 0) {
     sql += " LIMIT ? OFFSET ?";
-    params.push(limit, offset);
+    params.push(limit ?? -1, offset);
   }
   const rows = db.prepare(sql).all(...params) as MappingRow[];
   const totalRow = db.prepare("SELECT count(*) as cnt FROM model_combo_mappings").get() as {

@@ -1027,7 +1027,7 @@ function CostExplorerCard({
                       <div className="flex flex-col">
                         <span className="font-medium text-text-main">{row.name}</span>
                         {row.detail ? (
-                          <span className="text-xs text-text-muted truncate max-w-[320px]">
+                          <span className="text-xs text-text-muted truncate inline-block max-w-[320px]">
                             {row.detail}
                           </span>
                         ) : null}

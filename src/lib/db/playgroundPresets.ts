@@ -66,9 +66,9 @@ export function listPlaygroundPresets(options?: { limit?: number; offset?: numbe
   const offset = options?.offset ?? 0;
   let sql = "SELECT * FROM playground_presets ORDER BY created_at DESC";
   const params: unknown[] = [];
-  if (limit !== undefined) {
+  if (limit !== undefined || offset > 0) {
     sql += " LIMIT ? OFFSET ?";
-    params.push(limit, offset);
+    params.push(limit ?? -1, offset);
   }
   const rows = db.prepare(sql).all(...params) as PlaygroundPresetRow[];
   const totalRow = db.prepare("SELECT count(*) as cnt FROM playground_presets").get() as {

@@ -60,9 +60,9 @@ export function getWebhooks(options?: { limit?: number; offset?: number }): {
   const offset = options?.offset ?? 0;
   let sql = "SELECT * FROM webhooks ORDER BY created_at DESC";
   const params: unknown[] = [];
-  if (limit !== undefined) {
+  if (limit !== undefined || offset > 0) {
     sql += " LIMIT ? OFFSET ?";
-    params.push(limit, offset);
+    params.push(limit ?? -1, offset);
   }
   const rows = db.prepare(sql).all(...params) as WebhookRow[];
   const total = db.prepare<CountResult>("SELECT count(*) as cnt FROM webhooks").get()!.cnt;
