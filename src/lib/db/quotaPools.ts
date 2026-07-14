@@ -204,38 +204,46 @@ function rowToPool(row: PoolRow, allocations: PoolAllocation[]): QuotaPool {
 function batchBuildPools(rows: PoolRow[]): QuotaPool[] {
   if (rows.length === 0) return [];
   const poolIds = rows.map((r) => r.id);
-  const ph = poolIds.map(() => "?").join(",");
   const db = getDb();
 
-  // Batch allocations: 1 query for all pools
-  const allocRows = db
-    .prepare<AllocationRow>(
-      `SELECT pool_id, api_key_id, weight, cap_value, cap_unit, policy FROM quota_allocations WHERE pool_id IN (${ph})`
-    )
-    .all(...poolIds);
   const allocsByPool = new Map<string, AllocationRow[]>();
-  for (const row of allocRows) {
-    const list = allocsByPool.get(row.pool_id);
-    if (list) {
-      list.push(row);
-    } else {
-      allocsByPool.set(row.pool_id, [row]);
-    }
-  }
-
-  // Batch connections: 1 query for all pools
-  const connRows = db
-    .prepare<{ pool_id: string; connection_id: string }>(
-      `SELECT pool_id, connection_id FROM quota_pool_connections WHERE pool_id IN (${ph}) ORDER BY created_at ASC`
-    )
-    .all(...poolIds);
   const connsByPool = new Map<string, string[]>();
-  for (const row of connRows) {
-    const list = connsByPool.get(row.pool_id);
-    if (list) {
-      list.push(row.connection_id);
-    } else {
-      connsByPool.set(row.pool_id, [row.connection_id]);
+
+  // SQLite has a default limit of 999 bound parameters per query.
+  // Chunk pool IDs to stay under that limit.
+  const CHUNK_SIZE = 999;
+  for (let i = 0; i < poolIds.length; i += CHUNK_SIZE) {
+    const chunk = poolIds.slice(i, i + CHUNK_SIZE);
+    const ph = chunk.map(() => "?").join(",");
+
+    // Batch allocations: 1 query per chunk
+    const allocRows = db
+      .prepare<AllocationRow>(
+        `SELECT pool_id, api_key_id, weight, cap_value, cap_unit, policy FROM quota_allocations WHERE pool_id IN (${ph})`
+      )
+      .all(...chunk);
+    for (const row of allocRows) {
+      const list = allocsByPool.get(row.pool_id);
+      if (list) {
+        list.push(row);
+      } else {
+        allocsByPool.set(row.pool_id, [row]);
+      }
+    }
+
+    // Batch connections: 1 query per chunk
+    const connRows = db
+      .prepare<{ pool_id: string; connection_id: string }>(
+        `SELECT pool_id, connection_id FROM quota_pool_connections WHERE pool_id IN (${ph}) ORDER BY created_at ASC`
+      )
+      .all(...chunk);
+    for (const row of connRows) {
+      const list = connsByPool.get(row.pool_id);
+      if (list) {
+        list.push(row.connection_id);
+      } else {
+        connsByPool.set(row.pool_id, [row.connection_id]);
+      }
     }
   }
 
@@ -301,10 +309,12 @@ export function listPools(options?: { limit?: number; offset?: number }): {
   let sql =
     "SELECT id, connection_id, name, group_id, created_at FROM quota_pools ORDER BY created_at ASC";
   const params: unknown[] = [];
-  if (limit !== undefined && limit > 0) {
+  const hasLimit = limit !== undefined && limit > 0;
+  const hasOffset = offset !== undefined && offset > 0;
+  if (hasLimit || hasOffset) {
     sql += " LIMIT ?";
-    params.push(limit);
-    if (offset !== undefined) {
+    params.push(hasLimit ? limit : -1);
+    if (hasOffset) {
       sql += " OFFSET ?";
       params.push(offset);
     }
