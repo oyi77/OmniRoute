@@ -58,6 +58,7 @@ export function initBatchProcessor() {
       isProcessing = false;
     }
   }, 10000); // Poll every 10s
+  (pollInterval as { unref?: () => void }).unref?.();
   return pollInterval;
 }
 

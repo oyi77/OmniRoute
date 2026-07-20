@@ -66,6 +66,7 @@ export async function GET(request: Request): Promise<Response> {
 
   try {
     const { searchParams } = new URL(request.url);
+<<<<<<< Updated upstream
     const raw = {
       offset: searchParams.get("offset") || undefined,
       limit: searchParams.get("limit") || undefined,
@@ -76,6 +77,13 @@ export async function GET(request: Request): Promise<Response> {
     }
     const { limit, offset } = validation.data;
     const result = listPlaygroundPresets(limit !== undefined ? { limit, offset } : undefined);
+=======
+    const limit = searchParams.has("limit") ? Number(searchParams.get("limit")) : undefined;
+    const offset = searchParams.has("offset") ? Number(searchParams.get("offset")) : 0;
+    const result = listPlaygroundPresets(
+      limit !== undefined || offset !== undefined ? { limit, offset } : undefined
+    );
+>>>>>>> Stashed changes
     return new Response(JSON.stringify({ presets: result.items, total: result.total }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...CORS_HEADERS },
