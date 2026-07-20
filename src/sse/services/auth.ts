@@ -6,10 +6,11 @@ import {
   getCachedProviderNodes,
   validateApiKey,
   updateProviderConnection,
-  touchConnectionLastUsed,
-  clearConnectionErrorIfUnchanged,
+  resetConnectionBackoff,
   getSettings,
   getCachedSettings,
+  touchConnectionLastUsed,
+  clearConnectionErrorIfUnchanged,
 } from "@/lib/localDb";
 import {
   createLazyConnectionView,
@@ -1146,32 +1147,39 @@ export async function getProviderCredentials(
         !isAccountUnavailable(c.rateLimitedUntil)
       ) {
         c.backoffLevel = 0;
-        updateProviderConnection(c.id, {
-          backoffLevel: 0,
-          testStatus: "active",
-          lastError: null,
-          lastErrorAt: null,
-          lastErrorType: null,
-          lastErrorSource: null,
-          errorCode: null,
-        }).catch(() => {});
+        resetConnectionBackoff(c.id).catch(() => {});
       }
     }
 
     let modelLockedCount = 0;
     let familyLockedCount = 0;
+    const connectionFilterStatus = new Map<string, string>();
     // Filter out unavailable accounts and excluded connection
     const availableConnections = connections.filter((c) => {
-      if (excludedConnectionIds.has(c.id)) return false;
+      if (excludedConnectionIds.has(c.id)) {
+        connectionFilterStatus.set(c.id, "excluded");
+        return false;
+      }
       if (requestedModel && isModelExcludedByConnection(requestedModel, c.providerSpecificData)) {
+        connectionFilterStatus.set(c.id, "modelExcluded");
         return false;
       }
       if (!allowSuppressedConnections) {
-        if (!allowRateLimitedConnections && isAccountUnavailable(c.rateLimitedUntil)) return false;
-        if (isTerminalConnectionStatus(c)) return false;
-        if (provider === "codex" && isCodexScopeUnavailable(c, requestedModel)) return false;
+        if (!allowRateLimitedConnections && isAccountUnavailable(c.rateLimitedUntil)) {
+          connectionFilterStatus.set(c.id, "rateLimited");
+          return false;
+        }
+        if (isTerminalConnectionStatus(c)) {
+          connectionFilterStatus.set(c.id, "terminalStatus");
+          return false;
+        }
+        if (provider === "codex" && isCodexScopeUnavailable(c, requestedModel)) {
+          connectionFilterStatus.set(c.id, "codexScopeLimited");
+          return false;
+        }
         // Per-model lockout: if this specific model/family is locked on this connection, skip it
         if (requestedModel && isModelLocked(provider, c.id, requestedModel)) {
+          connectionFilterStatus.set(c.id, "modelLocked");
           if (
             provider === "antigravity" &&
             getQuotaScopeLabelForProvider(provider, requestedModel) === "family"
@@ -1183,6 +1191,7 @@ export async function getProviderCredentials(
           return false;
         }
       }
+      connectionFilterStatus.set(c.id, "available");
       return true;
     });
 
@@ -1197,15 +1206,13 @@ export async function getProviderCredentials(
       );
     }
     connections.forEach((c) => {
-      const excluded = excludedConnectionIds.has(c.id);
-      const rateLimited = isAccountUnavailable(c.rateLimitedUntil);
-      const terminalStatus = isTerminalConnectionStatus(c);
-      const codexScopeLimited = provider === "codex" && isCodexScopeUnavailable(c, requestedModel);
-      const modelLocked =
-        Boolean(requestedModel) && isModelLocked(provider, c.id, requestedModel as string);
-      const modelExcluded =
-        Boolean(requestedModel) &&
-        isModelExcludedByConnection(requestedModel as string, c.providerSpecificData);
+      const status = connectionFilterStatus.get(c.id);
+      const excluded = status === "excluded";
+      const rateLimited = status === "rateLimited";
+      const terminalStatus = status === "terminalStatus";
+      const codexScopeLimited = status === "codexScopeLimited";
+      const modelLocked = status === "modelLocked";
+      const modelExcluded = status === "modelExcluded";
       if (excluded || rateLimited) {
         log.debug(
           "AUTH",
@@ -1377,13 +1384,16 @@ export async function getProviderCredentials(
       };
     }
 
-    // Quota-aware: filter out accounts with exhausted quota for the requested scope.
-    const withQuota = policyEligibleConnections.filter(
-      (c) => !isQuotaExhaustedForRequest(c.id, provider, requestedModel)
-    );
-    const exhaustedQuota = policyEligibleConnections.filter((c) =>
-      isQuotaExhaustedForRequest(c.id, provider, requestedModel)
-    );
+    // Quota-aware: partition accounts with and without quota for the requested scope.
+    const withQuota: typeof policyEligibleConnections = [];
+    const exhaustedQuota: typeof policyEligibleConnections = [];
+    for (const c of policyEligibleConnections) {
+      if (!isQuotaExhaustedForRequest(c.id, provider, requestedModel)) {
+        withQuota.push(c);
+      } else {
+        exhaustedQuota.push(c);
+      }
+    }
 
     if (exhaustedQuota.length > 0) {
       log.info(
