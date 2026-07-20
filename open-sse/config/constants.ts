@@ -84,6 +84,10 @@ export const PROVIDERS: Record<string, LegacyProvider> = new Proxy(
       (initProviders() as Record<string, LegacyProvider>)[prop] = value;
       return true;
     },
+    deleteProperty(_, prop) {
+      if (typeof prop === 'symbol') return false;
+      return Reflect.deleteProperty(initProviders(), prop);
+    },
   }
 );
 

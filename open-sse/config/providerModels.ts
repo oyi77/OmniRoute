@@ -31,6 +31,10 @@ export const PROVIDER_MODELS: Record<string, RegistryModel[]> = new Proxy(
       (initModels() as Record<string, RegistryModel[]>)[prop] = value;
       return true;
     },
+    deleteProperty(_, prop) {
+      if (typeof prop === 'symbol') return false;
+      return Reflect.deleteProperty(initModels(), prop);
+    },
   }
 );
 export const PROVIDER_ID_TO_ALIAS: Record<string, string> = new Proxy(
@@ -50,6 +54,15 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = new Proxy(
     getOwnPropertyDescriptor(_, prop) {
       if (typeof prop === 'symbol') return undefined;
       return Object.getOwnPropertyDescriptor(initAliases(), prop);
+    },
+    set(_, prop, value) {
+      if (typeof prop === 'symbol') return false;
+      (initAliases() as Record<string, string>)[prop] = value;
+      return true;
+    },
+    deleteProperty(_, prop) {
+      if (typeof prop === 'symbol') return false;
+      return Reflect.deleteProperty(initAliases(), prop);
     },
   }
 );
