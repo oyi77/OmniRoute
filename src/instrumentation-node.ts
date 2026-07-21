@@ -6,6 +6,8 @@
  * and emit spurious "not supported in Edge Runtime" warnings.
  */
 
+import { markServerReady, markServerStarting } from "@/lib/serverLifecycle";
+
 function getRandomBytes(byteLength: number): Uint8Array {
   const bytes = new Uint8Array(byteLength);
   globalThis.crypto.getRandomValues(bytes);
@@ -214,6 +216,8 @@ export async function warmModelCatalogCache(): Promise<void> {
 }
 
 export async function registerNodejs(): Promise<void> {
+  markServerStarting();
+
   // Rename the process title so OmniRoute is identifiable in ps/htop instead
   // of the generic "next-server" standalone server name.
   process.title = renameProcessTitle(process.title);
@@ -534,4 +538,6 @@ export async function registerNodejs(): Promise<void> {
       }),
     ]);
   }
+
+  markServerReady();
 }
